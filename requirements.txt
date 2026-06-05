@@ -1,8 +1,5 @@
 streamlit
-yfinance
-pandas<3.0.0
-pandas_ta
+pandas
 numpy
+yfinance
 plotly
-lxml
-requests
