@@ -273,25 +273,22 @@ with tab3:
     with col_t2: 
         sel_stock = st.selectbox("Hisse / ETF", THEMES[sel_theme])
     with col_t3: 
-        # HATA DÜZELTİLDİ: min_value ve max_value
         lookback_days = st.number_input("Ralli Süresi (Gün)", min_value=1, max_value=60, value=10)
     with col_t4: 
-        # HATA DÜZELTİLDİ: min_value ve max_value
         rally_pct = st.number_input("Hedef Yükseliş (%)", min_value=1, max_value=100, value=15)
         
     if st.button("⚛️ RALLİ İSTATİSTİKLERİNİ HESAPLA", use_container_width=True):
-        with st.spinner(f"{sel_stock} için son 3 yılın verileri taranıyor (Eşik: {lookback_days} günde %{rally_pct}+)..."):
+        with st.spinner(f"{sel_stock} için son 3 yılın verileri taranıyor..."):
             stats = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
             
             if stats is None or stats['count'] == 0:
-                st.error(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi bulunamadı. Lütfen hedef yüzdeyi veya gün sayısını düşürerek tekrar dene.")
+                st.error(f"⚠️ {sel_stock} için {lookback_days} günde %{rally_pct}+ hareket bulunamadı.")
             else:
-                st.success(f"Geçmişte tam olarak **{stats['count']} adet** Majör Ralli başlangıç noktası tespit edildi!")
+                st.success(f"Geçmişte **{stats['count']} adet** Majör Ralli noktası tespit edildi!")
                 
                 st.markdown("#### 🔍 Ralli Başlamadan Önceki 4 Günün Karakteristiği:")
                 sc1, sc2, sc3, sc4, sc5 = st.columns(5)
                 
-                # İstatistik kartları (CSS sınıfları korunarak)
                 with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy (V665)</div><div class='stat-value'>%{stats['syn_blue']:.0f}</div><div class='stat-desc'>Maviye Döndü</div></div>", unsafe_allow_html=True)
                 with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Fusion (V700)</div><div class='stat-value'>%{stats['fus_pos']:.0f}</div><div class='stat-desc'>Pozitif Kesti</div></div>", unsafe_allow_html=True)
                 with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN (V695)</div><div class='stat-value'>%{stats['whale_in']:.0f}</div><div class='stat-desc'>Giriş Gözlendi</div></div>", unsafe_allow_html=True)
@@ -304,7 +301,6 @@ with tab3:
                 <span style="color:#00ff88; font-weight:bold; font-size:1.1rem;">🧠 DA VINCI SENTETİK SONUÇ:</span><br>
                 <span style="color:#e0e0e0; font-size:1rem;">İstatistikler gösteriyor ki <strong>{sel_stock}</strong> kodlu varlıkta büyük fiyat hareketlerinden hemen önceki 
                 {lookback_days} günlük periyotta özellikle <strong>Whale IN (V695)</strong> ve <strong>Synergy Hat (V665)</strong> değişimleri, 
-                kurumsal birikimin (accumulation) en güçlü öncü göstergesidir.</span>
+                kurumsal birikimin en güçlü öncü göstergesidir.</span>
                 </div>
-                """, unsafe_allow_html=True)
                 """, unsafe_allow_html=True)
