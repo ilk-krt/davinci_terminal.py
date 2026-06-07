@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import time
 from datetime import datetime, timedelta
 
 # ==========================================
@@ -132,7 +133,7 @@ def apply_quantum_indicators(df):
     return df
 
 # ==========================================
-# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU
+# 3. YEDEKLEMELİ & KORUMALI VERİ MOTORU
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
@@ -146,17 +147,33 @@ def fetch_news_safely(ticker):
                 if title and link and link != '#' and "Yahoo" not in title:
                      valid_news.append({"title": title, "link": link})
                      if len(valid_news) == 3: break
-    except: pass
+    except Exception as e:
+        if "429" in str(e): return [{"title": "⚠️ Aşırı İstek (Rate Limit). Lütfen 15 dk bekleyin.", "link": "#"}]
     return valid_news if len(valid_news) > 0 else None
 
-@st.cache_data
+@st.cache_data(ttl=3600)
+def fetch_valuation_data_safely(stocks):
+    """ Çoklu hisse analizinde Yahoo banı yememek için önbellekli ve gecikmeli veri çeker. """
+    val_data = []
+    for s in stocks:
+        try:
+            tk = yf.Ticker(s)
+            info = tk.fast_info
+            pe = tk.info.get('trailingPE', 0)
+            val_data.append({"Ticker": s, "MC": info.get('marketCap', 0), "PE": pe})
+            time.sleep(0.5) # Yahoo Anti-Ban Nefes Aralığı
+        except:
+            time.sleep(1) # Hata alırsa biraz daha bekle
+    return val_data
+
+@st.cache_data(ttl=600)
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bullish):
     try:
         tk = yf.Ticker(ticker)
         df = tk.history(period="3y", interval="1d")
         
         if df.empty or len(df) < 50: 
-            return {"error": f"⚠️ Yahoo Finance '{ticker}' için veri döndüremedi."}
+            return {"error": f"⚠️ Yahoo Finance '{ticker}' için veri döndüremedi veya limit aşıldı."}
             
         df.index = pd.to_datetime(df.index).tz_localize(None) 
         df = apply_quantum_indicators(df)
@@ -194,12 +211,11 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             future_ret = df['Future_Return'].iloc[loc]
             target_date = df.index[loc + days_lookback]
 
-            # YENİ KÜMÜLATİF MATRİS HESAPLAMALARI (Dizi İçinde Arama)
+            # YENİ KÜMÜLATİF MATRİS HESAPLAMALARI
             f_trans_vals = pre_window['Fus_Trans_Str'].values
             s_trans_vals = pre_window['Syn_Trans_Str'].values
             o_trans_vals = pre_window['Omni_Trans_Str'].values
 
-            # Fusion
             if 'Y->B' in f_trans_vals: stats['f_y2b'] += 1
             if 'R->B' in f_trans_vals: stats['f_r2b'] += 1
             if 'B->DB' in f_trans_vals: stats['f_b2db'] += 1
@@ -207,7 +223,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             if 'B->R' in f_trans_vals: stats['f_b2r'] += 1
             if 'Y->R' in f_trans_vals: stats['f_y2r'] += 1
 
-            # Synergy
             if 'Y->B' in s_trans_vals: stats['s_y2b'] += 1
             if 'R->B' in s_trans_vals: stats['s_r2b'] += 1
             if 'B->DB' in s_trans_vals: stats['s_b2db'] += 1
@@ -215,7 +230,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             if 'B->R' in s_trans_vals: stats['s_b2r'] += 1
             if 'Y->R' in s_trans_vals: stats['s_y2r'] += 1
 
-            # Omni Momentum
             if 'Y->B' in o_trans_vals: stats['o_y2b'] += 1
             if 'R->B' in o_trans_vals: stats['o_r2b'] += 1
             if 'B->DB' in o_trans_vals: stats['o_b2db'] += 1
@@ -223,7 +237,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             if 'B->R' in o_trans_vals: stats['o_b2r'] += 1
             if 'Y->R' in o_trans_vals: stats['o_y2r'] += 1
 
-            # TABLO İÇİN STRİNGLER (D-4, D-0)
             fus_events, syn_events, omni_events, spd_events, whale_events = [], [], [], [], []
 
             for i in range(4, -1, -1):
@@ -257,6 +270,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
     except Exception as e:
+        if "429" in str(e): return {"error": "⚠️ SİSTEM BLOKAJI: Yahoo Finance aşırı istek sebebiyle IP'nizi geçici olarak kısıtladı. Lütfen 15 dakika bekleyin."}
         return {"error": f"Sistem Hatası: {str(e)}"}
 
 # ==========================================
@@ -277,12 +291,13 @@ with tab1:
 
     st.markdown("#### 🔄 Global Canlı Haber Akışı")
     if st.button("🌐 SPY, QQQ, TLT Global Haberlerini Güncelle", use_container_width=True):
-        with st.spinner("Haberler çekiliyor..."):
+        with st.spinner("Haberler çekiliyor... (Ban koruması aktif)"):
             macro_news = []
             for tkr in ["SPY", "QQQ", "TLT"]:
                 news = fetch_news_safely(tkr)
                 if news:
                     for n in news: macro_news.append(f"**[{tkr}]** [{n['title']}]({n['link']})")
+                time.sleep(0.5) # Anti-Ban Modülü
             st.session_state.live_macro_news = macro_news
 
     if st.session_state.live_macro_news:
@@ -323,17 +338,12 @@ with tab2:
                         n_list = fetch_news_safely(stocks[0])
                         if n_list:
                             for n in n_list: st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
-                        else: st.warning("⚠️ Haber bulunamadı.")
+                        else: st.warning("⚠️ Haber bulunamadı veya limite takıldı.")
             
             with val_col:
                 if st.button(f"📊 Çarpan Analizi Yap", key=f"val_{theme_name}"):
-                    with st.spinner("Hesaplanıyor..."):
-                        val_data = []
-                        for s in stocks:
-                            try:
-                                info = yf.Ticker(s).fast_info
-                                val_data.append({"Ticker": s, "MC": info.get('marketCap', 0), "PE": yf.Ticker(s).info.get('trailingPE', 0)})
-                            except: pass
+                    with st.spinner("Veriler güvenli bir şekilde çekiliyor (Anti-Ban Aktif)..."):
+                        val_data = fetch_valuation_data_safely(stocks)
                         
                         df_val = pd.DataFrame(val_data)
                         if not df_val.empty and df_val['MC'].sum() > 0:
@@ -374,7 +384,7 @@ with tab3:
                 
                 if "error" in res:
                     st.error(res["error"])
-                elif res["stats"]["count"] == 0:
+                elif res.get("stats", {}).get("count", 0) == 0:
                     yön_text = "yükseliş" if is_bull else "düşüş"
                     st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda {lookback_days} günde %{rally_pct}+ {yön_text} hareketi bulunamadı.")
                 else:
