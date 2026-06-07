@@ -44,7 +44,7 @@ THEMES = {
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (4 FAZLI)
+# 2. PANDAS VEKTÖREL MATEMATİK MOTORU
 # ==========================================
 def get_rma(s, period):
     return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
@@ -55,15 +55,6 @@ def get_rsi(s, period):
     ma_down = get_rma(-1 * delta.clip(upper=0), period)
     rs = ma_up / ma_down.replace(0, 0.001)
     return 100 - (100 / (1 + rs))
-
-def get_4_state_color(val_series):
-    """MACD Hist mantığıyla 4'lü renk döngüsünü tespit eder (DB, B, R, Y)"""
-    val_prev = val_series.shift(1)
-    cond_DB = (val_series > 0) & (val_series > val_prev)
-    cond_B  = (val_series > 0) & (val_series <= val_prev)
-    cond_R  = (val_series < 0) & (val_series < val_prev)
-    cond_Y  = (val_series < 0) & (val_series >= val_prev)
-    return np.select([cond_DB, cond_B, cond_R, cond_Y], ['DB', 'B', 'R', 'Y'], default='N')
 
 def apply_quantum_indicators(df):
     if len(df) < 50 or 'Close' not in df.columns: return df
@@ -100,20 +91,43 @@ def apply_quantum_indicators(df):
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
 
     # ========================================================
-    # DİNAMİK RENK VE GEÇİŞ MATRİSLERİ
+    # V5 ORİJİNAL KİNETİK EĞİM (MOMENTUM) MATEMATİĞİNE DÖNÜŞ
     # ========================================================
-    df['Fus_Color'] = get_4_state_color(df['f_hist'])
-    df['Fus_Trans'] = df['Fus_Color'].shift(1) + "->" + df['Fus_Color']
+    
+    # FUSION MATRİSİ (Eğime ve 0 Hattına Dayalı)
+    is_f_rising = df['f_hist'] > df['f_hist'].shift(1)
+    is_f_falling = df['f_hist'] < df['f_hist'].shift(1)
+    df['Fus_Y2B'] = is_f_rising & is_f_falling.shift(1)
+    df['Fus_B2DB'] = is_f_rising & df['Fus_Y2B'].shift(1) & (df['f_hist'] > 0)
+    df['Fus_B2Y'] = is_f_falling & is_f_rising.shift(1)
+    df['Fus_Y2R'] = is_f_falling & df['Fus_B2Y'].shift(1) & (df['f_hist'] < 0)
 
-    df['Syn_Color'] = get_4_state_color(df['s_hist'])
-    df['Syn_Trans'] = df['Syn_Color'].shift(1) + "->" + df['Syn_Color']
+    # SYNERGY MATRİSİ
+    is_s_rising = df['s_hist'] > df['s_hist'].shift(1)
+    is_s_falling = df['s_hist'] < df['s_hist'].shift(1)
+    df['Syn_Y2B'] = is_s_rising & is_s_falling.shift(1)
+    df['Syn_B2DB'] = is_s_rising & df['Syn_Y2B'].shift(1) & (df['s_hist'] > 0)
+    df['Syn_B2Y'] = is_s_falling & is_s_rising.shift(1)
+    df['Syn_Y2R'] = is_s_falling & df['Syn_B2Y'].shift(1) & (df['s_hist'] < 0)
 
-    df['Whale_State'] = np.where(df['w_pwr'] > df['pct_pro'], 'IN(Kırmızı)', 'OUT(Sarı)')
-    df['Whale_Trans'] = df['Whale_State'].shift(1) + "->" + df['Whale_State']
+    # OMNI MOMENTUM
+    rsi_fast = get_rsi(df['Close'], 7)
+    df['Omni'] = (rsi_fast + rsi_mid) / 2
+    is_o_rising = df['Omni'] > df['Omni'].shift(1)
+    is_o_falling = df['Omni'] < df['Omni'].shift(1)
+    df['Omni_Y2B'] = is_o_rising & is_o_falling.shift(1)
+    df['Omni_B2Y'] = is_o_falling & is_o_rising.shift(1)
 
-    df['Spd_Cross'] = np.where(df['f_speed'] > df['f_sig'], 'Yukarı', 'Aşağı')
-    df['Cross_Trans'] = df['Spd_Cross'].shift(1) + "->" + df['Spd_Cross']
+    # SPEED / SIGNAL KESİŞİMİ
+    df['Spd_Cross_Up'] = (df['f_speed'] > df['f_sig']) & (df['f_speed'].shift(1) <= df['f_sig'].shift(1))
+    df['Spd_Cross_Down'] = (df['f_speed'] < df['f_sig']) & (df['f_speed'].shift(1) >= df['f_sig'].shift(1))
 
+    # WHALE RE-ENTRY MATRİSİ
+    df['Whale_In'] = df['w_pwr'] > df['pct_pro']
+    df['Whale_Y2R'] = df['Whale_In'] & (df['Whale_In'].shift(1) == False) # Re-Entry (Sarıdan Kırmızıya)
+    df['Whale_R2Y'] = (df['Whale_In'] == False) & df['Whale_In'].shift(1) # Distribution (Kırmızıdan Sarıya)
+
+    # GÖRECELİ GÜÇ (RS)
     df['RS_Leader'] = df['Close'].pct_change(20, fill_method=None) > 0
 
     return df
@@ -136,12 +150,6 @@ def fetch_news_safely(ticker):
     except: pass
     return valid_news if len(valid_news) > 0 else None
 
-def extract_unique_transitions(trans_series):
-    """4 günlük penceredeki tekrarsız ve geçerli değişimleri bulur (örn: Y->B)"""
-    trans_list = trans_series.dropna().tolist()
-    valid_trans = [t for t in trans_list if t.split('->')[0] != t.split('->')[-1] and 'N' not in t]
-    return ", ".join(dict.fromkeys(valid_trans)) if valid_trans else "-"
-
 @st.cache_data
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bullish):
     try:
@@ -151,7 +159,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
         if df.empty or len(df) < 50: 
             return {"error": f"⚠️ Yahoo Finance '{ticker}' için veri döndüremedi."}
             
-        df.index = pd.to_datetime(df.index).tz_localize(None) # Saat dilimi hatalarını sıfırla
+        df.index = pd.to_datetime(df.index).tz_localize(None) 
         df = apply_quantum_indicators(df)
         
         # Çift Yönlü Hedef Getiri Hesaplaması
@@ -170,10 +178,11 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
         events_list = []
         stats = {
             "count": len(rally_indices),
-            "fus_bull": 0, "fus_bear": 0, 
-            "syn_bull": 0, "syn_bear": 0, 
+            "fus_BDB": 0, "fus_YR": 0, 
+            "syn_BDB": 0, "syn_YR": 0, 
             "cross_up": 0, "cross_down": 0,
-            "whale_in": 0, "whale_out": 0
+            "whale_in": 0, "whale_out": 0,
+            "omni_YB": 0, "omni_BY": 0
         }
 
         for idx in rally_indices:
@@ -187,37 +196,71 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             future_ret = df['Future_Return'].iloc[loc]
             target_date = df.index[loc + days_lookback]
             
-            # Dinamik Olayları Çek
-            str_fus = extract_unique_transitions(pre_window['Fus_Trans'])
-            str_syn = extract_unique_transitions(pre_window['Syn_Trans'])
-            str_whale = extract_unique_transitions(pre_window['Whale_Trans'])
-            str_cross = extract_unique_transitions(pre_window['Cross_Trans'])
-            rs_state = "Lider ✅" if df['RS_Leader'].iloc[loc] else "Zayıf ⛔"
+            # Matris Mikro Olay Sayımları
+            c_f_y2b = pre_window['Fus_Y2B'].sum()
+            c_f_b2db = pre_window['Fus_B2DB'].sum()
+            c_f_b2y = pre_window['Fus_B2Y'].sum()
+            c_f_y2r = pre_window['Fus_Y2R'].sum()
 
-            # Kümülatif İstatistik Puanlaması (Aramaya Yönelik)
-            if "Y->B" in str_fus or "B->DB" in str_fus: stats['fus_bull'] += 1
-            if "B->Y" in str_fus or "Y->R" in str_fus: stats['fus_bear'] += 1
+            c_s_y2b = pre_window['Syn_Y2B'].sum()
+            c_s_b2db = pre_window['Syn_B2DB'].sum()
+            c_s_b2y = pre_window['Syn_B2Y'].sum()
+            c_s_y2r = pre_window['Syn_Y2R'].sum()
+
+            c_o_y2b = pre_window['Omni_Y2B'].sum()
+            c_o_b2y = pre_window['Omni_B2Y'].sum()
+
+            c_cross_up = pre_window['Spd_Cross_Up'].sum()
+            c_cross_down = pre_window['Spd_Cross_Down'].sum()
+
+            c_w_in = pre_window['Whale_Y2R'].sum()
+            c_w_out = pre_window['Whale_R2Y'].sum()
+
+            # Kümülatif İstatistik Puanlaması (Tamamen V5 Aslına Uygun)
+            if c_f_b2db > 0: stats['fus_BDB'] += 1
+            if c_f_y2r > 0: stats['fus_YR'] += 1
+            if c_s_b2db > 0: stats['syn_BDB'] += 1
+            if c_s_y2r > 0: stats['syn_YR'] += 1
+            if c_cross_up > 0: stats['cross_up'] += 1
+            if c_cross_down > 0: stats['cross_down'] += 1
+            if c_w_in > 0: stats['whale_in'] += 1
+            if c_w_out > 0: stats['whale_out'] += 1
+            if c_o_y2b > 0: stats['omni_YB'] += 1
+            if c_o_b2y > 0: stats['omni_BY'] += 1
+
+            # Raporlama İçin String İnşası
+            fus_strs = []
+            if c_f_y2b: fus_strs.append(f"{int(c_f_y2b)}x Y->B")
+            if c_f_b2db: fus_strs.append(f"{int(c_f_b2db)}x B->DB")
+            if c_f_b2y: fus_strs.append(f"{int(c_f_b2y)}x B->Y")
+            if c_f_y2r: fus_strs.append(f"{int(c_f_y2r)}x Y->R")
             
-            if "Y->B" in str_syn or "B->DB" in str_syn: stats['syn_bull'] += 1
-            if "B->Y" in str_syn or "Y->R" in str_syn: stats['syn_bear'] += 1
-            
-            if "Aşağı->Yukarı" in str_cross: stats['cross_up'] += 1
-            if "Yukarı->Aşağı" in str_cross: stats['cross_down'] += 1
-            
-            if "OUT(Sarı)->IN(Kırmızı)" in str_whale: stats['whale_in'] += 1
-            if "IN(Kırmızı)->OUT(Sarı)" in str_whale: stats['whale_out'] += 1
+            syn_strs = []
+            if c_s_y2b: syn_strs.append(f"{int(c_s_y2b)}x Y->B")
+            if c_s_b2db: syn_strs.append(f"{int(c_s_b2db)}x B->DB")
+            if c_s_b2y: syn_strs.append(f"{int(c_s_b2y)}x B->Y")
+            if c_s_y2r: syn_strs.append(f"{int(c_s_y2r)}x Y->R")
+
+            cross_strs = []
+            if c_cross_up: cross_strs.append(f"Yukarı✅")
+            if c_cross_down: cross_strs.append(f"Aşağı⛔")
+
+            whale_strs = []
+            if c_w_in: whale_strs.append(f"{int(c_w_in)}x Giriş✅")
+            if c_w_out: whale_strs.append(f"{int(c_w_out)}x Çıkış⛔")
 
             events_list.append({
                 "Sinyal Tarihi": idx.strftime('%Y-%m-%d'),
                 "Hedef Tarih": target_date.strftime('%Y-%m-%d'),
                 "Gerçekleşen": f"%{future_ret*100:.1f}",
-                "Füzyon Geçişi": str_fus,
-                "Synergy Geçişi": str_syn,
-                "Speed/Sig": str_cross.replace("Aşağı->Yukarı", "Yukarı Kesti").replace("Yukarı->Aşağı", "Aşağı Kesti"),
-                "Whale (V695)": str_whale.replace("OUT(Sarı)->IN(Kırmızı)", "Giriş").replace("IN(Kırmızı)->OUT(Sarı)", "Çıkış"),
-                "RS Durumu": rs_state
+                "Füzyon Geçişi": ", ".join(fus_strs) if fus_strs else "-",
+                "Synergy Geçişi": ", ".join(syn_strs) if syn_strs else "-",
+                "Speed/Sig": ", ".join(cross_strs) if cross_strs else "-",
+                "Whale (V695)": ", ".join(whale_strs) if whale_strs else "-",
+                "RS Durumu": "Lider ✅" if df['RS_Leader'].iloc[loc] else "Zayıf ⛔"
             })
 
+        # Yüzdeye Çevir
         for k in stats.keys():
             if k != "count": stats[k] = (stats[k] / stats['count']) * 100
             
@@ -312,7 +355,6 @@ with tab2:
                                 row = df_val.iloc[i]
                                 ratio = (row['MC'] / leader['MC']) * 100 if leader['MC'] > 0 else 0
                                 pe_str = f"F/K: {row['PE']:.1f}" if row['PE'] else "N/A"
-                                # YENİ MANTIKLI FORMAT: Liderin %X'i büyüklüğünde
                                 res_html += f"<li><strong>{row['Ticker']}</strong>: ${row['MC']/1e9:.1f} Milyar <em>(Liderin %{ratio:.1f}'i büyüklüğünde)</em> — {pe_str}</li>"
                             res_html += "</ul>"
                             st.markdown(res_html, unsafe_allow_html=True)
@@ -331,7 +373,6 @@ with tab3:
     with col_t3: lookback_days = st.number_input("Süre (Gün)", min_value=1, max_value=60, value=6)
     with col_t4: rally_pct = st.number_input("Hedef Yüzde (%)", min_value=1, max_value=100, value=10)
     with col_t5: 
-        # YENİ EKLENTİ: Çift Yönlü Tarama
         scan_direction = st.radio("Tarama Yönü", ["🚀 Yükseliş (Long)", "🩸 Düşüş (Short)"], horizontal=True)
         
     if st.button("⚛️ MATRİSİ ÇALIŞTIR", use_container_width=True):
@@ -352,16 +393,18 @@ with tab3:
                     st.dataframe(res['events'], use_container_width=True, hide_index=True)
                     
                     st.markdown("#### 📊 Kümülatif Hedef İsabet Oranları")
-                    sc1, sc2, sc3, sc4 = st.columns(4)
+                    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
                     
-                    # Dinamik istatistik gösterimi (Seçilen yöne göre en anlamlı veriyi basar)
+                    # 5'Lİ İSTATİSTİK EKRANI (TAMAMEN V5 ASLINA DÖNDÜ)
                     if is_bull:
-                        with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon Pozitif Geçiş</div><div class='stat-value'>%{stats['fus_bull']:.0f}</div><div class='stat-desc'>Y->B veya B->DB</div></div>", unsafe_allow_html=True)
-                        with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy Pozitif Geçiş</div><div class='stat-value'>%{stats['syn_bull']:.0f}</div><div class='stat-desc'>Y->B veya B->DB</div></div>", unsafe_allow_html=True)
-                        with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Golden Cross (Speed)</div><div class='stat-value'>%{stats['cross_up']:.0f}</div><div class='stat-desc'>Yukarı Kesti</div></div>", unsafe_allow_html=True)
-                        with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale Accumulation</div><div class='stat-value'>%{stats['whale_in']:.0f}</div><div class='stat-desc'>Giriş Sağlandı</div></div>", unsafe_allow_html=True)
+                        with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon B->DB</div><div class='stat-value'>%{stats['fus_BDB']:.0f}</div><div class='stat-desc'>DarkBlue Onayı</div></div>", unsafe_allow_html=True)
+                        with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy B->DB</div><div class='stat-value'>%{stats['syn_BDB']:.0f}</div><div class='stat-desc'>DarkBlue Onayı</div></div>", unsafe_allow_html=True)
+                        with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Speed/Signal</div><div class='stat-value'>%{stats['cross_up']:.0f}</div><div class='stat-desc'>Yukarı Kesişim</div></div>", unsafe_allow_html=True)
+                        with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN</div><div class='stat-value'>%{stats['whale_in']:.0f}</div><div class='stat-desc'>Re-Entry (Y->R)</div></div>", unsafe_allow_html=True)
+                        with sc5: st.markdown(f"<div class='stat-box'><div class='stat-label'>Omni Mom.</div><div class='stat-value'>%{stats['omni_YB']:.0f}</div><div class='stat-desc'>Y->B Geçişi</div></div>", unsafe_allow_html=True)
                     else:
-                        with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon Negatif Bozulma</div><div class='stat-value'>%{stats['fus_bear']:.0f}</div><div class='stat-desc'>B->Y veya Y->R</div></div>", unsafe_allow_html=True)
-                        with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy Negatif Bozulma</div><div class='stat-value'>%{stats['syn_bear']:.0f}</div><div class='stat-desc'>B->Y veya Y->R</div></div>", unsafe_allow_html=True)
-                        with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Death Cross (Speed)</div><div class='stat-value'>%{stats['cross_down']:.0f}</div><div class='stat-desc'>Aşağı Kesti</div></div>", unsafe_allow_html=True)
-                        with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale Distribution</div><div class='stat-value'>%{stats['whale_out']:.0f}</div><div class='stat-desc'>Çıkış Gözlendi</div></div>", unsafe_allow_html=True)
+                        with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon Y->R</div><div class='stat-value'>%{stats['fus_YR']:.0f}</div><div class='stat-desc'>Kırmızı Onayı</div></div>", unsafe_allow_html=True)
+                        with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy Y->R</div><div class='stat-value'>%{stats['syn_YR']:.0f}</div><div class='stat-desc'>Kırmızı Onayı</div></div>", unsafe_allow_html=True)
+                        with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Speed/Signal</div><div class='stat-value'>%{stats['cross_down']:.0f}</div><div class='stat-desc'>Aşağı Kesişim</div></div>", unsafe_allow_html=True)
+                        with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale OUT</div><div class='stat-value'>%{stats['whale_out']:.0f}</div><div class='stat-desc'>Dağıtım (R->Y)</div></div>", unsafe_allow_html=True)
+                        with sc5: st.markdown(f"<div class='stat-box'><div class='stat-label'>Omni Mom.</div><div class='stat-value'>%{stats['omni_BY']:.0f}</div><div class='stat-desc'>B->Y Düşüş</div></div>", unsafe_allow_html=True)
