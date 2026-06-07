@@ -46,7 +46,7 @@ THEMES = {
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (V5 ORİJİNAL)
+# 2. PANDAS VEKTÖREL MATEMATİK MOTORU
 # ==========================================
 def get_rma(s, period):
     return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
@@ -93,7 +93,7 @@ def apply_quantum_indicators(df):
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
 
     # ========================================================
-    # ORİJİNAL KİNETİK EĞİM MATEMATİĞİ (DEĞİŞTİRİLMEDİ!)
+    # ORİJİNAL KİNETİK EĞİM MATEMATİĞİ (V5)
     # ========================================================
     
     # FUSION MATRİSİ
@@ -132,7 +132,7 @@ def apply_quantum_indicators(df):
     df['RS_Leader'] = df['Close'].pct_change(20, fill_method=None) > 0
 
     # ========================================================
-    # TABLODAKİ (D-1) YAZILARI İÇİN VİZÜEL OKUYUCU
+    # TABLODAKİ (D-X) YAZILARI İÇİN VİZÜEL OKUYUCU
     # ========================================================
     f_state = np.where((df['f_hist'] > 0) & is_f_rising, 'DB',
               np.where((df['f_hist'] > 0) & is_f_falling, 'B',
@@ -150,7 +150,7 @@ def apply_quantum_indicators(df):
     return df
 
 # ==========================================
-# 3. YEDEKLEMELİ & KORUMALI VERİ MOTORU
+# 3. YEDEKLEMELİ & KORUMALI VERİ MOTORU (ANTI-BAN)
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
@@ -228,7 +228,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             future_ret = df['Future_Return'].iloc[loc]
             target_date = df.index[loc + days_lookback]
 
-            # %100 ORİJİNAL İSTATİSTİK MATEMATİĞİ (SUM > 0)
+            # %100 ORİJİNAL İSTATİSTİK MATEMATİĞİ
             if pre_window['Fus_Y2B'].sum() > 0: stats['f_y2b'] += 1
             if pre_window['Fus_B2DB'].sum() > 0: stats['f_b2db'] += 1
             if pre_window['Fus_B2Y'].sum() > 0: stats['f_b2y'] += 1
@@ -247,7 +247,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct, is_bulli
             if pre_window['Whale_Y2R'].sum() > 0: stats['w_in'] += 1
             if pre_window['Whale_R2Y'].sum() > 0: stats['w_out'] += 1
 
-            # Rapor Tablosu İçin Stringler
+            # Rapor Tablosu İçin D-X Stringleri
             fus_events, syn_events, omni_events, spd_events, whale_events = [], [], [], [], []
 
             for i in range(4, -1, -1):
@@ -380,4 +380,67 @@ with tab3:
     col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns([2, 2, 1.5, 1.5, 2])
     with col_t1: sel_theme = st.selectbox("Tema", list(THEMES.keys()))
     with col_t2: 
-        if sel_theme == "📌 Kendi Hisseni Gir": sel_stock = st.text_input("Borsa Kodu",
+        if sel_theme == "📌 Kendi Hisseni Gir": sel_stock = st.text_input("Borsa Kodu", value="PLTR").upper()
+        else: sel_stock = st.selectbox("Hisse / ETF", THEMES[sel_theme])
+    with col_t3: lookback_days = st.number_input("Süre (Gün)", min_value=1, max_value=60, value=6)
+    with col_t4: rally_pct = st.number_input("Hedef Yüzde (%)", min_value=1, max_value=100, value=10)
+    with col_t5: 
+        scan_direction = st.radio("Tarama Yönü", ["🚀 Yükseliş (Long)", "🩸 Düşüş (Short)"], horizontal=True)
+        
+    if st.button("⚛️ MATRİSİ ÇALIŞTIR", use_container_width=True):
+        if sel_stock:
+            is_bull = "Yükseliş" in scan_direction
+            with st.spinner(f"{sel_stock} için son 3 yılın verileri taranıyor..."):
+                res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct, is_bull)
+                
+                if "error" in res:
+                    st.error(res["error"])
+                elif res.get("stats", {}).get("count", 0) == 0:
+                    yön_text = "yükseliş" if is_bull else "düşüş"
+                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda {lookback_days} günde %{rally_pct}+ {yön_text} hareketi bulunamadı.")
+                else:
+                    stats = res['stats']
+                    
+                    st.success(f"Geçmişte tam **{stats['count']} adet** majör hareket noktası tespit edildi!")
+                    st.dataframe(res['events'], use_container_width=True, hide_index=True)
+                    
+                    st.markdown("#### 📊 Kümülatif Hedef İsabet Oranları")
+                    c1, c2, c3 = st.columns(3)
+                    
+                    if is_bull:
+                        with c1:
+                            st.markdown("<h4 style='text-align:center; color:#00E6FF;'>⚛️ FÜZYON</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>Y->B Geçişi</div><div class='stat-value'>%{stats['f_y2b']:.0f}</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>B->DB Onayı</div><div class='stat-value'>%{stats['f_b2db']:.0f}</div></div>", unsafe_allow_html=True)
+                        with c2:
+                            st.markdown("<h4 style='text-align:center; color:#00ff88;'>⚡ SYNERGY</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>Y->B Geçişi</div><div class='stat-value'>%{stats['s_y2b']:.0f}</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>B->DB Onayı</div><div class='stat-value'>%{stats['s_b2db']:.0f}</div></div>", unsafe_allow_html=True)
+                        with c3:
+                            st.markdown("<h4 style='text-align:center; color:#FFD700;'>🎯 OMNI MOMENTUM</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>Y->B Geçişi</div><div class='stat-value'>%{stats['o_y2b']:.0f}</div></div>", unsafe_allow_html=True)
+                    else:
+                        with c1:
+                            st.markdown("<h4 style='text-align:center; color:#FF1744;'>⚛️ FÜZYON (NEGATİF)</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>B->Y Geçişi</div><div class='stat-value'>%{stats['f_b2y']:.0f}</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>Y->R Çöküş Onayı</div><div class='stat-value'>%{stats['f_y2r']:.0f}</div></div>", unsafe_allow_html=True)
+                        with c2:
+                            st.markdown("<h4 style='text-align:center; color:#FF1744;'>⚡ SYNERGY (NEGATİF)</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>B->Y Geçişi</div><div class='stat-value'>%{stats['s_b2y']:.0f}</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>Y->R Çöküş Onayı</div><div class='stat-value'>%{stats['s_y2r']:.0f}</div></div>", unsafe_allow_html=True)
+                        with c3:
+                            st.markdown("<h4 style='text-align:center; color:#FF1744;'>🎯 OMNI MOM. (NEGATİF)</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='stat-box'><div class='stat-label'>B->Y Geçişi</div><div class='stat-value'>%{stats['o_b2y']:.0f}</div></div>", unsafe_allow_html=True)
+
+                    st.divider()
+                    
+                    sentetik_metin = f"<strong>% {stats['f_b2db']:.0f}</strong> oranında Füzyon hattı B->DB (Dark Blue Onay) yakalamış, <strong>% {stats['s_b2db']:.0f}</strong> oranında Synergy hız onayı almıştır." if is_bull else f"<strong>% {stats['f_y2r']:.0f}</strong> oranında Füzyon hattı Y->R (Kırmızı Çöküş Onayı) yakalamış, <strong>% {stats['s_y2r']:.0f}</strong> oranında Synergy negatif onayı almıştır."
+
+                    st.markdown(f"""
+                    <div style="background-color: #0a0a0a; padding: 15px; border-radius: 10px; border-left: 5px solid {'#00ff88' if is_bull else '#FF1744'};">
+                    <span style="color:{'#00ff88' if is_bull else '#FF1744'}; font-weight:bold; font-size:1.1rem;">🧠 DA VINCI SENTETİK SONUÇ:</span><br>
+                    <span style="color:#e0e0e0; font-size:1rem;">{sel_stock} varlığında bu eşik öncesi pencerelerde özellikle {sentetik_metin}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+             st.warning("Lütfen bir hisse sembolü girin.")
