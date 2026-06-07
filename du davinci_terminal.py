@@ -11,36 +11,22 @@ st.set_page_config(layout="wide", page_title="DA VINCI: PRE-RALLY & MACRO TERMIN
 
 st.markdown("""
     <style>
-    /* Genel Arkaplan ve Metin Rengi Sabitlemesi */
     .stApp, .main, .block-container { background-color: #050505 !important; }
-    
-    /* Tüm Metin Elementleri İçin Yüksek Kontrast */
     p, div, span, li, label, text, .stMarkdown { color: #E0E0E0 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     h1, h2, h3, h4, h5, h6 { color: #00E6FF !important; font-weight: 900 !important; text-transform: uppercase; letter-spacing: 1px; }
-    
-    /* Girdi Kutuları (Selectbox, Number Input) */
     div[data-baseweb="select"] > div, input[type="number"] { background-color: #111111 !important; color: #ffffff !important; border: 1px solid #00E6FF !important; }
     div[data-baseweb="popover"] div { background-color: #111111 !important; color: #ffffff !important; }
-    
-    /* Tablolar (Dataframes) */
     [data-testid="stDataFrame"], [data-testid="stTable"] { background-color: #0a0a0a !important; border: 1px solid #333 !important; }
     th { background-color: #1a1a1a !important; color: #00E6FF !important; font-size: 0.95rem !important; border-bottom: 2px solid #00E6FF !important; }
     td { border-bottom: 1px solid #222 !important; color: #ffffff !important; }
-    
-    /* Expander (Açılır Kapanır Menüler) */
     [data-testid="stExpander"] { background-color: #0d0d0d !important; border: 1px solid #333 !important; border-left: 4px solid #00E6FF !important; }
     [data-testid="stExpander"] summary p { color: #00ff88 !important; font-weight: bold !important; font-size: 1.1rem !important;}
-    
-    /* Butonlar */
     div.stButton > button { background-color: #111 !important; color: #00ff88 !important; border: 1px solid #00ff88 !important; font-weight: bold; border-radius: 6px; }
     div.stButton > button:hover { background-color: #00ff88 !important; color: #000 !important; border-color: #fff !important; }
-    
-    /* Özel Kartlar (Macro, Stat) */
     .macro-card { background-color: #111111 !important; border: 1px solid #333; border-left: 4px solid #FF1744; padding: 15px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
     .stat-box { background: linear-gradient(145deg, #1a1a1a, #0a0a0a) !important; padding: 15px; border-radius: 8px; border: 1px solid #444; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
-    .stat-value { font-size: 2rem !important; font-weight: 900 !important; color: #00E6FF !important; margin: 10px 0; }
-    .stat-label { font-size: 0.85rem !important; color: #aaaaaa !important; text-transform: uppercase; font-weight: bold; }
-    .stat-desc { font-size: 0.75rem !important; color: #888888 !important; }
+    .stat-value { font-size: 1.5rem !important; font-weight: 900 !important; color: #00E6FF !important; margin: 5px 0; }
+    .stat-label { font-size: 0.80rem !important; color: #aaaaaa !important; text-transform: uppercase; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -83,32 +69,46 @@ def apply_quantum_indicators(df):
     s_h, s_l = s_macd.rolling(100, min_periods=1).max(), s_macd.rolling(100, min_periods=1).min()
     df['s_speed'] = ((s_macd - s_l) / (s_h - s_l).replace(0, 0.001) * 100) - 50
 
+    # RENK GEÇİŞLERİ HESAPLAMALARI (FUSION & SYNERGY)
+    df['f_hist'] = df['f_speed'] - df['f_sig']
+    df['fus_color'] = np.where(df['f_hist'] > df['f_hist'].shift(1), 'Blue', 'Yellow')
+    df['fus_Y_to_B'] = (df['fus_color'] == 'Blue') & (df['fus_color'].shift(1) == 'Yellow')
+    df['fus_B_to_DB'] = (df['fus_color'] == 'Blue') & df['fus_Y_to_B'].shift(1) & (df['f_hist'] > 0)
+    
+    df['syn_color'] = np.where(df['s_speed'] > df['s_speed'].shift(1), 'Blue', 'Yellow')
+    df['syn_Y_to_B'] = (df['syn_color'] == 'Blue') & (df['syn_color'].shift(1) == 'Yellow')
+    df['syn_B_to_DB'] = (df['syn_color'] == 'Blue') & df['syn_Y_to_B'].shift(1) & (df['s_speed'] > 0)
+
+    # OMNI MOMENTUM
+    rsi_fast, rsi_mid = get_rsi(df['Close'], 7), get_rsi(df['Close'], 14)
+    df['omni'] = (rsi_fast + rsi_mid) / 2
+    df['omni_color'] = np.where(df['omni'] > df['omni'].shift(1), 'Blue', 'Yellow')
+    df['omni_Y_to_B'] = (df['omni_color'] == 'Blue') & (df['omni_color'].shift(1) == 'Yellow')
+
+    # SPEED / SIGNAL KESİŞİMİ
+    df['speed_cross_up'] = (df['f_speed'] > df['f_sig']) & (df['f_speed'].shift(1) <= df['f_sig'].shift(1))
+
     # V695: WHALE POWER 
-    rsi_mid = get_rsi(df['Close'], 14)
     c_range = (df['High'] - df['Low']).clip(lower=0.001)
     delta = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / c_range
     vol_sma20 = df['Volume'].rolling(20, min_periods=1).mean().clip(lower=0.001)
-    
     delta_vol = (delta * df['Volume']).rolling(20, min_periods=1).mean() / vol_sma20
     rvol = (df['Volume'] / vol_sma20.clip(lower=1)).clip(upper=2.5)
     
     base_pwr = ((rsi_mid - 50) + (delta_vol * 40)) * rvol * 1.5
     logic_pwr = np.log(1 + np.exp(np.clip(base_pwr / 5, -50, 50))) * 5
-    
     fvg_bull = (df['Low'] > df['High'].shift(2)) & (df['Close'] > df['Open'])
     logic_pwr = np.where(fvg_bull, logic_pwr + 35, logic_pwr)
 
     df['w_pwr'] = np.clip((np.log10(1 + logic_pwr) * 65)**0.8 * 1.8, 0, 100)
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
-
-    # SİNYAL ÜRETİCİLERİ 
-    df['Syn_Color'] = np.where(df['s_speed'] > df['s_speed'].shift(1), 'Mavi/Turkuaz', 'Kırmızı/Pembe')
-    df['Fus_Cross'] = np.where(df['f_speed'] > df['f_sig'], 'Pozitif', 'Negatif')
-    df['Whale_State'] = np.where(df['w_pwr'] > 70, 'Full Kırmızı (Whale IN)', np.where(df['w_pwr'] < df['pct_pro'], 'Sarı Uç (Whale OUT)', 'Nötr'))
     
-    df['VSA_Ignition'] = (df['Volume'] > vol_sma20 * 2) & (df['Close'] > df['Open'])
-    ema9 = df['Close'].ewm(span=9, adjust=False).mean()
-    df['Bear_Trap'] = (df['Low'] < ema9) & (df['Close'] > ema9) & (df['Volume'] > vol_sma20 * 1.5)
+    df['whale_in'] = df['w_pwr'] > df['pct_pro'] # Kırmızı Histogram
+    df['whale_Y_to_R'] = df['whale_in'] & (~df['whale_in'].shift(1)) # Sarıdan Kırmızıya (Re-entry)
+
+    # RS MOMENTUM (Basit Kendi İç Göreli Gücü)
+    df['rs_mom'] = df['Close'].pct_change(20)
+    df['rs_leader'] = df['rs_mom'] > 0
 
     return df
 
@@ -131,35 +131,72 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
         tk = yf.Ticker(ticker)
         df = tk.history(period="3y", interval="1d")
         
-        if df.empty or len(df) < 50: 
-            return None
+        if df.empty or len(df) < 50: return None
             
         df = apply_quantum_indicators(df)
-        
         df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
         rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].index
         
-        if len(rally_indices) == 0: 
-            return {"count": 0}
+        if len(rally_indices) == 0: return {"count": 0}
 
-        stats = {"count": len(rally_indices), "syn_blue": 0, "fus_pos": 0, "whale_in": 0, "vsa_ign": 0, "bear_trap": 0}
+        events_list = []
+        stats = {
+            "count": len(rally_indices),
+            "fus_YB": 0, "fus_BDB": 0, 
+            "syn_YB": 0, "syn_BDB": 0, 
+            "omni_YB": 0, "spd_cross": 0,
+            "whale_YR": 0
+        }
 
         for idx in rally_indices:
             loc = df.index.get_loc(idx)
             if loc < 4: continue
             
             pre_window = df.iloc[loc-4:loc+1]
+            future_ret = df['Future_Return'].iloc[loc]
             
-            if (pre_window['Syn_Color'] == 'Mavi/Turkuaz').any(): stats['syn_blue'] += 1
-            if (pre_window['Fus_Cross'] == 'Pozitif').any(): stats['fus_pos'] += 1
-            if (pre_window['Whale_State'] == 'Full Kırmızı (Whale IN)').any(): stats['whale_in'] += 1
-            if pre_window['VSA_Ignition'].any(): stats['vsa_ign'] += 1
-            if pre_window['Bear_Trap'].any(): stats['bear_trap'] += 1
+            # 4 Günlük İçindeki Olay Sayıları
+            c_fus_yb = pre_window['fus_Y_to_B'].sum()
+            c_fus_bdb = pre_window['fus_B_to_DB'].sum()
+            c_syn_yb = pre_window['syn_Y_to_B'].sum()
+            c_syn_bdb = pre_window['syn_B_to_DB'].sum()
+            c_omni_yb = pre_window['omni_Y_to_B'].sum()
+            c_spd_cross = pre_window['speed_cross_up'].sum()
+            c_whale_yr = pre_window['whale_Y_to_R'].sum()
+            rs_state = "Lider" if df['rs_leader'].iloc[loc] else "Geri"
 
-        for k in ["syn_blue", "fus_pos", "whale_in", "vsa_ign", "bear_trap"]:
+            # Genel İstatistik Toplamları (En az 1 kere olduysa say)
+            if c_fus_yb > 0: stats['fus_YB'] += 1
+            if c_fus_bdb > 0: stats['fus_BDB'] += 1
+            if c_syn_yb > 0: stats['syn_YB'] += 1
+            if c_syn_bdb > 0: stats['syn_BDB'] += 1
+            if c_omni_yb > 0: stats['omni_YB'] += 1
+            if c_spd_cross > 0: stats['spd_cross'] += 1
+            if c_whale_yr > 0: stats['whale_YR'] += 1
+
+            # Rapor İçin Satır Formatı
+            str_fus = f"{c_fus_yb}x Y->B, {c_fus_bdb}x B->DB" if (c_fus_yb+c_fus_bdb)>0 else "-"
+            str_syn = f"{c_syn_yb}x Y->B, {c_syn_bdb}x B->DB" if (c_syn_yb+c_syn_bdb)>0 else "-"
+            str_omni = f"{c_omni_yb}x Y->B" if c_omni_yb>0 else "-"
+            str_spd = "Kesti ✅" if c_spd_cross>0 else "-"
+            str_whale = f"{c_whale_yr}x Y->R (In)" if c_whale_yr>0 else "-"
+
+            events_list.append({
+                "Tarih": idx.strftime('%Y-%m-%d'),
+                "Getiri": f"%{future_ret*100:.1f}",
+                "Füzyon (V700)": str_fus,
+                "Synergy (V665)": str_syn,
+                "Omni Mom.": str_omni,
+                "Speed/Sig.": str_spd,
+                "Whale (V695)": str_whale,
+                "RS": rs_state
+            })
+
+        # Yüzdelere çevir
+        for k in ["fus_YB", "fus_BDB", "syn_YB", "syn_BDB", "omni_YB", "spd_cross", "whale_YR"]:
             stats[k] = (stats[k] / stats['count']) * 100
             
-        return stats
+        return {"stats": stats, "events": pd.DataFrame(events_list)}
     except Exception as e:
         return None
 
@@ -221,7 +258,10 @@ with tab2:
                         st.markdown(f"**{stocks[0]} Odaklı En Güncel Haberler:**")
                         if n_list:
                             for n in n_list:
-                                st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
+                                # HATA BURADA GİDERİLDİ: Key Error almamak için .get() kullanıldı.
+                                link = n.get('link', n.get('url', '#'))
+                                title = n.get('title', 'Başlık Yok')
+                                st.markdown(f"- <a href='{link}' target='_blank' style='color:#00BFFF;'>{title}</a>", unsafe_allow_html=True)
                         else:
                             st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi.")
                             st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} haberlerini anında görüntüle**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
@@ -254,11 +294,11 @@ with tab2:
                             st.markdown(res_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TAB 3: V700 RALLİ ÖNCESİ İSTATİSTİK MOTORU (DİNAMİK)
+# TAB 3: V700 RALLİ ÖNCESİ İSTATİSTİK MOTORU (DETAYLI MATRİS)
 # ---------------------------------------------------------
 with tab3:
-    st.markdown("### 🦈 Da Vinci: Esnek Kinetik Ralli Hafıza Taraması")
-    st.caption("Fiyatın belirlediğin gün sayısında, belirlediğin yüzde (%) kadar ralli yaptığı tarihsel anları tespit eder. Ralliden önceki 4 günlük mumlardaki sinyallerin isabet oranını hesaplar.")
+    st.markdown("### 🦈 Da Vinci: Detaylı Kinetik Ralli Matrisi")
+    st.caption("Fiyatın ralli yaptığı her bir spesifik olay için, ralliden önceki 4 günlük mumlardaki renk değişimlerini (Yellow to Blue, Blue to Dark Blue vb.) detaylı olarak raporlar.")
     
     col_t1, col_t2, col_t3, col_t4 = st.columns(4)
     with col_t1: 
@@ -270,30 +310,37 @@ with tab3:
     with col_t4: 
         rally_pct = st.number_input("Hedef Yükseliş (%)", min_value=1, max_value=100, value=15)
         
-    if st.button("⚛️ RALLİ İSTATİSTİKLERİNİ HESAPLA", use_container_width=True):
-        with st.spinner(f"{sel_stock} için son 3 yılın verileri taranıyor..."):
-            stats = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
+    if st.button("⚛️ RALLİ MATRİSİNİ VE İSTATİSTİKLERİ ÇIKAR", use_container_width=True):
+        with st.spinner(f"{sel_stock} için son 3 yılın verileri mikroskobik düzeyde inceleniyor..."):
+            res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
             
-            if stats is None or stats['count'] == 0:
-                st.error(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi bulunamadı. Lütfen hedef yüzdeyi veya gün sayısını düşürerek tekrar dene.")
+            if res is None or res['stats']['count'] == 0:
+                st.error(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi bulunamadı.")
             else:
-                st.success(f"Geçmişte tam olarak **{stats['count']} adet** Majör Ralli başlangıç noktası tespit edildi!")
+                stats = res['stats']
+                df_events = res['events']
                 
-                st.markdown("#### 🔍 Ralli Başlamadan Önceki 4 Günün Karakteristiği:")
-                sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+                st.success(f"Geçmişte **{stats['count']} adet** Majör Ralli noktası tespit edildi! Ralli öncesi son 4 günün analizi aşağıdadır:")
                 
-                with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy (V665)</div><div class='stat-value'>%{stats['syn_blue']:.0f}</div><div class='stat-desc'>Maviye Döndü</div></div>", unsafe_allow_html=True)
-                with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Fusion (V700)</div><div class='stat-value'>%{stats['fus_pos']:.0f}</div><div class='stat-desc'>Pozitif Kesti</div></div>", unsafe_allow_html=True)
-                with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN (V695)</div><div class='stat-value'>%{stats['whale_in']:.0f}</div><div class='stat-desc'>Giriş Gözlendi</div></div>", unsafe_allow_html=True)
-                with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Afterburner</div><div class='stat-value'>%{stats['vsa_ign']:.0f}</div><div class='stat-desc'>Ignition Patlaması</div></div>", unsafe_allow_html=True)
-                with sc5: st.markdown(f"<div class='stat-box'><div class='stat-label'>Kurumsal Trap</div><div class='stat-value'>%{stats['bear_trap']:.0f}</div><div class='stat-desc'>Ayı Tuzağı Kuruldu</div></div>", unsafe_allow_html=True)
+                # BÖLÜM 1: OLAY BAZLI DETAYLI TABLO
+                st.markdown("#### 📂 BÖLÜM 1: Spesifik Ralli Raporları (Event-by-Event)")
+                st.dataframe(df_events, use_container_width=True, hide_index=True)
+                
+                # BÖLÜM 2: GENEL İSTATİSTİK (KÜMÜLATİF)
+                st.markdown("#### 📊 BÖLÜM 2: Kümülatif Sinyal İsabet Oranları")
+                
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon (V700)</div><div class='stat-value'>%{stats['fus_YB']:.0f}</div><div class='stat-desc'>Yellow to Blue İsabeti</div></div>", unsafe_allow_html=True)
+                with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy (V665)</div><div class='stat-value'>%{stats['syn_YB']:.0f}</div><div class='stat-desc'>Yellow to Blue İsabeti</div></div>", unsafe_allow_html=True)
+                with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Speed/Signal</div><div class='stat-value'>%{stats['spd_cross']:.0f}</div><div class='stat-desc'>Yukarı Kesişim İsabeti</div></div>", unsafe_allow_html=True)
+                with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN (V695)</div><div class='stat-value'>%{stats['whale_YR']:.0f}</div><div class='stat-desc'>Sarıdan Kırmızıya Re-Entry</div></div>", unsafe_allow_html=True)
 
                 st.divider()
                 st.markdown(f"""
                 <div style="background-color: #0a0a0a; padding: 15px; border-radius: 10px; border-left: 5px solid #00ff88;">
                 <span style="color:#00ff88; font-weight:bold; font-size:1.1rem;">🧠 DA VINCI SENTETİK SONUÇ:</span><br>
-                <span style="color:#e0e0e0; font-size:1rem;">İstatistikler gösteriyor ki <strong>{sel_stock}</strong> kodlu varlıkta büyük fiyat hareketlerinden hemen önceki 
-                {lookback_days} günlük periyotta özellikle <strong>Whale IN (V695)</strong> ve <strong>Synergy Hat (V665)</strong> değişimleri, 
-                kurumsal birikimin en güçlü öncü göstergesidir.</span>
+                <span style="color:#e0e0e0; font-size:1rem;">Ralli öncesi 4 periyotluk pencerelerde en kritik öncü sinyallerin isabet yüzdeleri yukarıdadır. 
+                <strong>% {stats['fus_BDB']:.0f}</strong> oranında Füzyon hattı Blue to Dark Blue (Koyu Mavi Onay) yakalamış, 
+                <strong>% {stats['syn_BDB']:.0f}</strong> oranında Synergy hız onayı (Dark Blue) alınmıştır.</span>
                 </div>
                 """, unsafe_allow_html=True)
