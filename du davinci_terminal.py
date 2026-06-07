@@ -44,7 +44,7 @@ THEMES = {
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (ÇALIŞAN ANA ÇEKİRDEK)
+# 2. PANDAS VEKTÖREL MATEMATİK MOTORU
 # ==========================================
 def get_rma(s, period):
     return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
@@ -58,6 +58,8 @@ def get_rsi(s, period):
 
 def apply_quantum_indicators(df):
     if len(df) < 50: return df
+    
+    if 'Close' not in df.columns: return df
     
     # 1. V665: FUSION & SYNERGY
     f_macd = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
@@ -89,7 +91,7 @@ def apply_quantum_indicators(df):
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
 
     # ========================================================
-    # 3. YENİ DETAYLI RENK GEÇİŞ MATRİSLERİ (Çökmeyecek Şekilde Eklendi)
+    # 3. YENİ DETAYLI RENK GEÇİŞ MATRİSLERİ (ÇÖKME ENGELLENDİ)
     # ========================================================
     
     # FUSION DETAY
@@ -102,20 +104,20 @@ def apply_quantum_indicators(df):
     df['Syn_Y2B'] = (df['Syn_Color'] == 'Blue') & (df['Syn_Color'].shift(1) == 'Yellow')
     df['Syn_B2DB'] = (df['Syn_Color'] == 'Blue') & df['Syn_Y2B'].shift(1) & (df['s_speed'] > 0)
 
-    # OMNI MOMENTUM
+    # OMNI MOMENTUM (HATA DÜZELTİLDİ: ~ yerine <= kullanıldı)
     rsi_fast = get_rsi(df['Close'], 7)
     df['Omni'] = (rsi_fast + rsi_mid) / 2
-    df['Omni_Y2B'] = (df['Omni'] > df['Omni'].shift(1)) & ~(df['Omni'].shift(1) > df['Omni'].shift(2))
+    df['Omni_Y2B'] = (df['Omni'] > df['Omni'].shift(1)) & (df['Omni'].shift(1) <= df['Omni'].shift(2))
 
     # SPEED / SIGNAL KESİŞİMİ
     df['Spd_Cross'] = (df['f_speed'] > df['f_sig']) & (df['f_speed'].shift(1) <= df['f_sig'].shift(1))
 
-    # WHALE RE-ENTRY DETAY
+    # WHALE RE-ENTRY DETAY (HATA DÜZELTİLDİ: float çakışmasını engellemek için == False kullanıldı)
     df['Whale_In'] = df['w_pwr'] > df['pct_pro']
-    df['Whale_Y2R'] = df['Whale_In'] & ~df['Whale_In'].shift(1)
+    df['Whale_Y2R'] = df['Whale_In'] & (df['Whale_In'].shift(1) == False)
 
     # GÖRECELİ GÜÇ (RS) LİDERLİĞİ
-    df['RS_Leader'] = df['Close'].pct_change(20) > 0
+    df['RS_Leader'] = df['Close'].pct_change(20, fill_method=None) > 0
 
     return df
 
@@ -124,7 +126,6 @@ def apply_quantum_indicators(df):
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
-    """Yahoo Finance API'den Gelen Boş veya Bozuk Linkleri Kesin Olarak Yok Eder"""
     valid_news = []
     try:
         news_data = yf.Ticker(ticker).news
@@ -132,7 +133,6 @@ def fetch_news_safely(ticker):
             for n in news_data:
                 title = n.get('title', '').strip()
                 link = n.get('link', n.get('url', '')).strip()
-                # Sahte başlıkları ve boş linkleri direkt atla
                 if title and link and link != '#' and "Yahoo" not in title:
                      valid_news.append({"title": title, "link": link})
                      if len(valid_news) == 3: break
@@ -143,20 +143,16 @@ def fetch_news_safely(ticker):
 @st.cache_data
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
-        # SENİN ÇALIŞAN ÇEKİRDEK KODUN: History Metodu (Sessiz hataları engeller)
         tk = yf.Ticker(ticker)
         df = tk.history(period="3y", interval="1d")
         
-        # Eğer API gerçekten veri yollamazsa "0 ralli" yalanını söyleme, gerçeği bildir:
         if df.empty or len(df) < 50: 
             return {"error": f"⚠️ Yahoo Finance '{ticker}' için veriyi şu an gönderemiyor. Lütfen borsa kodunu kontrol et veya API sınırını bekleyip tekrar dene."}
             
         df = apply_quantum_indicators(df)
         
-        # Gelecekteki hareketi hesapla
         df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
         
-        # Eşiği aşan Ralli Başlangıç Noktalarını Bul
         rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].index
         
         if len(rally_indices) == 0: 
@@ -171,20 +167,17 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             "whale_YR": 0
         }
 
-        # SENİN ÇALIŞAN DÖNGÜN, DETAYLI MATRİSLE BİRLEŞTİ
         for idx in rally_indices:
             loc = df.index.get_loc(idx)
             
-            # Pandas Duplicate Index Zırhı (Sessiz Çökmeyi Engeller)
             if isinstance(loc, slice): loc = loc.start
             elif isinstance(loc, np.ndarray): loc = np.where(loc)[0][0]
             
             if loc < 4: continue
             
-            pre_window = df.iloc[loc-4:loc+1] # Ralli öncesi son 4 gün
+            pre_window = df.iloc[loc-4:loc+1]
             future_ret = df['Future_Return'].iloc[loc]
             
-            # 4 Günlük İçindeki Olayları Say
             c_fus_yb = pre_window['Fus_Y2B'].sum()
             c_fus_bdb = pre_window['Fus_B2DB'].sum()
             c_syn_yb = pre_window['Syn_Y2B'].sum()
@@ -194,7 +187,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             c_whale_yr = pre_window['Whale_Y2R'].sum()
             rs_state = "Lider" if df['RS_Leader'].iloc[loc] else "Geri"
 
-            # Kümülatif İstatistik İçin En Az 1 Kere Olduysa Say
             if c_fus_yb > 0: stats['fus_YB'] += 1
             if c_fus_bdb > 0: stats['fus_BDB'] += 1
             if c_syn_yb > 0: stats['syn_YB'] += 1
@@ -203,12 +195,11 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             if c_spd_cross > 0: stats['spd_cross'] += 1
             if c_whale_yr > 0: stats['whale_YR'] += 1
 
-            # Etkinlik Tablosu Formatı
-            str_fus = f"{c_fus_yb}x Yellow->Blue, {c_fus_bdb}x Blue->DarkBlue" if (c_fus_yb+c_fus_bdb)>0 else "-"
-            str_syn = f"{c_syn_yb}x Yellow->Blue, {c_syn_bdb}x Blue->DarkBlue" if (c_syn_yb+c_syn_bdb)>0 else "-"
+            str_fus = f"{c_fus_yb}x Y->B, {c_fus_bdb}x B->DB" if (c_fus_yb+c_fus_bdb)>0 else "-"
+            str_syn = f"{c_syn_yb}x Y->B, {c_syn_bdb}x B->DB" if (c_syn_yb+c_syn_bdb)>0 else "-"
             str_omni = f"{c_omni_yb}x Y->B" if c_omni_yb>0 else "-"
             str_spd = "Kesti ✅" if c_spd_cross>0 else "-"
-            str_whale = f"{c_whale_yr}x Yellow->Red" if c_whale_yr>0 else "-"
+            str_whale = f"{c_whale_yr}x Y->R" if c_whale_yr>0 else "-"
 
             events_list.append({
                 "Tarih": idx.strftime('%Y-%m-%d'),
@@ -221,7 +212,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
                 "RS Durumu": rs_state
             })
 
-        # Yüzdelere çevir
         for k in ["fus_YB", "fus_BDB", "syn_YB", "syn_BDB", "omni_YB", "spd_cross", "whale_YR"]:
             stats[k] = (stats[k] / stats['count']) * 100
             
@@ -365,7 +355,6 @@ with tab3:
                 res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
                 
                 if "error" in res:
-                    # Sistem API kaynaklı veya hesaplama kaynaklı çökerse yalan söylemez, direkt hatayı basar:
                     st.error(res["error"])
                 elif res["stats"]["count"] == 0:
                     st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi tespit edilemedi.")
