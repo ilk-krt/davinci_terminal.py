@@ -57,7 +57,7 @@ THEMES = {
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (ONARILMIŞ)
+# 2. PANDAS VEKTÖREL MATEMATİK MOTORU
 # ==========================================
 def get_rma(s, period):
     return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
@@ -83,7 +83,7 @@ def apply_quantum_indicators(df):
     s_h, s_l = s_macd.rolling(100, min_periods=1).max(), s_macd.rolling(100, min_periods=1).min()
     df['s_speed'] = ((s_macd - s_l) / (s_h - s_l).replace(0, 0.001) * 100) - 50
 
-    # V695: WHALE POWER (Düzeltilmiş Pandas Vektörel Mantığı)
+    # V695: WHALE POWER 
     rsi_mid = get_rsi(df['Close'], 14)
     c_range = (df['High'] - df['Low']).clip(lower=0.001)
     delta = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / c_range
@@ -95,19 +95,17 @@ def apply_quantum_indicators(df):
     base_pwr = ((rsi_mid - 50) + (delta_vol * 40)) * rvol * 1.5
     logic_pwr = np.log(1 + np.exp(np.clip(base_pwr / 5, -50, 50))) * 5
     
-    # FVG Düzeltmesi (Sessiz çökmeyi engelleyen Numpy Where kullanımı)
     fvg_bull = (df['Low'] > df['High'].shift(2)) & (df['Close'] > df['Open'])
     logic_pwr = np.where(fvg_bull, logic_pwr + 35, logic_pwr)
 
     df['w_pwr'] = np.clip((np.log10(1 + logic_pwr) * 65)**0.8 * 1.8, 0, 100)
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
 
-    # --- SİNYAL ÜRETİCİLERİ ---
+    # SİNYAL ÜRETİCİLERİ 
     df['Syn_Color'] = np.where(df['s_speed'] > df['s_speed'].shift(1), 'Mavi/Turkuaz', 'Kırmızı/Pembe')
     df['Fus_Cross'] = np.where(df['f_speed'] > df['f_sig'], 'Pozitif', 'Negatif')
     df['Whale_State'] = np.where(df['w_pwr'] > 70, 'Full Kırmızı (Whale IN)', np.where(df['w_pwr'] < df['pct_pro'], 'Sarı Uç (Whale OUT)', 'Nötr'))
     
-    # Kinetik Patlamalar (VSA) ve Trapler
     df['VSA_Ignition'] = (df['Volume'] > vol_sma20 * 2) & (df['Close'] > df['Open'])
     ema9 = df['Close'].ewm(span=9, adjust=False).mean()
     df['Bear_Trap'] = (df['Low'] < ema9) & (df['Close'] > ema9) & (df['Volume'] > vol_sma20 * 1.5)
@@ -117,7 +115,7 @@ def apply_quantum_indicators(df):
 # ==========================================
 # 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU
 # ==========================================
-@st.cache_data(ttl=600) # 10 dakika önbellek (API Ban yememek için)
+@st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
     try:
         news_data = yf.Ticker(ticker).news
@@ -130,7 +128,6 @@ def fetch_news_safely(ticker):
 @st.cache_data
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
-        # Hata önleyici History Metodu (yf.download yerine)
         tk = yf.Ticker(ticker)
         df = tk.history(period="3y", interval="1d")
         
@@ -139,10 +136,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             
         df = apply_quantum_indicators(df)
         
-        # Gelecekteki hareketi hesapla
         df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
-        
-        # Eşiği aşan Ralli Başlangıç Noktalarını Bul
         rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].index
         
         if len(rally_indices) == 0: 
@@ -154,7 +148,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             loc = df.index.get_loc(idx)
             if loc < 4: continue
             
-            pre_window = df.iloc[loc-4:loc+1] # Ralli öncesi son 4 gün
+            pre_window = df.iloc[loc-4:loc+1]
             
             if (pre_window['Syn_Color'] == 'Mavi/Turkuaz').any(): stats['syn_blue'] += 1
             if (pre_window['Fus_Cross'] == 'Pozitif').any(): stats['fus_pos'] += 1
@@ -162,7 +156,6 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             if pre_window['VSA_Ignition'].any(): stats['vsa_ign'] += 1
             if pre_window['Bear_Trap'].any(): stats['bear_trap'] += 1
 
-        # Yüzdelere çevir
         for k in ["syn_blue", "fus_pos", "whale_in", "vsa_ign", "bear_trap"]:
             stats[k] = (stats[k] / stats['count']) * 100
             
@@ -177,7 +170,7 @@ st.title("🏛️ DA VINCI: İSTİHBARAT & RALLİ İSTATİSTİK MOTORU")
 tab1, tab2, tab3 = st.tabs(["🌍 LİKİDİTE & OPEX MASASI", "⚖️ THEMATIC VALUATION GAP", "🦈 V700 RALLİ ÖNCESİ İSTATİSTİĞİ"])
 
 # ---------------------------------------------------------
-# TAB 1: MAKRO, OPEX VE JEOPOLİTİK (API BAĞLANTILI MOCK)
+# TAB 1: MAKRO, OPEX VE JEOPOLİTİK 
 # ---------------------------------------------------------
 with tab1:
     st.markdown("### 📡 Canlı Makro İstihbarat Radarı")
@@ -282,9 +275,9 @@ with tab3:
             stats = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
             
             if stats is None or stats['count'] == 0:
-                st.error(f"⚠️ {sel_stock} için {lookback_days} günde %{rally_pct}+ hareket bulunamadı.")
+                st.error(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi bulunamadı. Lütfen hedef yüzdeyi veya gün sayısını düşürerek tekrar dene.")
             else:
-                st.success(f"Geçmişte **{stats['count']} adet** Majör Ralli noktası tespit edildi!")
+                st.success(f"Geçmişte tam olarak **{stats['count']} adet** Majör Ralli başlangıç noktası tespit edildi!")
                 
                 st.markdown("#### 🔍 Ralli Başlamadan Önceki 4 Günün Karakteristiği:")
                 sc1, sc2, sc3, sc4, sc5 = st.columns(5)
