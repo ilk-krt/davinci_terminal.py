@@ -25,8 +25,8 @@ st.markdown("""
     div.stButton > button:hover { background-color: #00ff88 !important; color: #000 !important; border-color: #fff !important; }
     .macro-card { background-color: #111111 !important; border: 1px solid #333; border-left: 4px solid #FF1744; padding: 15px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
     .stat-box { background: linear-gradient(145deg, #1a1a1a, #0a0a0a) !important; padding: 15px; border-radius: 8px; border: 1px solid #444; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
-    .stat-value { font-size: 1.5rem !important; font-weight: 900 !important; color: #00E6FF !important; margin: 5px 0; }
-    .stat-label { font-size: 0.80rem !important; color: #aaaaaa !important; text-transform: uppercase; font-weight: bold; }
+    .stat-value { font-size: 1.2rem !important; font-weight: 900 !important; color: #00E6FF !important; margin: 5px 0; }
+    .stat-label { font-size: 0.75rem !important; color: #aaaaaa !important; text-transform: uppercase; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -40,11 +40,11 @@ THEMES = {
     "Nükleer & Enerji Altyapısı": ["URA", "NLR", "CEG", "VST", "CCJ"],
     "Fotonik & Kuantum": ["QTUM", "IONQ", "RGTI", "COHR", "LITE"],
     "Siber Güvenlik (Cyber)": ["CIBR", "HACK", "CRWD", "PANW", "FTNT"],
-    "Kendi Hisseni Gir": ["MANUEL"] # KULLANICI MANUEL GİRİŞİ
+    "📌 Kendi Hisseni Gir": ["MANUEL"]
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU
+# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (ÇALIŞAN ANA ÇEKİRDEK)
 # ==========================================
 def get_rma(s, period):
     return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
@@ -59,10 +59,7 @@ def get_rsi(s, period):
 def apply_quantum_indicators(df):
     if len(df) < 50: return df
     
-    # Sütun isimlerini güvenliğe al
-    if 'Close' not in df.columns: return df
-    
-    # V665: FUSION & SYNERGY
+    # 1. V665: FUSION & SYNERGY
     f_macd = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
     f_h, f_l = f_macd.rolling(100, min_periods=1).max(), f_macd.rolling(100, min_periods=1).min()
     df['f_speed'] = ((f_macd - f_l) / (f_h - f_l).replace(0, 0.001) * 100) - 50
@@ -73,46 +70,52 @@ def apply_quantum_indicators(df):
     s_h, s_l = s_macd.rolling(100, min_periods=1).max(), s_macd.rolling(100, min_periods=1).min()
     df['s_speed'] = ((s_macd - s_l) / (s_h - s_l).replace(0, 0.001) * 100) - 50
 
-    # RENK GEÇİŞLERİ HESAPLAMALARI
-    df['f_hist'] = df['f_speed'] - df['f_sig']
-    df['fus_color'] = np.where(df['f_hist'] > df['f_hist'].shift(1), 'Blue', 'Yellow')
-    df['fus_Y_to_B'] = (df['fus_color'] == 'Blue') & (df['fus_color'].shift(1) == 'Yellow')
-    df['fus_B_to_DB'] = (df['fus_color'] == 'Blue') & df['fus_Y_to_B'].shift(1) & (df['f_hist'] > 0)
-    
-    df['syn_color'] = np.where(df['s_speed'] > df['s_speed'].shift(1), 'Blue', 'Yellow')
-    df['syn_Y_to_B'] = (df['syn_color'] == 'Blue') & (df['syn_color'].shift(1) == 'Yellow')
-    df['syn_B_to_DB'] = (df['syn_color'] == 'Blue') & df['syn_Y_to_B'].shift(1) & (df['s_speed'] > 0)
-
-    # OMNI MOMENTUM
-    rsi_fast, rsi_mid = get_rsi(df['Close'], 7), get_rsi(df['Close'], 14)
-    df['omni'] = (rsi_fast + rsi_mid) / 2
-    df['omni_color'] = np.where(df['omni'] > df['omni'].shift(1), 'Blue', 'Yellow')
-    df['omni_Y_to_B'] = (df['omni_color'] == 'Blue') & (df['omni_color'].shift(1) == 'Yellow')
-
-    # SPEED / SIGNAL KESİŞİMİ
-    df['speed_cross_up'] = (df['f_speed'] > df['f_sig']) & (df['f_speed'].shift(1) <= df['f_sig'].shift(1))
-
-    # V695: WHALE POWER 
+    # 2. V695: WHALE POWER
+    rsi_mid = get_rsi(df['Close'], 14)
     c_range = (df['High'] - df['Low']).clip(lower=0.001)
     delta = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / c_range
     vol_sma20 = df['Volume'].rolling(20, min_periods=1).mean().clip(lower=0.001)
+    
     delta_vol = (delta * df['Volume']).rolling(20, min_periods=1).mean() / vol_sma20
     rvol = (df['Volume'] / vol_sma20.clip(lower=1)).clip(upper=2.5)
     
     base_pwr = ((rsi_mid - 50) + (delta_vol * 40)) * rvol * 1.5
     logic_pwr = np.log(1 + np.exp(np.clip(base_pwr / 5, -50, 50))) * 5
+    
     fvg_bull = (df['Low'] > df['High'].shift(2)) & (df['Close'] > df['Open'])
     logic_pwr = np.where(fvg_bull, logic_pwr + 35, logic_pwr)
 
     df['w_pwr'] = np.clip((np.log10(1 + logic_pwr) * 65)**0.8 * 1.8, 0, 100)
     df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
-    
-    df['whale_in'] = df['w_pwr'] > df['pct_pro'] 
-    df['whale_Y_to_R'] = df['whale_in'] & (~df['whale_in'].shift(1)) 
 
-    # RS MOMENTUM
-    df['rs_mom'] = df['Close'].pct_change(20, fill_method=None)
-    df['rs_leader'] = df['rs_mom'] > 0
+    # ========================================================
+    # 3. YENİ DETAYLI RENK GEÇİŞ MATRİSLERİ (Çökmeyecek Şekilde Eklendi)
+    # ========================================================
+    
+    # FUSION DETAY
+    df['Fus_Color'] = np.where(df['f_speed'] > df['f_speed'].shift(1), 'Blue', 'Yellow')
+    df['Fus_Y2B'] = (df['Fus_Color'] == 'Blue') & (df['Fus_Color'].shift(1) == 'Yellow')
+    df['Fus_B2DB'] = (df['Fus_Color'] == 'Blue') & df['Fus_Y2B'].shift(1) & (df['f_speed'] > 0)
+    
+    # SYNERGY DETAY
+    df['Syn_Color'] = np.where(df['s_speed'] > df['s_speed'].shift(1), 'Blue', 'Yellow')
+    df['Syn_Y2B'] = (df['Syn_Color'] == 'Blue') & (df['Syn_Color'].shift(1) == 'Yellow')
+    df['Syn_B2DB'] = (df['Syn_Color'] == 'Blue') & df['Syn_Y2B'].shift(1) & (df['s_speed'] > 0)
+
+    # OMNI MOMENTUM
+    rsi_fast = get_rsi(df['Close'], 7)
+    df['Omni'] = (rsi_fast + rsi_mid) / 2
+    df['Omni_Y2B'] = (df['Omni'] > df['Omni'].shift(1)) & ~(df['Omni'].shift(1) > df['Omni'].shift(2))
+
+    # SPEED / SIGNAL KESİŞİMİ
+    df['Spd_Cross'] = (df['f_speed'] > df['f_sig']) & (df['f_speed'].shift(1) <= df['f_sig'].shift(1))
+
+    # WHALE RE-ENTRY DETAY
+    df['Whale_In'] = df['w_pwr'] > df['pct_pro']
+    df['Whale_Y2R'] = df['Whale_In'] & ~df['Whale_In'].shift(1)
+
+    # GÖRECELİ GÜÇ (RS) LİDERLİĞİ
+    df['RS_Leader'] = df['Close'].pct_change(20) > 0
 
     return df
 
@@ -121,7 +124,7 @@ def apply_quantum_indicators(df):
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
-    """Yahoo Finance Haberlerini Çeker, Bozuk ve Boş Başlıkları Katı Bir Şekilde Filtreler."""
+    """Yahoo Finance API'den Gelen Boş veya Bozuk Linkleri Kesin Olarak Yok Eder"""
     valid_news = []
     try:
         news_data = yf.Ticker(ticker).news
@@ -129,37 +132,35 @@ def fetch_news_safely(ticker):
             for n in news_data:
                 title = n.get('title', '').strip()
                 link = n.get('link', n.get('url', '')).strip()
-                
-                # Başlık ve link boş değilse, ayrıca link '#' gibi sahte bir yönlendirme değilse ekle
-                if title and link and link != '#':
+                # Sahte başlıkları ve boş linkleri direkt atla
+                if title and link and link != '#' and "Yahoo" not in title:
                      valid_news.append({"title": title, "link": link})
                      if len(valid_news) == 3: break
-    except Exception:
+    except:
         pass
     return valid_news if len(valid_news) > 0 else None
 
 @st.cache_data
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
-        # yf.download yerine yf.Ticker(...).history() kullanıyoruz. Bu MultiIndex çökmesini engeller.
-        df = yf.Ticker(ticker).history(period="3y", interval="1d")
+        # SENİN ÇALIŞAN ÇEKİRDEK KODUN: History Metodu (Sessiz hataları engeller)
+        tk = yf.Ticker(ticker)
+        df = tk.history(period="3y", interval="1d")
         
+        # Eğer API gerçekten veri yollamazsa "0 ralli" yalanını söyleme, gerçeği bildir:
         if df.empty or len(df) < 50: 
-            return {"error": f"⚠️ '{ticker}' için Yahoo Finance 50 günden az veri döndürdü veya borsa kodu hatalı."}
+            return {"error": f"⚠️ Yahoo Finance '{ticker}' için veriyi şu an gönderemiyor. Lütfen borsa kodunu kontrol et veya API sınırını bekleyip tekrar dene."}
             
-        # Duplicate index sorununu kökünden çözüyoruz
-        df = df[~df.index.duplicated(keep='first')]
         df = apply_quantum_indicators(df)
         
         # Gelecekteki hareketi hesapla
         df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
         
-        # Ralli endekslerini bul
-        rally_mask = df['Future_Return'] >= (move_threshold_pct / 100.0)
-        rally_indices = df[rally_mask].index
+        # Eşiği aşan Ralli Başlangıç Noktalarını Bul
+        rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].index
         
         if len(rally_indices) == 0: 
-            return {"count": 0}
+            return {"stats": {"count": 0}}
 
         events_list = []
         stats = {
@@ -170,22 +171,30 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             "whale_YR": 0
         }
 
+        # SENİN ÇALIŞAN DÖNGÜN, DETAYLI MATRİSLE BİRLEŞTİ
         for idx in rally_indices:
             loc = df.index.get_loc(idx)
+            
+            # Pandas Duplicate Index Zırhı (Sessiz Çökmeyi Engeller)
+            if isinstance(loc, slice): loc = loc.start
+            elif isinstance(loc, np.ndarray): loc = np.where(loc)[0][0]
+            
             if loc < 4: continue
             
-            pre_window = df.iloc[loc-4:loc+1]
+            pre_window = df.iloc[loc-4:loc+1] # Ralli öncesi son 4 gün
             future_ret = df['Future_Return'].iloc[loc]
             
-            c_fus_yb = pre_window['fus_Y_to_B'].sum()
-            c_fus_bdb = pre_window['fus_B_to_DB'].sum()
-            c_syn_yb = pre_window['syn_Y_to_B'].sum()
-            c_syn_bdb = pre_window['syn_B_to_DB'].sum()
-            c_omni_yb = pre_window['omni_Y_to_B'].sum()
-            c_spd_cross = pre_window['speed_cross_up'].sum()
-            c_whale_yr = pre_window['whale_Y_to_R'].sum()
-            rs_state = "Lider" if df['rs_leader'].iloc[loc] else "Geri"
+            # 4 Günlük İçindeki Olayları Say
+            c_fus_yb = pre_window['Fus_Y2B'].sum()
+            c_fus_bdb = pre_window['Fus_B2DB'].sum()
+            c_syn_yb = pre_window['Syn_Y2B'].sum()
+            c_syn_bdb = pre_window['Syn_B2DB'].sum()
+            c_omni_yb = pre_window['Omni_Y2B'].sum()
+            c_spd_cross = pre_window['Spd_Cross'].sum()
+            c_whale_yr = pre_window['Whale_Y2R'].sum()
+            rs_state = "Lider" if df['RS_Leader'].iloc[loc] else "Geri"
 
+            # Kümülatif İstatistik İçin En Az 1 Kere Olduysa Say
             if c_fus_yb > 0: stats['fus_YB'] += 1
             if c_fus_bdb > 0: stats['fus_BDB'] += 1
             if c_syn_yb > 0: stats['syn_YB'] += 1
@@ -194,11 +203,12 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             if c_spd_cross > 0: stats['spd_cross'] += 1
             if c_whale_yr > 0: stats['whale_YR'] += 1
 
-            str_fus = f"{c_fus_yb}x Y->B, {c_fus_bdb}x B->DB" if (c_fus_yb+c_fus_bdb)>0 else "-"
-            str_syn = f"{c_syn_yb}x Y->B, {c_syn_bdb}x B->DB" if (c_syn_yb+c_syn_bdb)>0 else "-"
+            # Etkinlik Tablosu Formatı
+            str_fus = f"{c_fus_yb}x Yellow->Blue, {c_fus_bdb}x Blue->DarkBlue" if (c_fus_yb+c_fus_bdb)>0 else "-"
+            str_syn = f"{c_syn_yb}x Yellow->Blue, {c_syn_bdb}x Blue->DarkBlue" if (c_syn_yb+c_syn_bdb)>0 else "-"
             str_omni = f"{c_omni_yb}x Y->B" if c_omni_yb>0 else "-"
             str_spd = "Kesti ✅" if c_spd_cross>0 else "-"
-            str_whale = f"{c_whale_yr}x Y->R (In)" if c_whale_yr>0 else "-"
+            str_whale = f"{c_whale_yr}x Yellow->Red" if c_whale_yr>0 else "-"
 
             events_list.append({
                 "Tarih": idx.strftime('%Y-%m-%d'),
@@ -208,17 +218,16 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
                 "Omni Mom.": str_omni,
                 "Speed/Sig.": str_spd,
                 "Whale (V695)": str_whale,
-                "RS": rs_state
+                "RS Durumu": rs_state
             })
 
+        # Yüzdelere çevir
         for k in ["fus_YB", "fus_BDB", "syn_YB", "syn_BDB", "omni_YB", "spd_cross", "whale_YR"]:
             stats[k] = (stats[k] / stats['count']) * 100
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
-    
     except Exception as e:
-        # Eğer sistem çökerse, sessiz kalmak yerine hatanın kaynağını gösteriyoruz!
-        return {"error": f"SİSTEM ÇÖKMESİ: Analiz sırasında bir Python hatası oluştu: {str(e)}"}
+        return {"error": f"Sistem Çökmesi Tespit Edildi: {str(e)}"}
 
 # ==========================================
 # 4. ARAYÜZ (TABS)
@@ -286,7 +295,7 @@ with tab2:
     st.markdown("### ⚖️ Tematik Fon Liderleri ve Çarpan Uçurumu")
     
     for theme_name, stocks in THEMES.items():
-        if theme_name == "Kendi Hisseni Gir": continue 
+        if theme_name == "📌 Kendi Hisseni Gir": continue 
         
         with st.expander(f"📁 TEMA: {theme_name}"):
             news_col, val_col = st.columns([1, 2])
@@ -300,8 +309,8 @@ with tab2:
                             for n in n_list:
                                 st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
                         else:
-                            st.warning(f"⚠️ Yahoo Finance API haberleri döndüremedi.")
-                            st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} haberlerini anında görüntüle**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
+                            st.warning(f"⚠️ Yahoo Finance API haberleri döndüremedi veya haberler engellendi.")
+                            st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} canlı ara**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
             
             with val_col:
                 if st.button(f"📊 {theme_name} Çarpan Analizi Yap", key=f"val_{theme_name}"):
@@ -341,7 +350,7 @@ with tab3:
     with col_t1: 
         sel_theme = st.selectbox("İncelenecek Tema", list(THEMES.keys()))
     with col_t2: 
-        if sel_theme == "Kendi Hisseni Gir":
+        if sel_theme == "📌 Kendi Hisseni Gir":
             sel_stock = st.text_input("Borsa Kodu (Örn: PLTR, TSLA)", value="PLTR").upper()
         else:
             sel_stock = st.selectbox("Hisse / ETF", THEMES[sel_theme])
@@ -355,13 +364,11 @@ with tab3:
             with st.spinner(f"{sel_stock} için son 3 yılın verileri mikroskobik düzeyde inceleniyor..."):
                 res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
                 
-                # Çökme mi yaşandı?
-                if res and "error" in res:
+                if "error" in res:
+                    # Sistem API kaynaklı veya hesaplama kaynaklı çökerse yalan söylemez, direkt hatayı basar:
                     st.error(res["error"])
-                # Veri geldi ama 0 ralli mi?
-                elif res is None or res.get('count', res.get('stats', {}).get('count', 0)) == 0:
-                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda tam olarak {lookback_days} günde %{rally_pct}+ bir fiyat hareketi bulunamadı.")
-                # Her şey yolundaysa
+                elif res["stats"]["count"] == 0:
+                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi tespit edilemedi.")
                 else:
                     stats = res['stats']
                     df_events = res['events']
@@ -372,17 +379,18 @@ with tab3:
                     st.dataframe(df_events, use_container_width=True, hide_index=True)
                     
                     st.markdown("#### 📊 BÖLÜM 2: Kümülatif Sinyal İsabet Oranları")
-                    sc1, sc2, sc3, sc4 = st.columns(4)
-                    with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon (V700)</div><div class='stat-value'>%{stats['fus_YB']:.0f}</div><div class='stat-desc'>Yellow to Blue İsabeti</div></div>", unsafe_allow_html=True)
-                    with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy (V665)</div><div class='stat-value'>%{stats['syn_YB']:.0f}</div><div class='stat-desc'>Yellow to Blue İsabeti</div></div>", unsafe_allow_html=True)
-                    with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Speed/Signal</div><div class='stat-value'>%{stats['spd_cross']:.0f}</div><div class='stat-desc'>Yukarı Kesişim İsabeti</div></div>", unsafe_allow_html=True)
-                    with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN (V695)</div><div class='stat-value'>%{stats['whale_YR']:.0f}</div><div class='stat-desc'>Sarıdan Kırmızıya Re-Entry</div></div>", unsafe_allow_html=True)
+                    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+                    with sc1: st.markdown(f"<div class='stat-box'><div class='stat-label'>Füzyon B->DB</div><div class='stat-value'>%{stats['fus_BDB']:.0f}</div><div class='stat-desc'>DarkBlue İsabeti</div></div>", unsafe_allow_html=True)
+                    with sc2: st.markdown(f"<div class='stat-box'><div class='stat-label'>Synergy B->DB</div><div class='stat-value'>%{stats['syn_BDB']:.0f}</div><div class='stat-desc'>DarkBlue İsabeti</div></div>", unsafe_allow_html=True)
+                    with sc3: st.markdown(f"<div class='stat-box'><div class='stat-label'>Speed/Signal</div><div class='stat-value'>%{stats['spd_cross']:.0f}</div><div class='stat-desc'>Kesişim İsabeti</div></div>", unsafe_allow_html=True)
+                    with sc4: st.markdown(f"<div class='stat-box'><div class='stat-label'>Whale IN</div><div class='stat-value'>%{stats['whale_YR']:.0f}</div><div class='stat-desc'>Y->R Re-Entry</div></div>", unsafe_allow_html=True)
+                    with sc5: st.markdown(f"<div class='stat-box'><div class='stat-label'>Omni Mom.</div><div class='stat-value'>%{stats['omni_YB']:.0f}</div><div class='stat-desc'>Y->B İsabeti</div></div>", unsafe_allow_html=True)
 
                     st.divider()
                     st.markdown(f"""
                     <div style="background-color: #0a0a0a; padding: 15px; border-radius: 10px; border-left: 5px solid #00ff88;">
                     <span style="color:#00ff88; font-weight:bold; font-size:1.1rem;">🧠 DA VINCI SENTETİK SONUÇ:</span><br>
-                    <span style="color:#e0e0e0; font-size:1rem;">Ralli öncesi 4 periyotluk pencerelerde en kritik öncü sinyallerin isabet yüzdeleri yukarıdadır. 
+                    <span style="color:#e0e0e0; font-size:1rem;">{sel_stock} varlığında ralli öncesi pencerelerde özellikle 
                     <strong>% {stats['fus_BDB']:.0f}</strong> oranında Füzyon hattı Blue to Dark Blue (Koyu Mavi Onay) yakalamış, 
                     <strong>% {stats['syn_BDB']:.0f}</strong> oranında Synergy hız onayı (Dark Blue) alınmıştır.</span>
                     </div>
