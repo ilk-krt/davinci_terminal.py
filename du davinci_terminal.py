@@ -40,7 +40,7 @@ THEMES = {
     "Nükleer & Enerji Altyapısı": ["URA", "NLR", "CEG", "VST", "CCJ"],
     "Fotonik & Kuantum": ["QTUM", "IONQ", "RGTI", "COHR", "LITE"],
     "Siber Güvenlik (Cyber)": ["CIBR", "HACK", "CRWD", "PANW", "FTNT"],
-    "Kendi Hisseni Gir": ["MANUEL"] # Yeni eklendi
+    "Kendi Hisseni Gir": ["MANUEL"] # KULLANICI MANUEL GİRİŞİ
 }
 
 # ==========================================
@@ -58,6 +58,9 @@ def get_rsi(s, period):
 
 def apply_quantum_indicators(df):
     if len(df) < 50: return df
+    
+    # Sütun isimlerini güvenliğe al
+    if 'Close' not in df.columns: return df
     
     # V665: FUSION & SYNERGY
     f_macd = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
@@ -118,49 +121,45 @@ def apply_quantum_indicators(df):
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
-    """Haberleri çeker ve boş başlıkları/linkleri filtreler."""
+    """Yahoo Finance Haberlerini Çeker, Bozuk ve Boş Başlıkları Katı Bir Şekilde Filtreler."""
     valid_news = []
     try:
         news_data = yf.Ticker(ticker).news
-        if news_data:
+        if isinstance(news_data, list):
             for n in news_data:
-                # Başlık ve linkin geçerli olup olmadığını kontrol et
-                title = n.get('title', '')
-                link = n.get('link', n.get('url', ''))
+                title = n.get('title', '').strip()
+                link = n.get('link', n.get('url', '')).strip()
                 
-                # Başlık 'Başlık Yok' olmasın ve gerçekten bir string olsun
-                if isinstance(title, str) and title.strip() != '' and link != '':
+                # Başlık ve link boş değilse, ayrıca link '#' gibi sahte bir yönlendirme değilse ekle
+                if title and link and link != '#':
                      valid_news.append({"title": title, "link": link})
-                     if len(valid_news) == 3: # En fazla 3 haber
-                         break
-    except Exception as e:
+                     if len(valid_news) == 3: break
+    except Exception:
         pass
     return valid_news if len(valid_news) > 0 else None
 
 @st.cache_data
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
-        # yf.download kullanarak daha garantili veri çekme
-        df = yf.download(ticker, period="3y", interval="1d", progress=False)
-        if df.empty or len(df) < 50: return None
+        # yf.download yerine yf.Ticker(...).history() kullanıyoruz. Bu MultiIndex çökmesini engeller.
+        df = yf.Ticker(ticker).history(period="3y", interval="1d")
         
-        # MultiIndex düzeltmesi
-        if isinstance(df.columns, pd.MultiIndex):
-            if ticker in df.columns.levels[1]:
-                df = df.xs(ticker, level=1, axis=1)
-            else:
-                 # Eğer tek bir hisse indirdiysek MultiIndex yapısı farklı olabilir
-                 df.columns = df.columns.droplevel(1)
+        if df.empty or len(df) < 50: 
+            return {"error": f"⚠️ '{ticker}' için Yahoo Finance 50 günden az veri döndürdü veya borsa kodu hatalı."}
             
+        # Duplicate index sorununu kökünden çözüyoruz
+        df = df[~df.index.duplicated(keep='first')]
         df = apply_quantum_indicators(df)
         
-        # Gelecekteki hareketi hesapla ve NaN'ları temizle
+        # Gelecekteki hareketi hesapla
         df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
         
         # Ralli endekslerini bul
-        rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].dropna().index
+        rally_mask = df['Future_Return'] >= (move_threshold_pct / 100.0)
+        rally_indices = df[rally_mask].index
         
-        if len(rally_indices) == 0: return {"count": 0}
+        if len(rally_indices) == 0: 
+            return {"count": 0}
 
         events_list = []
         stats = {
@@ -216,9 +215,10 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             stats[k] = (stats[k] / stats['count']) * 100
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
+    
     except Exception as e:
-        # st.error(f"Debug: {e}") # Hata ayıklama için kullanılabilir
-        return None
+        # Eğer sistem çökerse, sessiz kalmak yerine hatanın kaynağını gösteriyoruz!
+        return {"error": f"SİSTEM ÇÖKMESİ: Analiz sırasında bir Python hatası oluştu: {str(e)}"}
 
 # ==========================================
 # 4. ARAYÜZ (TABS)
@@ -232,17 +232,14 @@ tab1, tab2, tab3 = st.tabs(["🌍 LİKİDİTE & OPEX MASASI", "⚖️ THEMATIC V
 with tab1:
     st.markdown("### 📡 Canlı Makro İstihbarat Radarı")
     
-    col_up1, col_up2, col_up3, col_up4, col_up5 = st.columns(5)
-    
     if 'macro_updates' not in st.session_state:
         st.session_state.macro_updates = {
             "calendar": "Bekleniyor...", "fed": "Bekleniyor...", "actors": "Bekleniyor...", "trump": "Bekleniyor...", "geo": "Bekleniyor..."
         }
         st.session_state.live_macro_news = []
 
-    # Canlı Haber Çekme Butonu eklendi
     st.markdown("#### 🔄 Global Canlı Haber Akışı")
-    if st.button("🌐 Global Makro Haberleri Güncelle (SPY, QQQ, TLT)", use_container_width=True):
+    if st.button("🌐 SPY, QQQ, TLT Global Haberlerini Güncelle", use_container_width=True):
         with st.spinner("Global finans haberleri çekiliyor..."):
             macro_news = []
             for tkr in ["SPY", "QQQ", "TLT"]:
@@ -258,6 +255,7 @@ with tab1:
             st.markdown(f"- {news_item}")
         st.markdown("</div>", unsafe_allow_html=True)
         
+    col_up1, col_up2, col_up3, col_up4, col_up5 = st.columns(5)
 
     with col_up1:
         if st.button("📅 Finansal Takvim Çek", use_container_width=True):
@@ -288,7 +286,7 @@ with tab2:
     st.markdown("### ⚖️ Tematik Fon Liderleri ve Çarpan Uçurumu")
     
     for theme_name, stocks in THEMES.items():
-        if theme_name == "Kendi Hisseni Gir": continue # Manuel girişi burada gösterme
+        if theme_name == "Kendi Hisseni Gir": continue 
         
         with st.expander(f"📁 TEMA: {theme_name}"):
             news_col, val_col = st.columns([1, 2])
@@ -302,7 +300,7 @@ with tab2:
                             for n in n_list:
                                 st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
                         else:
-                            st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi.")
+                            st.warning(f"⚠️ Yahoo Finance API haberleri döndüremedi.")
                             st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} haberlerini anında görüntüle**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
             
             with val_col:
@@ -337,28 +335,33 @@ with tab2:
 # ---------------------------------------------------------
 with tab3:
     st.markdown("### 🦈 Da Vinci: Detaylı Kinetik Ralli Matrisi")
-    st.caption("Fiyatın ralli yaptığı her bir spesifik olay için, ralliden önceki 4 günlük mumlardaki renk değişimlerini (Yellow to Blue, Blue to Dark Blue vb.) detaylı olarak raporlar.")
+    st.caption("Fiyatın ralli yaptığı her bir spesifik olay için, ralliden önceki 4 günlük mumlardaki renk değişimlerini detaylı olarak raporlar.")
     
     col_t1, col_t2, col_t3, col_t4 = st.columns(4)
     with col_t1: 
         sel_theme = st.selectbox("İncelenecek Tema", list(THEMES.keys()))
     with col_t2: 
         if sel_theme == "Kendi Hisseni Gir":
-            sel_stock = st.text_input("Hisse Sembolünü Girin (Örn: AAPL, TSLA)", value="AAPL").upper()
+            sel_stock = st.text_input("Borsa Kodu (Örn: PLTR, TSLA)", value="PLTR").upper()
         else:
             sel_stock = st.selectbox("Hisse / ETF", THEMES[sel_theme])
     with col_t3: 
-        lookback_days = st.number_input("Ralli Süresi (Gün)", min_value=1, max_value=60, value=10)
+        lookback_days = st.number_input("Ralli Süresi (Gün)", min_value=1, max_value=60, value=6)
     with col_t4: 
-        rally_pct = st.number_input("Hedef Yükseliş (%)", min_value=1, max_value=100, value=15)
+        rally_pct = st.number_input("Hedef Yükseliş (%)", min_value=1, max_value=100, value=1)
         
     if st.button("⚛️ RALLİ MATRİSİNİ VE İSTATİSTİKLERİ ÇIKAR", use_container_width=True):
         if sel_stock:
             with st.spinner(f"{sel_stock} için son 3 yılın verileri mikroskobik düzeyde inceleniyor..."):
                 res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
                 
-                if res is None or res['stats']['count'] == 0:
-                    st.error(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi bulunamadı.")
+                # Çökme mi yaşandı?
+                if res and "error" in res:
+                    st.error(res["error"])
+                # Veri geldi ama 0 ralli mi?
+                elif res is None or res.get('count', res.get('stats', {}).get('count', 0)) == 0:
+                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda tam olarak {lookback_days} günde %{rally_pct}+ bir fiyat hareketi bulunamadı.")
+                # Her şey yolundaysa
                 else:
                     stats = res['stats']
                     df_events = res['events']
