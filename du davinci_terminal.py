@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
+import time  # RATE LIMIT KORUMASI İÇİN EKLENDİ
 
 # ==========================================
 # 0. AYARLAR & DA VINCI YÜKSEK KONTRAST CSS
@@ -130,7 +131,7 @@ def apply_quantum_indicators(df):
     return df
 
 # ==========================================
-# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU (STABİL)
+# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU (STABİL & RATE LIMIT KORUMALI)
 # ==========================================
 @st.cache_data(ttl=600) 
 def fetch_news_safely(ticker):
@@ -144,38 +145,22 @@ def fetch_news_safely(ticker):
                 if title and link and link != '#' and "Yahoo" not in title:
                      valid_news.append({"title": title, "link": link})
                      if len(valid_news) == 3: break
-    except:
+    except Exception as e:
         pass
     return valid_news if len(valid_news) > 0 else None
 
-# Çarpan hesaplaması çok yavaş olduğu için özel olarak önbelleğe (cache) alındı.
-@st.cache_data(ttl=3600)
-def fetch_valuation_data(stocks):
-    val_data = []
-    for s in stocks:
-        try:
-            tkr = yf.Ticker(s)
-            mc = tkr.fast_info.get('marketCap', 0)
-            pe = tkr.info.get('trailingPE', 0)
-            val_data.append({"Ticker": s, "MC": mc, "PE": pe})
-        except: pass
-    return val_data
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
         tk = yf.Ticker(ticker)
         df = tk.history(period="3y", interval="1d")
         
         if df.empty or len(df) < 50: 
-            return {"error": f"⚠️ Yahoo Finance '{ticker}' için veriyi şu an gönderemiyor. Lütfen borsa kodunu kontrol et veya API sınırını bekleyip tekrar dene."}
+            return {"error": f"⚠️ HATA: Yahoo Finance '{ticker}' verisini reddetti. Çok fazla istek atılmış olabilir (Rate Limit). Lütfen 5 dakika bekleyip tekrar deneyin."}
             
         df = apply_quantum_indicators(df)
         
-        # ========================================================
-        # DİKKAT: .iloc yerine NUMPY Vektör Optimizasyonu! 
-        # (Bu bölüm hızı 1000 kat artırır)
-        # ========================================================
         omni_tb_arr = df['Omni_TB'].to_numpy()
         fus_pos_arr = df['Fus_Pos_Trend'].to_numpy()
         syn_tb_arr = df['Syn_TB'].to_numpy()
@@ -189,10 +174,10 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
                 setup_found = False
                 for j in range(i, min(i + 5, n)):
                     if not fus_pos_arr[j]:
-                        break # Kısıt bozuldu
+                        break 
                     if syn_tb_arr[j]:
                         setup_indices.append(j)
-                        i = j # Setup kuruldu, i'yi ileri sar
+                        i = j 
                         setup_found = True
                         break
                 if not setup_found:
@@ -250,7 +235,9 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
     except Exception as e:
-        return {"error": f"Sistem Çökmesi Tespit Edildi: {str(e)}"}
+        if "429" in str(e) or "Too Many Requests" in str(e):
+             return {"error": "⚠️ API GEÇİCİ OLARAK ENGELLENDİ (Rate Limit). Yahoo sistemleri IP'nizi güvenlik nedeniyle dondurdu. 10 dakika bekleyin."}
+        return {"error": f"Sistem Hatası: {str(e)}"}
 
 # ==========================================
 # 4. ARAYÜZ (TABS)
@@ -272,13 +259,14 @@ with tab1:
 
     st.markdown("#### 🔄 Global Canlı Haber Akışı")
     if st.button("🌐 SPY, QQQ, TLT Global Haberlerini Güncelle", use_container_width=True):
-        with st.spinner("Global finans haberleri çekiliyor..."):
+        with st.spinner("Global finans haberleri güvenli modda çekiliyor... (Rate Limit koruması aktif)"):
             macro_news = []
             for tkr in ["SPY", "QQQ", "TLT"]:
                 news = fetch_news_safely(tkr)
                 if news:
                     for n in news:
                         macro_news.append(f"**[{tkr}]** [{n['title']}]({n['link']})")
+                time.sleep(1) # ANTI-BAN DELAY (Yavaşlatma)
             st.session_state.live_macro_news = macro_news
 
     if st.session_state.live_macro_news:
@@ -332,28 +320,44 @@ with tab2:
                             for n in n_list:
                                 st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
                         else:
-                            st.warning(f"⚠️ Yahoo Finance API haberleri döndüremedi veya haberler engellendi.")
+                            st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi (Ban).")
                             st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} canlı ara**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
             
             with val_col:
                 if st.button(f"📊 {theme_name} Çarpan Analizi Yap", key=f"val_{theme_name}"):
-                    with st.spinner("Piyasa Değerleri (Market Cap) çekiliyor... (Önbelleklendi, artık daha hızlı)"):
-                        val_data = fetch_valuation_data(stocks)
+                    # PROGRES BAR VE ANTI-BAN SİSTEMİ EKLENDİ
+                    progress_text = "API sınırları aşılmamak için hisseler yavaş modda (Anti-Ban) taranıyor..."
+                    my_bar = st.progress(0, text=progress_text)
+                    
+                    val_data = []
+                    for i, s in enumerate(stocks):
+                        try:
+                            tkr = yf.Ticker(s)
+                            mc = tkr.fast_info.get('marketCap', 0)
+                            pe = tkr.info.get('trailingPE', 0)
+                            val_data.append({"Ticker": s, "MC": mc, "PE": pe})
+                        except Exception: 
+                            pass
                         
-                        df_val = pd.DataFrame(val_data)
-                        if not df_val.empty and df_val['MC'].sum() > 0:
-                            df_val = df_val.sort_values(by='MC', ascending=False)
-                            leader = df_val.iloc[0]
-                            st.markdown(f"<h4 style='color:#FFD700;'>👑 TEMATİK LİDER: {leader['Ticker']} (${leader['MC']/1e9:.1f} Milyar)</h4>", unsafe_allow_html=True)
-                            
-                            res_html = "<ul style='color:#fff;'>"
-                            for i in range(1, len(df_val)):
-                                row = df_val.iloc[i]
-                                gap = leader['MC'] / row['MC'] if row['MC'] > 0 else 0
-                                pe_str = f"F/K: {row['PE']:.1f}" if row['PE'] else "N/A"
-                                res_html += f"<li><strong>{row['Ticker']}</strong>: Liderin <span style='color:#FF1744; font-weight:bold;'>{gap:.1f}x</span> gerisinde. <em>({pe_str})</em></li>"
-                            res_html += "</ul>"
-                            st.markdown(res_html, unsafe_allow_html=True)
+                        my_bar.progress((i + 1) / len(stocks), text=f"[{s}] analiz edildi. Soğuma bekleniyor...")
+                        time.sleep(1.2) # Her hisse arasında 1.2 saniye bekle
+                        
+                    my_bar.empty()
+                    
+                    df_val = pd.DataFrame(val_data)
+                    if not df_val.empty and df_val['MC'].sum() > 0:
+                        df_val = df_val.sort_values(by='MC', ascending=False)
+                        leader = df_val.iloc[0]
+                        st.markdown(f"<h4 style='color:#FFD700;'>👑 TEMATİK LİDER: {leader['Ticker']} (${leader['MC']/1e9:.1f} Milyar)</h4>", unsafe_allow_html=True)
+                        
+                        res_html = "<ul style='color:#fff;'>"
+                        for i in range(1, len(df_val)):
+                            row = df_val.iloc[i]
+                            gap = leader['MC'] / row['MC'] if row['MC'] > 0 else 0
+                            pe_str = f"F/K: {row['PE']:.1f}" if row['PE'] else "N/A"
+                            res_html += f"<li><strong>{row['Ticker']}</strong>: Liderin <span style='color:#FF1744; font-weight:bold;'>{gap:.1f}x</span> gerisinde. <em>({pe_str})</em></li>"
+                        res_html += "</ul>"
+                        st.markdown(res_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # TAB 3: V700 SEQUENTIAL MOTORU (TETİKLEYİCİ BAZLI)
