@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
-import time  # RATE LIMIT KORUMASI İÇİN EKLENDİ
+import time
+import gc  # RAM şişmesini (OOM) önlemek için eklendi
 
 # ==========================================
 # 0. AYARLAR & DA VINCI YÜKSEK KONTRAST CSS
@@ -131,9 +132,11 @@ def apply_quantum_indicators(df):
     return df
 
 # ==========================================
-# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU (STABİL & RATE LIMIT KORUMALI)
+# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU (STABİL & OOM/RATE LIMIT KORUMALI)
 # ==========================================
-@st.cache_data(ttl=600) 
+
+# Sadece son 5 haberi önbellekte tut, şişmeyi engelle
+@st.cache_data(ttl=600, max_entries=5) 
 def fetch_news_safely(ticker):
     valid_news = []
     try:
@@ -149,8 +152,21 @@ def fetch_news_safely(ticker):
         pass
     return valid_news if len(valid_news) > 0 else None
 
+# Sadece son 2 temanın değerlemesini tut
+@st.cache_data(ttl=3600, max_entries=2)
+def fetch_valuation_data(stocks):
+    val_data = []
+    for s in stocks:
+        try:
+            tkr = yf.Ticker(s)
+            mc = tkr.fast_info.get('marketCap', 0)
+            pe = tkr.info.get('trailingPE', 0)
+            val_data.append({"Ticker": s, "MC": mc, "PE": pe})
+        except: pass
+    return val_data
 
-@st.cache_data(ttl=3600)
+# Sadece son 3 aramanın hesaplamasını tut, RAM patlamasın
+@st.cache_data(ttl=3600, max_entries=3)
 def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
     try:
         tk = yf.Ticker(ticker)
@@ -186,6 +202,9 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
                 i += 1
 
         if len(setup_indices) == 0: 
+            # Veriyi temizle ve çık
+            del df
+            gc.collect()
             return {"stats": {"count": 0}}
 
         stats_keys = [
@@ -232,11 +251,18 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             stats[k] = (stats[k] / stats['count']) * 100
             
         stats['hit_rate'] = (hits / stats['count']) * 100
+        
+        # OOM (RAM ŞİŞMESİ) ENGELLEYİCİ - ÇÖP TEMİZLİĞİ
+        del df
+        del close_arr
+        del whale_y2r_arr
+        del rs_inc_arr
+        gc.collect()
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
     except Exception as e:
         if "429" in str(e) or "Too Many Requests" in str(e):
-             return {"error": "⚠️ API GEÇİCİ OLARAK ENGELLENDİ (Rate Limit). Yahoo sistemleri IP'nizi güvenlik nedeniyle dondurdu. 10 dakika bekleyin."}
+             return {"error": "⚠️ API GEÇİCİ OLARAK ENGELLENDİ (Rate Limit). Yahoo sistemleri IP'nizi güvenlik nedeniyle dondurdu. Lütfen 10 dakika bekleyin."}
         return {"error": f"Sistem Hatası: {str(e)}"}
 
 # ==========================================
@@ -266,7 +292,7 @@ with tab1:
                 if news:
                     for n in news:
                         macro_news.append(f"**[{tkr}]** [{n['title']}]({n['link']})")
-                time.sleep(1) # ANTI-BAN DELAY (Yavaşlatma)
+                time.sleep(1) # ANTI-BAN DELAY
             st.session_state.live_macro_news = macro_news
 
     if st.session_state.live_macro_news:
@@ -320,12 +346,11 @@ with tab2:
                             for n in n_list:
                                 st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
                         else:
-                            st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi (Ban).")
+                            st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi (Rate Limit).")
                             st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} canlı ara**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
             
             with val_col:
                 if st.button(f"📊 {theme_name} Çarpan Analizi Yap", key=f"val_{theme_name}"):
-                    # PROGRES BAR VE ANTI-BAN SİSTEMİ EKLENDİ
                     progress_text = "API sınırları aşılmamak için hisseler yavaş modda (Anti-Ban) taranıyor..."
                     my_bar = st.progress(0, text=progress_text)
                     
@@ -340,7 +365,7 @@ with tab2:
                             pass
                         
                         my_bar.progress((i + 1) / len(stocks), text=f"[{s}] analiz edildi. Soğuma bekleniyor...")
-                        time.sleep(1.2) # Her hisse arasında 1.2 saniye bekle
+                        time.sleep(1.2) # API'yi boğmamak için bekleme
                         
                     my_bar.empty()
                     
