@@ -100,6 +100,12 @@ def apply_quantum_indicators(df):
         df[f'{prefix}_R2B'] = (df[f'{prefix}_State'] == 'B') & (df[f'{prefix}_State'].shift(1) == 'R')
         df[f'{prefix}_Y2DB'] = (df[f'{prefix}_State'] == 'DB') & (df[f'{prefix}_State'].shift(1) == 'Y')
         df[f'{prefix}_B2DB'] = (df[f'{prefix}_State'] == 'DB') & (df[f'{prefix}_State'].shift(1) == 'B')
+        
+        # SEQUENTIAL MOTORU İÇİN GENEL 'TURNING BLUE' SİNYALİ
+        df[f'{prefix}_TB'] = df[f'{prefix}_State'].isin(['B', 'DB']) & df[f'{prefix}_State'].shift(1).isin(['Y', 'R'])
+
+    # FÜZYON POZİTİF KISITI (Constraint: Pozitif ve Yükseliyor)
+    df['Fus_Pos_Trend'] = (df['f_hist'] > 0) & (df['f_hist'] > df['f_hist'].shift(1))
 
     # 4. V695: WHALE POWER
     c_range = (df['High'] - df['Low']).clip(lower=0.001)
@@ -163,10 +169,34 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
             return {"error": f"⚠️ Yahoo Finance '{ticker}' için veriyi şu an gönderemiyor. Lütfen borsa kodunu kontrol et veya API sınırını bekleyip tekrar dene."}
             
         df = apply_quantum_indicators(df)
-        df['Future_Return'] = df['Close'].shift(-days_lookback) / df['Close'] - 1
         
-        rally_indices = df[df['Future_Return'] >= (move_threshold_pct / 100.0)].index
-        if len(rally_indices) == 0: 
+        # SEQUENTIAL SETUP (DİZİLİM) MOTORU
+        setup_indices = []
+        i = 1
+        while i < len(df) - days_lookback:
+            # 1. ÇAPA (ANCHOR): Omni Momentum Turning Blue
+            if df['Omni_TB'].iloc[i]:
+                setup_found = False
+                
+                # 2. ARAMA PENCERESİ: Kendisi dahil 4 mum ileri bak
+                for j in range(i, min(i + 5, len(df) - days_lookback)):
+                    # 3. KISIT (CONSTRAINT): Füzyon pozitif mi ve artıyor mu?
+                    if not df['Fus_Pos_Trend'].iloc[j]:
+                        break # Füzyon bozuldu, aramayı iptal et
+                    
+                    # 4. DOĞRULAMA (VERIFY): Synergy Turning Blue
+                    if df['Syn_TB'].iloc[j]:
+                        setup_indices.append(j)
+                        i = j # Döngüyü setup'ın kurulduğu yere atlat
+                        setup_found = True
+                        break
+                
+                if not setup_found:
+                    i += 1
+            else:
+                i += 1
+
+        if len(setup_indices) == 0: 
             return {"stats": {"count": 0}}
 
         stats_keys = [
@@ -178,44 +208,41 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
         ]
         
         stats = {k: 0 for k in stats_keys}
-        stats['count'] = len(rally_indices)
+        stats['count'] = len(setup_indices)
+        hits = 0
         events_list = []
 
-        def extract_transitions(win, prefix):
-            t = []
-            if win[f'{prefix}_Y2B'].sum() > 0: t.append("Y->B")
-            if win[f'{prefix}_R2B'].sum() > 0: t.append("R->B")
-            if win[f'{prefix}_Y2DB'].sum() > 0: t.append("Y->DB")
-            if win[f'{prefix}_B2DB'].sum() > 0: t.append("B->DB")
-            return ", ".join(t) if t else "-"
-
-        for idx in rally_indices:
-            loc = df.index.get_loc(idx)
-            if isinstance(loc, slice): loc = loc.start
-            elif isinstance(loc, np.ndarray): loc = np.where(loc)[0][0]
+        # KURULUMLARI İNCELE VE İLERİYE DÖNÜK HEDEF ÖLÇÜMÜ YAP
+        for loc in setup_indices:
+            entry_price = df['Close'].iloc[loc]
+            # Belirlenen gün sonrasındaki fiyat
+            target_price = df['Close'].iloc[loc + days_lookback]
+            future_ret = (target_price / entry_price) - 1
             
-            if loc < 4: continue
+            is_hit = future_ret >= (move_threshold_pct / 100.0)
+            if is_hit: hits += 1
             
-            # Son 4 Bar + Güncel Bar İnceleme Penceresi
-            pre_window = df.iloc[max(0, loc-4):loc+1]
-            future_ret = df['Future_Return'].iloc[loc]
-            
+            # Setup anındaki (j) diğer indikatörlerin matris için durumu
             for k in stats_keys:
-                if pre_window[k].sum() > 0:
+                if df[k].iloc[loc]:
                     stats[k] += 1
 
             events_list.append({
-                "Tarih": idx.strftime('%Y-%m-%d'),
+                "Tarih": df.index[loc].strftime('%Y-%m-%d'),
                 "Getiri": f"%{future_ret*100:.1f}",
-                "Füzyon (V700)": extract_transitions(pre_window, 'Fus'),
-                "Synergy (V665)": extract_transitions(pre_window, 'Syn'),
-                "Omni Mom.": extract_transitions(pre_window, 'Omni'),
-                "Whale Durumu": "Giriş Sinyali ✅" if pre_window['Whale_Y2R'].sum() > 0 else "-",
-                "RS Durumu": "Yükseliyor 🚀" if pre_window['RS_Inc'].sum() > 0 else "Düşüyor"
+                "Durum": "Vurdu 🎯" if is_hit else "Kaçtı ❌",
+                "Füzyon (V700)": "Pozitif Trend ✅", # Kısıt sağlandığı için hep pozitif
+                "Synergy (V665)": "Dönüş Onayı ⚡",
+                "Omni Mom.": "Çapa Başlangıcı ⚓",
+                "Whale Durumu": "Giriş (IN) 🟢" if df['Whale_Y2R'].iloc[loc] else "-",
+                "RS Durumu": "Yükseliyor 🚀" if df['RS_Inc'].iloc[loc] else "Düşüyor"
             })
 
+        # Matris Yüzdelerini Hesapla (Oluşan Setup içindeki oranlar)
         for k in stats_keys:
             stats[k] = (stats[k] / stats['count']) * 100
+            
+        stats['hit_rate'] = (hits / stats['count']) * 100
             
         return {"stats": stats, "events": pd.DataFrame(events_list)}
     except Exception as e:
@@ -225,7 +252,7 @@ def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
 # 4. ARAYÜZ (TABS)
 # ==========================================
 st.title("🏛️ DA VINCI: İSTİHBARAT & RALLİ İSTATİSTİK MOTORU")
-tab1, tab2, tab3 = st.tabs(["🌍 LİKİDİTE & OPEX MASASI", "⚖️ THEMATIC VALUATION GAP", "🦈 V700 RALLİ ÖNCESİ İSTATİSTİĞİ"])
+tab1, tab2, tab3 = st.tabs(["🌍 LİKİDİTE & OPEX MASASI", "⚖️ THEMATIC VALUATION GAP", "🦈 V700 SEQUENTIAL MOTORU"])
 
 # ---------------------------------------------------------
 # TAB 1: MAKRO, OPEX VE JEOPOLİTİK 
@@ -332,11 +359,11 @@ with tab2:
                             st.markdown(res_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TAB 3: V700 RALLİ ÖNCESİ İSTATİSTİK MOTORU (DETAYLI MATRİS)
+# TAB 3: V700 SEQUENTIAL MOTORU (TETİKLEYİCİ BAZLI)
 # ---------------------------------------------------------
 with tab3:
-    st.markdown("### 🦈 Da Vinci: Detaylı Kinetik Ralli Matrisi")
-    st.caption("Fiyatın ralli yaptığı her bir spesifik olay için, ralliden önceki 4 günlük mumlardaki renk değişimlerini detaylı olarak raporlar.")
+    st.markdown("### 🦈 Da Vinci: Sequential Kurulum ve Ralli Matrisi")
+    st.caption("Strateji: Omni Momentum Çapa (Anchor) atar, maks 4 mum içinde Füzyon pozitif kalarak (Constraint) Synergy dönüşü (Verify) aranır. Hedef bu noktadan itibaren başlar.")
     
     col_t1, col_t2, col_t3, col_t4 = st.columns(4)
     with col_t1: 
@@ -353,46 +380,46 @@ with tab3:
         
     if st.button("⚛️ RALLİ MATRİSİNİ VE İSTATİSTİKLERİ ÇIKAR", use_container_width=True):
         if sel_stock:
-            with st.spinner(f"{sel_stock} için son 3 yılın verileri mikroskobik düzeyde inceleniyor..."):
+            with st.spinner(f"{sel_stock} için Sequential Motoru çalışıyor, kurulumlar taranıyor..."):
                 res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
                 
                 if "error" in res:
                     st.error(res["error"])
                 elif res["stats"]["count"] == 0:
-                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda belirtilen eşikte ({lookback_days} günde %{rally_pct}+) bir fiyat hareketi tespit edilemedi.")
+                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda kusursuz Sequential şartlarını sağlayan hiçbir kurulum tespit edilemedi.")
                 else:
                     s = res['stats']
                     df_events = res['events']
                     
-                    st.success(f"Geçmişte **{s['count']} adet** Majör Ralli noktası tespit edildi! Ralli öncesi son 4 günün analizi aşağıdadır:")
+                    st.success(f"Geçmişte tam şartlara uyan **{s['count']} adet** Kusursuz Kurulum bulundu! 🎯 Kurulum sonrası İsabet Oranı: **%{s['hit_rate']:.1f}**")
                     
-                    st.markdown("#### 📂 BÖLÜM 1: Spesifik Ralli Raporları (Event-by-Event)")
+                    st.markdown("#### 📂 BÖLÜM 1: Kurulum Raporları (Event-by-Event)")
                     st.dataframe(df_events, use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 BÖLÜM 2: Kümülatif Hedef İsabet Oranları (Sentetik Matris)")
+                    st.markdown("#### 📊 BÖLÜM 2: Kurulum Anındaki Sub-İndikatör Durumları (Matris)")
                     
                     matrix_html = f"""
-                    <div class="matrix-title">POSITIVE TREND</div>
+                    <div class="matrix-title">TETİKLEME (TRIGGER) ANINDAKİ DURUMLAR</div>
                     <table class="matrix-table">
                         <tr>
-                            <th>SYNERGY</th><th>%</th>
-                            <th>FÜZYON</th><th>%</th>
-                            <th>O. MOMENTUM</th><th>%</th>
-                            <th>WHALE</th><th>%</th>
-                            <th>RS</th><th>%</th>
+                            <th>SYNERGY (Onay)</th><th>%</th>
+                            <th>FÜZYON (Kısıt)</th><th>%</th>
+                            <th>O. MOMENTUM (Çapa)</th><th>%</th>
+                            <th>WHALE (Filtre)</th><th>%</th>
+                            <th>RS (Filtre)</th><th>%</th>
                         </tr>
                         <tr>
                             <td>Y TO B</td><td class="val">{s['Syn_Y2B']:.0f}%</td>
                             <td>Y TO B</td><td class="val">{s['Fus_Y2B']:.0f}%</td>
                             <td>Y TO B</td><td class="val">{s['Omni_Y2B']:.0f}%</td>
-                            <td>Y TO R</td><td class="val">{s['Whale_Y2R']:.0f}%</td>
+                            <td>Y TO R (IN)</td><td class="val">{s['Whale_Y2R']:.0f}%</td>
                             <td>INCREASE</td><td class="val">{s['RS_Inc']:.0f}%</td>
                         </tr>
                         <tr>
                             <td>R TO B</td><td class="val">{s['Syn_R2B']:.0f}%</td>
                             <td>R TO B</td><td class="val">{s['Fus_R2B']:.0f}%</td>
                             <td>R TO B</td><td class="val">{s['Omni_R2B']:.0f}%</td>
-                            <td>R TO Y</td><td class="val">{s['Whale_R2Y']:.0f}%</td>
+                            <td>R TO Y (OUT)</td><td class="val">{s['Whale_R2Y']:.0f}%</td>
                             <td>DECREASE</td><td class="val">{s['RS_Dec']:.0f}%</td>
                         </tr>
                         <tr>
