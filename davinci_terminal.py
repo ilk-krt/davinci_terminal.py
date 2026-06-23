@@ -1,470 +1,572 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+import graphviz
 import yfinance as yf
+import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+import calendar
 import time
-import gc  # RAM şişmesini (OOM) önlemek için eklendi
+import re
+import gc
 
 # ==========================================
-# 0. AYARLAR & DA VINCI YÜKSEK KONTRAST CSS
+# 0. AYARLAR & AGRESİF DARK MODE CSS
 # ==========================================
-st.set_page_config(layout="wide", page_title="DA VINCI: PRE-RALLY & MACRO TERMINAL", page_icon="👁️‍🗨️")
+st.set_page_config(layout="wide", page_title="AETHER APEX ULTIMATE V134.0", page_icon="🏛️")
 
 st.markdown("""
     <style>
-    .stApp, .main, .block-container { background-color: #050505 !important; }
-    p, div, span, li, label, text, .stMarkdown { color: #E0E0E0 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    h1, h2, h3, h4, h5, h6 { color: #00E6FF !important; font-weight: 900 !important; text-transform: uppercase; letter-spacing: 1px; }
-    div[data-baseweb="select"] > div, input[type="text"], input[type="number"] { background-color: #111111 !important; color: #ffffff !important; border: 1px solid #00E6FF !important; }
-    div[data-baseweb="popover"] div { background-color: #111111 !important; color: #ffffff !important; }
-    [data-testid="stDataFrame"], [data-testid="stTable"] { background-color: #0a0a0a !important; border: 1px solid #333 !important; }
-    th { background-color: #1a1a1a !important; color: #00E6FF !important; font-size: 0.95rem !important; border-bottom: 2px solid #00E6FF !important; }
-    td { border-bottom: 1px solid #222 !important; color: #ffffff !important; }
-    [data-testid="stExpander"] { background-color: #0d0d0d !important; border: 1px solid #333 !important; border-left: 4px solid #00E6FF !important; }
-    [data-testid="stExpander"] summary p { color: #00ff88 !important; font-weight: bold !important; font-size: 1.1rem !important;}
-    div.stButton > button { background-color: #111 !important; color: #00ff88 !important; border: 1px solid #00ff88 !important; font-weight: bold; border-radius: 6px; }
-    div.stButton > button:hover { background-color: #00ff88 !important; color: #000 !important; border-color: #fff !important; }
-    .macro-card { background-color: #111111 !important; border: 1px solid #333; border-left: 4px solid #FF1744; padding: 15px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
-    
-    .matrix-table { width: 100%; border-collapse: collapse; text-align: left; background-color: #0d0d0d; color: #fff; margin-top: 15px; }
-    .matrix-table th, .matrix-table td { padding: 10px 15px; border: 1px solid #333; font-size: 0.95rem; }
-    .matrix-table th { background-color: #1a1a1a; color: #00E6FF; text-transform: uppercase; text-align: left; }
-    .matrix-title { text-align: center; font-weight: bold; font-size: 1.1rem; padding: 10px; background-color: #111; color: #00ff88; border: 1px solid #333; border-bottom: none; letter-spacing: 2px; }
-    .val { color: #FFD700; font-weight: bold; text-align: right; }
+    .stApp { background-color: #050505 !important; color: #e0e0e0 !important; }
+    p, h1, h2, h3, h4, h5, h6, span, label, div { color: #e0e0e0 !important; }
+    div[data-baseweb="select"] > div { background-color: #111111 !important; color: #ffffff !important; border: 1px solid #00ff88 !important; }
+    div[data-baseweb="popover"] > div { background-color: #111111 !important; border: 1px solid #444444 !important; }
+    ul[role="listbox"] { background-color: #111111 !important; padding: 0px !important; }
+    ul[role="listbox"] li { color: #ffffff !important; background-color: #111111 !important; padding: 10px !important; border-bottom: 1px solid #222222 !important; }
+    ul[role="listbox"] li:hover { background-color: #222222 !important; color: #00ff88 !important; font-weight: bold !important; }
+    [data-testid="stTable"], [data-testid="stDataFrame"] { background-color: #111111 !important; }
+    th { background-color: #222222 !important; color: #00ff88 !important; border-bottom: 1px solid #444 !important; }
+    td { border-bottom: 1px solid #333 !important; color: #ffffff !important; }
+    [data-testid="stExpander"] { background-color: #111111 !important; border: 1px solid #333 !important; border-radius: 8px !important; border-left: 4px solid #00ff88 !important; }
+    [data-testid="stExpander"] summary p { color: #00ff88 !important; font-weight: bold !important; font-size: 1.1rem !important; }
+    div.stButton > button { background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #00ff88 !important; border-radius: 8px !important; font-weight: bold; }
+    div.stButton > button:hover { background-color: #00ff88 !important; color: #000000 !important; }
+    .battery-container { width: 100%; background-color: #222; border-radius: 10px; margin: 5px 0 15px 0; border: 1px solid #444; position: relative; height: 25px; overflow: hidden; }
+    .battery-fill { height: 100%; border-radius: 8px; transition: width 0.5s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; font-weight: bold; color: #000 !important; font-size: 0.9rem; }
+    .valuation-gap-card { background: linear-gradient(145deg, #111 0%, #0a0a0a 100%); padding: 20px; border-radius: 12px; border: 1px solid #333; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
+    .valuation-leader { color: #00ff88; font-weight: 900; font-size: 1.2rem; }
+    .valuation-laggard { color: #f1c40f; font-weight: bold; }
+    .macro-def-box { background-color: #111; border-left: 4px solid #FF1744; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
+    .macro-def-title { color: #00ff88; font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. VERİ YAPILARI (THEMATIC ETFs)
+# 1. STATE & GÜNCELLEME KONTROLLERİ (CACHE BYPASS)
 # ==========================================
-THEMES = {
-    "Yapay Zeka & Robotik": ["BOTZ", "ROBO", "NVDA", "PLTR", "SOUN", "PATH"],
-    "Uzay Bilişimi & Keşif": ["ARKX", "UFO", "SPACE", "RKLB", "LMT", "BA"],
-    "Kripto & Neocloud": ["WGMI", "BLOK", "MARA", "MSTR", "COIN", "IREN"],
-    "Nükleer & Enerji Altyapısı": ["URA", "NLR", "CEG", "VST", "CCJ"],
-    "Fotonik & Kuantum": ["QTUM", "IONQ", "RGTI", "COHR", "LITE"],
-    "Siber Güvenlik (Cyber)": ["CIBR", "HACK", "CRWD", "PANW", "FTNT"],
-    "📌 Kendi Hisseni Gir": ["MANUEL"]
+if 'active_trigger' not in st.session_state: st.session_state.active_trigger = "OPEX PINNING"
+if 'macro_nonce' not in st.session_state: st.session_state.macro_nonce = str(time.time())
+if 'battery_nonce' not in st.session_state: st.session_state.battery_nonce = str(time.time())
+if 'val_nonce' not in st.session_state: st.session_state.val_nonce = str(time.time())
+if 'news_nonce' not in st.session_state: st.session_state.news_nonce = str(time.time())
+
+# ==========================================
+# 2. KURUMSAL NİŞ ETF & HİSSE EVRENİ
+# ==========================================
+MAIN_SECTORS = {
+    "XLK": "Ana Sektör: Teknoloji", "XLI": "Ana Sektör: Sanayi", "XLE": "Ana Sektör: Enerji",
+    "XLV": "Ana Sektör: Sağlık", "XLF": "Ana Sektör: Finans", "XLY": "Ana Tüketim",
+    "XLB": "Ana Sektör: Materyal", "XLC": "Ana Sektör: İletişim", "XLRE": "Ana Sektör: Gayrimenkul",
+    "XLU": "Ana Sektör: Kamu Hizmetleri"
+}
+
+GLOBAL_MAP = {
+    "Teknoloji (Bulut & AI)": ["XLK", "CLOU", "IGV", "AIQ", "CIBR", "BOTZ", "CYBER"],
+    "Yarı İletken (Çip Mimarisi)": ["SOXX", "SMH", "EUV", "PHOTON"],
+    "Enerji & Altyapı": ["XLE", "XOP", "OIH", "XLU", "URA", "ICLN", "PAVE", "JOUL"],
+    "Emtia & Madencilik": ["COPX", "LIT", "REMX", "GDX", "XME"],
+    "Lojistik & Havacılık": ["IYT", "JETS", "HULL"],
+    "Savunma & Uzay": ["XAR", "ARKX", "UFO", "SPACE_RACE"],
+    "Finans & Kripto": ["XLF", "KRE", "ARKF", "IBIT", "WGMI"],
+    "Gayrimenkul & Veri Merkezleri": ["XLRE", "REZ", "SRVR", "VNQ"],
+    "Tüketim & Perakende": ["XLY", "XRT", "XHB"],
+    "Özel Durumlar (IPO/Trump)": ["TRUMP_PF", "RECENT_IPO"]
+}
+
+ETF_INFO = {
+    "XLU": {"area": "Utilities & Şebeke", "stocks": ["NEE", "SO", "DUK", "CEG", "AEP", "SRE", "VST"]},
+    "PAVE": {"area": "Altyapı Yenileme", "stocks": ["ETN", "PH", "HUBB", "POWL", "TT", "CARR", "URI", "PWR"]},
+    "XLK": {"area": "Teknoloji Devleri", "stocks": ["NVDA", "AAPL", "MSFT", "MU", "AVGO", "AMD", "PLTR"]},
+    "IGV": {"area": "Yazılım ve SaaS", "stocks": ["MSFT", "CRM", "ORCL", "ADBE", "NOW", "PLTR", "CRWD", "NET"]},
+    "SMH": {"area": "Global Çip Dökümhaneleri", "stocks": ["TSM", "INTC", "ASML", "NVDA", "AMD", "AVGO", "LRCX"]},
+    "URA": {"area": "Uranyum ve Nükleer", "stocks": ["CCJ", "KAP", "NXE", "UEC", "UUUU", "SMR", "CEG"]},
+    "WGMI": {"area": "Bitcoin Madenciliği", "stocks": ["MARA", "RIOT", "CLSK", "IREN", "WULF", "CORZ", "CIFR"]},
+    "PHOTON": {"area": "Fotonik ve Optik", "stocks": ["IQE", "AXTI", "AAOI", "COHR", "LITE", "POET", "LRCX"]},
+    "QUANT": {"area": "Kuantum Bilişim", "stocks": ["IONQ", "RGTI", "QUBT", "IBM", "GOOGL", "HON"]},
+    "CYBER": {"area": "Global Siber Güvenlik", "stocks": ["CRWD", "PANW", "ZS", "FTNT", "OKTA", "S", "NET"]},
+    "SPACE_RACE": {"area": "SpaceX & Uzay", "stocks": ["RKLB", "ASTS", "LUNR", "SATS", "PL", "SPIR", "BKSY", "SIDU"]},
+    "TRUMP_PF": {"area": "Trump Portföyü", "stocks": ["MSTR", "MARA", "COIN", "TSLA", "PLTR", "GEO", "CXW"]},
+    "COPX": {"area": "Bakır Üreticileri", "stocks": ["FCX", "SCCO", "BHP", "RIO", "TECK", "VALE"]}
+}
+
+FUTURE_THEMES_MAP = {
+    "Chokepoint Çarpanları": ["NVDA", "AVGO", "CEG", "ETN", "EQIX", "FCX", "PLD"],
+    "Agentic AI & Yazılım": ["NOW", "SOUN", "ADBE", "DT", "S", "EXTR"],
+    "Uzay Bilişimi & Keşif": ETF_INFO["SPACE_RACE"]["stocks"],
+    "Kuantum Bilişim (Quantum)": ETF_INFO["QUANT"]["stocks"],
+    "Fotonik & Optik Çipler": ETF_INFO["PHOTON"]["stocks"],
+    "Neocloud & Enerji Pivotu": ETF_INFO["WGMI"]["stocks"],
+    "Nükleer & Temel Materyal": ["CEG", "TLN", "SMR", "NNE", "UUUU", "MP", "ATLX"]
+}
+
+SYSTEM_TRIGGERS = {
+    "GAMMA SQUEEZE": {"color": "#00ff88", "battery": {"Stocks": 95, "Bonds": 20, "Crypto": 90, "Commodities": 55, "RealEstate": 65}},
+    "OPEX PINNING": {"color": "#f1c40f", "battery": {"Stocks": 50, "Bonds": 50, "Crypto": 48, "Commodities": 52, "RealEstate": 50}},
+    "GEOPOLITICAL SHOCK": {"color": "#ff3333", "battery": {"Stocks": 25, "Bonds": 85, "Crypto": 35, "Commodities": 95, "RealEstate": 40}},
+    "LIQUIDITY CRUNCH (FED)": {"color": "#9b59b6", "battery": {"Stocks": 15, "Bonds": 90, "Crypto": 10, "Commodities": 35, "RealEstate": 25}}
 }
 
 # ==========================================
-# 2. PANDAS VEKTÖREL MATEMATİK MOTORU (HIZLANDIRILMIŞ)
+# 3. YARDIMCI GÖRSEL VE AĞ FONKSİYONLARI
 # ==========================================
-def get_rma(s, period):
-    return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+def draw_smart_money_flow(trigger_data):
+    dot = graphviz.Digraph()
+    dot.attr(bgcolor='#050505', rankdir='LR', ranksep='1.5', nodesep='0.8')
+    dot.attr('node', fontsize='16', fontname='Arial', margin='0.2,0.1')
+    dot.attr('edge', fontsize='14')
+    with dot.subgraph(name='cluster_0') as c:
+        c.attr(style='dashed', color='#555', label='Kaydi Varlıklar', fontcolor='#e0e0e0', fontsize='18')
+        c.node("FIAT", "Fiat\nCurrency", shape='ellipse', style='filled', fillcolor='#4a148c', fontcolor='white')
+        c.node("USD", "USD\n(Merkez)", shape='circle', style='filled', fillcolor='#0277bd', fontcolor='white')
+        c.node("STOCK", "Borsalar", shape='box', style='filled', fillcolor='#f57f17', fontcolor='white')
+        c.node("BOND", "Tahviller", shape='box', style='filled', fillcolor='#2e7d32', fontcolor='white')
+        c.node("CRYPTO", "Kripto", shape='box', style='filled', fillcolor='#d81b60', fontcolor='white')
+    with dot.subgraph(name='cluster_1') as c:
+        c.attr(style='dashed', color='#555', label='Maddi Varlıklar', fontcolor='#e0e0e0', fontsize='18')
+        c.node("COMM", "Emtia &\nEnerji", shape='circle', style='filled', fillcolor='#00695c', fontcolor='white')
+        c.node("REAL", "Gayrimenkul", shape='box', style='filled', fillcolor='#827717', fontcolor='white')
+    bat = trigger_data['battery']
+    def get_pen(val): return str(max(2.0, val / 10))
+    def get_col(val): return "#00ff88" if val >= 60 else "#ff3333" if val <= 40 else "#888"
+    dot.edge("FIAT", "USD", color="#aaa", penwidth="3")
+    dot.edge("USD", "STOCK", color=get_col(bat['Stocks']), penwidth=get_pen(bat['Stocks']))
+    dot.edge("USD", "BOND", color=get_col(bat['Bonds']), penwidth=get_pen(bat['Bonds']))
+    dot.edge("USD", "CRYPTO", color=get_col(bat['Crypto']), penwidth=get_pen(bat['Crypto']))
+    dot.edge("USD", "COMM", color=get_col(bat['Commodities']), penwidth=get_pen(bat['Commodities']))
+    dot.edge("COMM", "REAL", color=get_col(bat['RealEstate']), penwidth=get_pen(bat['RealEstate']), style="dashed")
+    st.graphviz_chart(dot, use_container_width=True)
 
+def draw_battery(label, current, color, delta_1d=0.0):
+    d1_icon = f"🔺+{delta_1d:.1f}" if delta_1d > 0 else f"🔻{delta_1d:.1f}" if delta_1d < 0 else "➖ 0.0"
+    d1_color = "#00ff88" if delta_1d > 0 else "#ff3333" if delta_1d < 0 else "#888888"
+    st.markdown(f"""
+        <div style="margin-bottom: 2px; font-size: 0.85rem; color: #ccc; display: flex; justify-content: space-between;">
+            <span>{label}</span>
+            <span style="color: {d1_color}; font-weight: bold; font-size: 0.75rem;">1D Değişim: {d1_icon}</span>
+        </div>
+        <div class="battery-container" style="height: 20px;">
+            <div class="battery-fill" style="width: {min(max(current,0), 100)}%; background-color: {color}; font-size: 0.8rem;">%{int(current)}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+@st.cache_data(ttl=60)
+def fetch_live_trump_news(news_bypass_stamp):
+    rss_url = "https://news.google.com/rss/search?q=Trump+stock+market+OR+company+OR+executive+order+OR+law&hl=en-US&gl=US&ceid=US:en"
+    news_alerts = []
+    all_stocks = list(set([t for tkrs in ETF_INFO.values() for t in tkrs['stocks']]))
+    try:
+        response = requests.get(rss_url, timeout=10)
+        root = ET.fromstring(response.content)
+        for item in root.findall('.//item')[:40]:  
+            title = item.find('title').text
+            link = item.find('link').text
+            pub_date = item.find('pubDate').text
+            detected_tickers = [ticker for ticker in all_stocks if re.search(rf"\b{ticker}\b", title) or f"({ticker})" in title]
+            if detected_tickers:
+                news_alerts.append({"Tarih": pub_date[:16], "Gelişme / Haber Başlığı": title, "Hedef Ticker": ", ".join(detected_tickers), "Kaynak Link": link})
+        if not news_alerts:
+            for item in root.findall('.//item')[:6]:
+                news_alerts.append({"Tarih": item.find('pubDate').text[:16], "Gelişme / Haber Başlığı": item.find('title').text, "Hedef Ticker": "📊 MAKRO / YASA / SEKTÖR", "Kaynak Link": item.find('link').text})
+    except Exception as e:
+        return [{"Tarih": "-", "Gelişme / Haber Başlığı": f"Haber motoru başlatılamadı: {e}", "Hedef Ticker": "HATA", "Kaynak Link": ""}]
+    return news_alerts
+
+# ==========================================
+# 4. ŞAHANE V127.0 MATEMATİK MOTORU
+# ==========================================
+def get_rma(s, period): return s.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+def get_wma(s, period):
+    weights = np.arange(1, period + 1)
+    return s.rolling(period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 def get_rsi(s, period):
     delta = s.diff()
     ma_up = get_rma(delta.clip(lower=0), period)
     ma_down = get_rma(-1 * delta.clip(upper=0), period)
-    rs = ma_up / ma_down.replace(0, 0.001)
-    return 100 - (100 / (1 + rs))
+    return 100 - (100 / (1 + (ma_up / ma_down.replace(0, 0.001))))
+def get_safe_df(raw_data, ticker):
+    if isinstance(raw_data.columns, pd.MultiIndex):
+        if ticker in raw_data.columns.levels[0]: return raw_data[ticker].copy()
+        elif ticker in raw_data.columns.levels[1]: return raw_data.xs(ticker, level=1, axis=1).copy()
+        else: return pd.DataFrame()
+    return raw_data.copy()
 
-def get_state(val):
-    cross_up = (val > 0) & (val.shift(1) <= 0)
-    cross_dn = (val < 0) & (val.shift(1) >= 0)
-    b = (val > val.shift(1)) & ~cross_up
-    y = (val < val.shift(1)) & ~cross_dn
-    return np.select([cross_up, cross_dn, b, y], ['DB', 'R', 'B', 'Y'], default='None')
-
-def apply_quantum_indicators(df):
-    if len(df) < 50: return df
-    if 'Close' not in df.columns: return df
-    
-    f_macd = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
-    f_h, f_l = f_macd.rolling(100, min_periods=1).max(), f_macd.rolling(100, min_periods=1).min()
-    df['f_speed'] = ((f_macd - f_l) / (f_h - f_l).replace(0, 0.001) * 100) - 50
-    df['f_sig'] = df['f_speed'].ewm(span=9, adjust=False).mean()
-    df['f_hist'] = df['f_speed'] - df['f_sig']
-    
-    hlc3 = (df['High'] + df['Low'] + df['Close']) / 3
-    s_macd = hlc3.ewm(span=12, adjust=False).mean() - hlc3.ewm(span=26, adjust=False).mean()
-    s_h, s_l = s_macd.rolling(100, min_periods=1).max(), s_macd.rolling(100, min_periods=1).min()
-    df['s_speed'] = ((s_macd - s_l) / (s_h - s_l).replace(0, 0.001) * 100) - 50
-
-    rsi_mid = get_rsi(df['Close'], 14)
-    rsi_fast = get_rsi(df['Close'], 7)
-    df['omni_center'] = ((rsi_fast + rsi_mid) / 2) - 50
-
-    df['Fus_State'] = get_state(df['f_hist'])
-    df['Syn_State'] = get_state(df['s_speed'])
-    df['Omni_State'] = get_state(df['omni_center'])
-
-    for prefix in ['Fus', 'Syn', 'Omni']:
-        df[f'{prefix}_Y2B'] = (df[f'{prefix}_State'] == 'B') & (df[f'{prefix}_State'].shift(1) == 'Y')
-        df[f'{prefix}_R2B'] = (df[f'{prefix}_State'] == 'B') & (df[f'{prefix}_State'].shift(1) == 'R')
-        df[f'{prefix}_Y2DB'] = (df[f'{prefix}_State'] == 'DB') & (df[f'{prefix}_State'].shift(1) == 'Y')
-        df[f'{prefix}_B2DB'] = (df[f'{prefix}_State'] == 'DB') & (df[f'{prefix}_State'].shift(1) == 'B')
-        df[f'{prefix}_TB'] = df[f'{prefix}_State'].isin(['B', 'DB']) & df[f'{prefix}_State'].shift(1).isin(['Y', 'R'])
-
-    df['Fus_Pos_Trend'] = (df['f_hist'] > 0) & (df['f_hist'] > df['f_hist'].shift(1))
-
-    c_range = (df['High'] - df['Low']).clip(lower=0.001)
-    delta = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / c_range
-    vol_sma20 = df['Volume'].rolling(20, min_periods=1).mean().clip(lower=0.001)
-    
-    delta_vol = (delta * df['Volume']).rolling(20, min_periods=1).mean() / vol_sma20
-    rvol = (df['Volume'] / vol_sma20.clip(lower=1)).clip(upper=2.5)
-    
-    base_pwr = ((rsi_mid - 50) + (delta_vol * 40)) * rvol * 1.5
-    logic_pwr = np.log(1 + np.exp(np.clip(base_pwr / 5, -50, 50))) * 5
-    
-    fvg_bull = (df['Low'] > df['High'].shift(2)) & (df['Close'] > df['Open'])
-    logic_pwr = np.where(fvg_bull, logic_pwr + 35, logic_pwr)
-
-    df['w_pwr'] = np.clip((np.log10(1 + logic_pwr) * 65)**0.8 * 1.8, 0, 100)
-    df['pct_pro'] = df['w_pwr'].ewm(span=3, adjust=False).mean()
-
-    df['Whale_Inc'] = df['w_pwr'] > df['w_pwr'].shift(1)
-    df['Whale_Dec'] = df['w_pwr'] < df['w_pwr'].shift(1)
-    wh_red = df['w_pwr'] < df['pct_pro']
-    wh_y = df['Whale_Dec'] & ~wh_red
-    
-    df['Whale_Y2R'] = wh_red & wh_y.shift(1)
-    df['Whale_R2Y'] = wh_y & wh_red.shift(1)
-
-    rs_val = df['Close'] / df['Close'].rolling(20, min_periods=1).mean()
-    df['RS_Inc'] = rs_val > rs_val.shift(1)
-    df['RS_Dec'] = rs_val < rs_val.shift(1)
-    df['RS_Y2B'] = df['RS_Inc'] & df['RS_Dec'].shift(1)
-
-    return df
-
-# ==========================================
-# 3. YEDEKLEMELİ HABER VE İSTATİSTİK MOTORU (STABİL & OOM/RATE LIMIT KORUMALI)
-# ==========================================
-
-# Sadece son 5 haberi önbellekte tut, şişmeyi engelle
-@st.cache_data(ttl=600, max_entries=5) 
-def fetch_news_safely(ticker):
-    valid_news = []
+@st.cache_data(ttl=300)
+def fetch_matrix_data(bypass_stamp):
+    all_etfs = list(set([etf for etfs in GLOBAL_MAP.values() for etf in etfs]))
+    all_etfs.extend(list(MAIN_SECTORS.keys()))
+    end_date = datetime.now()
     try:
-        news_data = yf.Ticker(ticker).news
-        if isinstance(news_data, list):
-            for n in news_data:
-                title = n.get('title', '').strip()
-                link = n.get('link', n.get('url', '')).strip()
-                if title and link and link != '#' and "Yahoo" not in title:
-                     valid_news.append({"title": title, "link": link})
-                     if len(valid_news) == 3: break
-    except Exception as e:
-        pass
-    return valid_news if len(valid_news) > 0 else None
+        raw_data = yf.download(all_etfs, start=end_date - timedelta(days=90), end=end_date, interval="1d", group_by='ticker', progress=False)
+    except: return pd.DataFrame()
 
-# Sadece son 2 temanın değerlemesini tut
-@st.cache_data(ttl=3600, max_entries=2)
-def fetch_valuation_data(stocks):
-    val_data = []
-    for s in stocks:
+    matrix_results = []
+    for t in all_etfs:
+        df = get_safe_df(raw_data, t).dropna(subset=['Close'])
+        if len(df) < 25: continue
+        close = df['Close']
+        rsi_s = get_rsi(close, 14)
+        r14_current, r14_1d_ago, r14_1w_ago = rsi_s.iloc[-1], rsi_s.iloc[-2] if len(rsi_s)>1 else rsi_s.iloc[-1], rsi_s.iloc[-6] if len(rsi_s)>5 else rsi_s.iloc[-1]
+        
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        current_bbw = (((sma20 + 2*std20) - (sma20 - 2*std20)) / sma20 * 100).iloc[-1]
+        cat = next((k for k, v in GLOBAL_MAP.items() if t in v), "Diğer")
+        
+        state, color = ("Aşırı Alım (Dağıtım)", "#ff3333") if r14_current > 70 else ("Vakum (Contrarian Fırsat)", "#00ff88") if r14_current < 35 else ("Sıkışma (VCP)", "#f1c40f")
+        delta_icon = "⬆️" if r14_current > r14_1d_ago else "⬇️" if r14_current < r14_1d_ago else "➖"
+        
+        matrix_results.append({"Sektör": cat, "ETF": t, "RSI": r14_current, "RSI_1D": r14_1d_ago, "RSI_1W": r14_1w_ago, "BBW": current_bbw, "Durum": state, "Renk": color, "Delta_Icon": delta_icon})
+    return pd.DataFrame(matrix_results)
+
+@st.cache_data(ttl=300)
+def calculate_signals(ticker_list, interval="1d", bypass_stamp=""):
+    if not ticker_list: return pd.DataFrame()
+    end_date = datetime.now()
+    days_back = 200 if interval == "1wk" else 90 if interval == "1d" else 50
+    yf_int = "1h" if interval == "4h" else interval
+    
+    try: raw_data = yf.download(ticker_list, start=end_date - timedelta(days=days_back), end=end_date, interval=yf_int, group_by='ticker', progress=False)
+    except: return pd.DataFrame()
+
+    results = []
+    for t in ticker_list:
         try:
-            tkr = yf.Ticker(s)
-            mc = tkr.fast_info.get('marketCap', 0)
-            pe = tkr.info.get('trailingPE', 0)
-            val_data.append({"Ticker": s, "MC": mc, "PE": pe})
-        except: pass
-    return val_data
+            df = get_safe_df(raw_data, t).dropna(subset=['Close'])
+            if len(df) < 30: continue
+            if interval == "4h":
+                df.index = pd.to_datetime(df.index)
+                df = df.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
 
-# Sadece son 3 aramanın hesaplamasını tut, RAM patlamasın
-@st.cache_data(ttl=3600, max_entries=3)
-def run_pre_rally_statistics(ticker, days_lookback, move_threshold_pct):
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period="3y", interval="1d")
-        
-        if df.empty or len(df) < 50: 
-            return {"error": f"⚠️ HATA: Yahoo Finance '{ticker}' verisini reddetti. Çok fazla istek atılmış olabilir (Rate Limit). Lütfen 5 dakika bekleyip tekrar deneyin."}
+            close, high, low, open_p, vol = df['Close'], df['High'], df['Low'], df['Open'], df['Volume']
             
-        df = apply_quantum_indicators(df)
-        
-        omni_tb_arr = df['Omni_TB'].to_numpy()
-        fus_pos_arr = df['Fus_Pos_Trend'].to_numpy()
-        syn_tb_arr = df['Syn_TB'].to_numpy()
-        
-        setup_indices = []
-        i = 1
-        n = len(df) - days_lookback
-        
-        while i < n:
-            if omni_tb_arr[i]:
-                setup_found = False
-                for j in range(i, min(i + 5, n)):
-                    if not fus_pos_arr[j]:
-                        break 
-                    if syn_tb_arr[j]:
-                        setup_indices.append(j)
-                        i = j 
-                        setup_found = True
-                        break
-                if not setup_found:
-                    i += 1
+            # Stratejik Katman: 3-Mum Eğim Kuralı (3-Bar Slope)
+            slope_up = (close > close.shift(1)) & (close.shift(1) > close.shift(2))
+            slope_dn = (close < close.shift(1)) & (close.shift(1) < close.shift(2))
+
+            pct_1d = (close.iloc[-1] / close.iloc[-2] - 1) * 100 if len(close) > 1 else 0
+            pct_1w = (close.iloc[-1] / close.iloc[-6] - 1) * 100 if len(close) > 5 else 0
+
+            # Unwritten Traps ✅/⛔ (1-Period Confirmed EMA Breakout)
+            ema1_s3 = close.ewm(span=9, adjust=False).mean()
+            v150_v_avg = vol.rolling(20).mean()
+            bear_trap = (low < ema1_s3) & (close > ema1_s3) & (vol > v150_v_avg * 1.5)
+            bull_trap = (high > ema1_s3) & (close < ema1_s3) & (vol > v150_v_avg * 1.5)
+
+            # Sinerji / Efor Çizgisi
+            wma_cv = get_wma(close * vol, 14)
+            wma_v = get_wma(vol, 14).clip(lower=0.001)
+            eff_price = get_wma(wma_cv / wma_v, 3)
+            price_cross_eff_up = (close > eff_price) & (close.shift(1) <= eff_price.shift(1))
+            price_cross_eff_dn = (close < eff_price) & (close.shift(1) >= eff_price.shift(1))
+
+            eff_status = pd.Series("➖ NÖTR", index=close.index)
+            eff_status.loc[close > eff_price] = "🟢 POZ"
+            eff_status.loc[close < eff_price] = "🔴 NEG"
+            eff_status.loc[price_cross_eff_up] = "🚀 UP KIRILIM"
+            eff_status.loc[price_cross_eff_dn] = "🩸 DOWN KIRILIM"
+
+            # Whale Power (V700 Sinerji Motoru)
+            r14 = get_rsi(close, 14)
+            c_range_q = (high - low).clip(lower=0.001)
+            delta_q = ((close - low) - (high - close)) / c_range_q
+            delta_vol_q = (delta_q * vol).rolling(20).mean() / vol.rolling(20).mean().clip(lower=0.001)
+            rvol_q = (vol / vol.rolling(20).mean().clip(lower=1)).clip(upper=2.5)
+
+            base_pwr_q = ((r14 - 50) + (delta_vol_q * 50)) * rvol_q * 1.5
+            logic_pwr_q = np.log(1 + np.exp(np.clip(base_pwr_q / 5, -50, 50))) * 5
+            logic_pwr_q = np.where((low > high.shift(2)) & (close > open_p), logic_pwr_q + 35, logic_pwr_q)
+
+            log_w_q = np.log10(1 + np.clip(logic_pwr_q, 0, None))
+            pct_w_q = np.clip((log_w_q * 65)**0.8 * 1.8, 0, 100)
+            w_pwr_q = get_wma(pd.Series(pct_w_q, index=close.index), 2)
+
+            pct_pro_q = w_pwr_q.ewm(span=3, adjust=False).mean()
+            yellow_rest = (w_pwr_q.shift(1) < pct_pro_q.shift(1)) & (w_pwr_q.shift(2) < pct_pro_q.shift(2))
+            whale_re_entry = (w_pwr_q > pct_pro_q) & (w_pwr_q.shift(1) <= pct_pro_q.shift(1)) & yellow_rest
+
+            # Vola Hole (Squeeze)
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
+            tr = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
+            k_mid = sma20
+            k_up = k_mid + 1.5 * tr.rolling(20).mean()
+            k_low = k_mid - 1.5 * tr.rolling(20).mean()
+            is_sqz = (sma20 - 2 * std20 > k_low) & (sma20 + 2 * std20 < k_up)
+            vol_hole = is_sqz & (close <= (k_mid - (k_up - k_mid) / 3.0))
+
+            _kin_b = ((vol > v150_v_avg * 1.2) & (close > open_p)).astype(int)
+            _tre_b = (close > close.ewm(span=34).mean()).astype(int)
+            _kur_b = ((r14 > 50) & (r14.shift(1) <= 50)).astype(int)
+            total_score_b = _kin_b + _tre_b + _kur_b
+
+            # Sinyal Önceliklendirmesi (Asla tekrar etmez)
+            sig = "⚪ WAIT"
+            if interval == "1wk":
+                if (w_pwr_q.iloc[-1] > 80) and slope_up.iloc[-1]: sig = "🐋 WHALE ACCUMULATION"
+                elif (r14.iloc[-1] < 35): sig = "🕳️ DEEP VALUE (DCA)"
+                elif whale_re_entry.iloc[-1]: sig = "🚀 MOMENTUM GAP"
             else:
-                i += 1
+                if bull_trap.iloc[-1]: sig = "⛔"
+                elif bear_trap.iloc[-1]: sig = "✅"
+                elif whale_re_entry.iloc[-1]: sig = "🔄 WHALE RE-ENTRY"
+                elif price_cross_eff_up.iloc[-1] and slope_up.iloc[-1]: sig = "🚀 UP KIRILIM"
+                elif price_cross_eff_dn.iloc[-1] and slope_dn.iloc[-1]: sig = "🩸 DOWN KIRILIM"
+                elif vol_hole.iloc[-1]: sig = "🕳️ VOLA HOLE"
+                elif w_pwr_q.iloc[-1] >= 85: sig = "🐋 WHALE IN"
 
-        if len(setup_indices) == 0: 
-            # Veriyi temizle ve çık
-            del df
-            gc.collect()
-            return {"stats": {"count": 0}}
-
-        stats_keys = [
-            'Fus_Y2B', 'Fus_R2B', 'Fus_Y2DB', 'Fus_B2DB',
-            'Syn_Y2B', 'Syn_R2B', 'Syn_Y2DB', 'Syn_B2DB',
-            'Omni_Y2B', 'Omni_R2B', 'Omni_Y2DB', 'Omni_B2DB',
-            'Whale_Y2R', 'Whale_R2Y', 'Whale_Inc', 'Whale_Dec',
-            'RS_Inc', 'RS_Dec', 'RS_Y2B'
-        ]
-        
-        stats = {k: 0 for k in stats_keys}
-        stats['count'] = len(setup_indices)
-        hits = 0
-        events_list = []
-
-        close_arr = df['Close'].to_numpy()
-        whale_y2r_arr = df['Whale_Y2R'].to_numpy()
-        rs_inc_arr = df['RS_Inc'].to_numpy()
-
-        for loc in setup_indices:
-            entry_price = close_arr[loc]
-            target_price = close_arr[loc + days_lookback]
-            future_ret = (target_price / entry_price) - 1
-            
-            is_hit = future_ret >= (move_threshold_pct / 100.0)
-            if is_hit: hits += 1
-            
-            for k in stats_keys:
-                if df[k].iloc[loc]:
-                    stats[k] += 1
-
-            events_list.append({
-                "Tarih": df.index[loc].strftime('%Y-%m-%d'),
-                "Getiri": f"%{future_ret*100:.1f}",
-                "Durum": "Vurdu 🎯" if is_hit else "Kaçtı ❌",
-                "Füzyon (V700)": "Pozitif Trend ✅",
-                "Synergy (V665)": "Dönüş Onayı ⚡",
-                "Omni Mom.": "Çapa Başlangıcı ⚓",
-                "Whale Durumu": "Giriş (IN) 🟢" if whale_y2r_arr[loc] else "-",
-                "RS Durumu": "Yükseliyor 🚀" if rs_inc_arr[loc] else "Düşüyor"
+            results.append({
+                "Ticker": t, "Sinyal": sig, "Efor": eff_status.iloc[-1], "Fiyat": f"${close.iloc[-1]:.2f}",
+                "Whale Power": float(f"{w_pwr_q.iloc[-1]:.1f}"), "Fusion": int(total_score_b.iloc[-1]),
+                "1 Gün (%)": round(pct_1d, 2), "1 Hafta (%)": round(pct_1w, 2)
             })
+        except: continue
+    if results: return pd.DataFrame(results).sort_values(by="Fusion", ascending=False)
+    return pd.DataFrame()
 
-        for k in stats_keys:
-            stats[k] = (stats[k] / stats['count']) * 100
+@st.cache_data(ttl=600)
+def fetch_valuation_data(ticker_list, bypass_stamp):
+    funds = []
+    for t in ticker_list:
+        try:
+            tk = yf.Ticker(t)
+            info = tk.info
+            mc = info.get('marketCap', tk.fast_info.get('marketCap', 0))
+            pe = info.get('trailingPE', 0)
+            ps = info.get('priceToSalesTrailing12Months', 0)
+            peg = info.get('pegRatio', 0)
             
-        stats['hit_rate'] = (hits / stats['count']) * 100
-        
-        # OOM (RAM ŞİŞMESİ) ENGELLEYİCİ - ÇÖP TEMİZLİĞİ
-        del df
-        del close_arr
-        del whale_y2r_arr
-        del rs_inc_arr
-        gc.collect()
+            # Hedging for None values
+            pe = pe if pe is not None else 0
+            ps = ps if ps is not None else 0
+            peg = peg if peg is not None else 0
             
-        return {"stats": stats, "events": pd.DataFrame(events_list)}
-    except Exception as e:
-        if "429" in str(e) or "Too Many Requests" in str(e):
-             return {"error": "⚠️ API GEÇİCİ OLARAK ENGELLENDİ (Rate Limit). Yahoo sistemleri IP'nizi güvenlik nedeniyle dondurdu. Lütfen 10 dakika bekleyin."}
-        return {"error": f"Sistem Hatası: {str(e)}"}
+            funds.append({"Ticker": t, "MarketCap": mc, "PE": pe, "PS": ps, "PEG": peg})
+        except: 
+            funds.append({"Ticker": t, "MarketCap": 0, "PE": 0, "PS": 0, "PEG": 0})
+    return pd.DataFrame(funds)
+
+# --- STYLER YARDIMCILARI ---
+def style_signals(val):
+    if isinstance(val, str):
+        if 'GAP' in val: return 'background-color: #00e676; color: black; font-weight: bold;'
+        if 'DEEP' in val: return 'background-color: #00b0ff; color: black; font-weight: bold;'
+        if 'WHALE RE-ENTRY' in val: return 'background-color: #006064; color: white; font-weight: bold;'
+        if 'WHALE IN' in val: return 'background-color: #01579b; color: white;'
+        if 'VOLA HOLE' in val: return 'background-color: #4a148c; color: white;'
+        if 'UP KIRILIM' in val: return 'background-color: #00FF88; color: black; font-weight: bold;'
+        if 'DOWN KIRILIM' in val: return 'background-color: #FF1744; color: white; font-weight: bold;'
+        if val == '⛔': return 'background-color: #b71c1c; color: white; font-size: 1.2rem; text-align: center;'
+        if val == '✅': return 'background-color: #004d40; color: white; font-size: 1.2rem; text-align: center;'
+    return 'background-color: #111111; color: white;'
+
+def style_efor(val):
+    if isinstance(val, str):
+        if '🚀' in val: return 'background-color: #00FF88; color: black; font-weight: bold;'
+        if '🩸' in val: return 'background-color: #FF1744; color: white; font-weight: bold;'
+        if '🟢' in val: return 'color: #00FF88; font-weight: bold;'
+        if '🔴' in val: return 'color: #FF1744; font-weight: bold;'
+    return 'color: #888;'
+
+def style_percentages(val):
+    if isinstance(val, (float, int)): return f"color: {'#00ff88' if val > 0 else '#ff3333'}; font-weight: bold;"
+    return ''
 
 # ==========================================
-# 4. ARAYÜZ (TABS)
+# 5. KOKPİT ARAYÜZÜ
 # ==========================================
-st.title("🏛️ DA VINCI: İSTİHBARAT & RALLİ İSTATİSTİK MOTORU")
-tab1, tab2, tab3 = st.tabs(["🌍 LİKİDİTE & OPEX MASASI", "⚖️ THEMATIC VALUATION GAP", "🦈 V700 SEQUENTIAL MOTORU"])
+st.title("🏛️ AETHER APEX ULTIMATE V134.0")
+st.markdown("Kararnamelerin rasyonel etki puanlarını, 12 kanallı esneklik yapısını ve **ŞAHANE V127** efor kırılımlarını birleştirir. Tüm sekmeler gerçek zamanlı güncellenebilir (Önbellek bypass'ı aktiftir).")
+
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🌐 MAKRO & OPEX", 
+    "🔋 OMNI-MATRIX (Piller)",
+    "🦅 KUŞBAKIŞI SEKTÖR",
+    "⚖️ VALUATION GAP (Çarpan Uçurumu)",
+    "🦈 HAFTALIK MOMENTUM",
+    "🚨 4H & OMNI RADAR",
+    "🚀 FUTURE THEMES"
+])
+
+all_etfs_to_scan = list(MAIN_SECTORS.keys()) + list(ETF_INFO.keys())
+portfolio_tickers = sorted(list(set([t for tkrs in ETF_INFO.values() for t in tkrs['stocks']])))
+etf_name_map = {k: v for k, v in MAIN_SECTORS.items()}
+for k, v in ETF_INFO.items(): etf_name_map[k] = f"Alt Sektör: {v['area']}"
 
 # ---------------------------------------------------------
-# TAB 1: MAKRO, OPEX VE JEOPOLİTİK 
+# TAB 1: MAKRO & OPEX & HABERLER
 # ---------------------------------------------------------
 with tab1:
-    st.markdown("### 📡 Canlı Makro İstihbarat Radarı")
+    st.subheader("⚙️ Institutional Desk: Gelişmiş Makro Tetikleyiciler & RSS Canlı Haber Akışı")
     
-    if 'macro_updates' not in st.session_state:
-        st.session_state.macro_updates = {
-            "calendar": "Bekleniyor...", "fed": "Bekleniyor...", "actors": "Bekleniyor...", "trump": "Bekleniyor...", "geo": "Bekleniyor..."
-        }
-        st.session_state.live_macro_news = []
+    c_mac1, c_mac2 = st.columns([1, 4])
+    if c_mac1.button("🔄 Makro ve Haberleri Güncelle", use_container_width=True):
+        st.session_state.macro_nonce = str(time.time())
+        st.session_state.news_nonce = str(time.time())
+        st.success("Haberler ve Makro veriler güncellendi!")
 
-    st.markdown("#### 🔄 Global Canlı Haber Akışı")
-    if st.button("🌐 SPY, QQQ, TLT Global Haberlerini Güncelle", use_container_width=True):
-        with st.spinner("Global finans haberleri güvenli modda çekiliyor... (Rate Limit koruması aktif)"):
-            macro_news = []
-            for tkr in ["SPY", "QQQ", "TLT"]:
-                news = fetch_news_safely(tkr)
-                if news:
-                    for n in news:
-                        macro_news.append(f"**[{tkr}]** [{n['title']}]({n['link']})")
-                time.sleep(1) # ANTI-BAN DELAY
-            st.session_state.live_macro_news = macro_news
+    t_cols = st.columns(4)
+    for i, trig in enumerate(SYSTEM_TRIGGERS.keys()):
+        with t_cols[i]:
+            if st.button(f"Senaryo: {trig}", use_container_width=True):
+                st.session_state.active_trigger = trig
 
-    if st.session_state.live_macro_news:
-        st.markdown("<div style='background-color:#111; padding:10px; border-radius:5px; border-left:4px solid #00BFFF; margin-bottom:15px;'>", unsafe_allow_html=True)
-        for news_item in st.session_state.live_macro_news:
-            st.markdown(f"- {news_item}")
-        st.markdown("</div>", unsafe_allow_html=True)
+    col_chart, col_docs = st.columns([3, 2])
+    with col_chart:
+        st.markdown(f"#### 💸 **Sermaye Akış Rotası:** ({st.session_state.active_trigger})")
+        draw_smart_money_flow(SYSTEM_TRIGGERS[st.session_state.active_trigger])
         
-    col_up1, col_up2, col_up3, col_up4, col_up5 = st.columns(5)
-
-    with col_up1:
-        if st.button("📅 Finansal Takvim Çek", use_container_width=True):
-            st.session_state.macro_updates['calendar'] = "TÜFE Beklentisi: %2.8. Yüksek gelirse Tahviller DÜŞER (Negatif), Teknoloji (XLK) DÜŞER. Düşük gelirse Kripto ve Teknoloji RALLİ YAPAR."
-    with col_up2:
-        if st.button("💧 Fed/Likidite Kararları", use_container_width=True):
-            st.session_state.macro_updates['fed'] = "Fed Swapları faiz indirim ihtimalini %40'a çekti. Etki: Dolar Endeksi (UUP) Güçleniyor. Altın (GLD) Baskılanıyor."
-    with col_up3:
-        if st.button("🌐 Global Aktörler (Çin/AB)", use_container_width=True):
-            st.session_state.macro_updates['actors'] = "Çin Merkez Bankası (PBOC) emlak sektörü için 50 Milyar Yuan likidite enjekte etti. Bakır (COPX) ve Endüstri (XLI) için Pozitif."
-    with col_up4:
-        if st.button("🦅 ABD Yönetim Kararları", use_container_width=True):
-            st.session_state.macro_updates['trump'] = "Yapay Zeka ve Uzay altyapısına yeni 'Government Stake' (Devlet Hissesi) yasası onaylandı. SPACE_RACE ve AI ETF'leri (BOTZ) için Yükseliş Beklentisi."
-    with col_up5:
-        if st.button("🌍 Jeopolitik Şoklar", use_container_width=True):
-            st.session_state.macro_updates['geo'] = "Ortadoğu'da tanker trafiği durduruldu. Petrol (USO) YUKARI, Lojistik (IYT) AŞAĞI yönde sert fiyatlama yapıyor."
-
-    st.markdown(f"<div class='macro-card'><span style='color:#00ff88; font-weight:bold;'>📆 Haftalık Finansal Takvim Beklentisi:</span><br><span style='color:#fff;'>{st.session_state.macro_updates['calendar']}</span></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='macro-card'><span style='color:#00ff88; font-weight:bold;'>🖨️ Likidite ve Merkez Bankası (Fed):</span><br><span style='color:#fff;'>{st.session_state.macro_updates['fed']}</span></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='macro-card'><span style='color:#00ff88; font-weight:bold;'>🌏 Çin & Avrupa Birliği Kararları:</span><br><span style='color:#fff;'>{st.session_state.macro_updates['actors']}</span></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='macro-card'><span style='color:#00ff88; font-weight:bold;'>🦅 Beyaz Saray İcraatleri:</span><br><span style='color:#fff;'>{st.session_state.macro_updates['trump']}</span></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='macro-card'><span style='color:#00ff88; font-weight:bold;'>⚔️ Jeopolitik ve Emtia Hatları:</span><br><span style='color:#fff;'>{st.session_state.macro_updates['geo']}</span></div>", unsafe_allow_html=True)
+        st.markdown("#### 🔊 Canlı Medya ve Yasa Tarayıcı (RSS)")
+        with st.spinner("Küresel haber ağları ve yasa tasarıları taranıyor..."):
+            df_news = pd.DataFrame(fetch_live_trump_news(st.session_state.news_nonce))
+            if not df_news.empty:
+                st.dataframe(df_news, use_container_width=True, hide_index=True, column_config={"Kaynak Link": st.column_config.LinkColumn("Haber Linki")})
+                
+    with col_docs:
+        st.markdown("""
+        <div class="macro-def-box">
+            <div class="macro-def-title">📚 Opex Pinning Nedir?</div>
+            <p style="font-size: 0.85rem; color: #b0b0b0;">3. Cuma vade sonlarına (OpEx) yaklaşırken, yoğun opsiyon (Open Interest) olan seviyelerde Market Maker'ların fiyatı buraya hapsetmesi durumudur. Fiyat sıkışır, sahte kırılımlar (Whipsaw) üretir.</p>
+        </div>
+        <div class="macro-def-box">
+            <div class="macro-def-title">📈 Gamma Squeeze Nedir?</div>
+            <p style="font-size: 0.85rem; color: #b0b0b0;">Aşırı Call opsiyon alımı sonrası piyasa yapıcıların (Dealers) hedge amaçlı panikle spot hisse alması sonucu oluşan parabolik fiyat erimesi (Melt-Up) döngüsüdür.</p>
+        </div>
+        <div class="macro-def-box">
+            <div class="macro-def-title">🌍 Geopolitical Shock</div>
+            <p style="font-size: 0.85rem; color: #b0b0b0;">Savaş, ambargo veya tedarik zinciri çöküşünde sermayenin büyüme hisselerinden (Tech/AI) kaçıp sert emtiaya (Bakır, Petrol, Savunma) ve nakde akmasıdır.</p>
+        </div>
+        <div class="macro-def-box">
+            <div class="macro-def-title">🏦 Liquidity Crunch (Fed)</div>
+            <p style="font-size: 0.85rem; color: #b0b0b0;">Merkez bankasının şahin politikalarla (faiz artışı/QT) piyasadan doları çekmesidir. Yüksek çarpanlı (Zarar eden Tech/Kripto) varlıklarda devasa margin call satışları getirir.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TAB 2: VALUATION GAP (THEMATIC)
+# TAB 2: OMNI-MATRIX (PİLLER)
 # ---------------------------------------------------------
 with tab2:
-    st.markdown("### ⚖️ Tematik Fon Liderleri ve Çarpan Uçurumu")
-    
-    for theme_name, stocks in THEMES.items():
-        if theme_name == "📌 Kendi Hisseni Gir": continue 
+    st.subheader("🔋 Tüm Sektörler Pil Enerjisi (Gerçek Zamanlı)")
+    if st.button("🔄 Pil Matrisini Zorla Güncelle (Cache Bypass)", key="btn_matrix"):
+        st.session_state.battery_nonce = str(time.time())
         
-        with st.expander(f"📁 TEMA: {theme_name}"):
-            news_col, val_col = st.columns([1, 2])
-            
-            with news_col:
-                if st.button(f"🔄 {theme_name} Haberlerini Çek", key=f"btn_{theme_name}"):
-                    with st.spinner("Küresel ağlar taranıyor..."):
-                        n_list = fetch_news_safely(stocks[0])
-                        st.markdown(f"**{stocks[0]} Odaklı En Güncel Haberler:**")
-                        if n_list:
-                            for n in n_list:
-                                st.markdown(f"- <a href='{n['link']}' target='_blank' style='color:#00BFFF;'>{n['title']}</a>", unsafe_allow_html=True)
-                        else:
-                            st.warning(f"⚠️ Yahoo Finance API geçici olarak yanıt vermedi (Rate Limit).")
-                            st.markdown(f"🔍 [**Google News üzerinden {stocks[0]} canlı ara**](https://news.google.com/search?q={stocks[0]})", unsafe_allow_html=True)
-            
-            with val_col:
-                if st.button(f"📊 {theme_name} Çarpan Analizi Yap", key=f"val_{theme_name}"):
-                    progress_text = "API sınırları aşılmamak için hisseler yavaş modda (Anti-Ban) taranıyor..."
-                    my_bar = st.progress(0, text=progress_text)
-                    
-                    val_data = []
-                    for i, s in enumerate(stocks):
-                        try:
-                            tkr = yf.Ticker(s)
-                            mc = tkr.fast_info.get('marketCap', 0)
-                            pe = tkr.info.get('trailingPE', 0)
-                            val_data.append({"Ticker": s, "MC": mc, "PE": pe})
-                        except Exception: 
-                            pass
-                        
-                        my_bar.progress((i + 1) / len(stocks), text=f"[{s}] analiz edildi. Soğuma bekleniyor...")
-                        time.sleep(1.2) # API'yi boğmamak için bekleme
-                        
-                    my_bar.empty()
-                    
-                    df_val = pd.DataFrame(val_data)
-                    if not df_val.empty and df_val['MC'].sum() > 0:
-                        df_val = df_val.sort_values(by='MC', ascending=False)
-                        leader = df_val.iloc[0]
-                        st.markdown(f"<h4 style='color:#FFD700;'>👑 TEMATİK LİDER: {leader['Ticker']} (${leader['MC']/1e9:.1f} Milyar)</h4>", unsafe_allow_html=True)
-                        
-                        res_html = "<ul style='color:#fff;'>"
-                        for i in range(1, len(df_val)):
-                            row = df_val.iloc[i]
-                            gap = leader['MC'] / row['MC'] if row['MC'] > 0 else 0
-                            pe_str = f"F/K: {row['PE']:.1f}" if row['PE'] else "N/A"
-                            res_html += f"<li><strong>{row['Ticker']}</strong>: Liderin <span style='color:#FF1744; font-weight:bold;'>{gap:.1f}x</span> gerisinde. <em>({pe_str})</em></li>"
-                        res_html += "</ul>"
-                        st.markdown(res_html, unsafe_allow_html=True)
+    with st.spinner("Matrix API'den güncel veriler çekiliyor..."):
+        df_m = fetch_matrix_data(st.session_state.battery_nonce)
+        if not df_m.empty:
+            theme_avg = df_m.groupby('Sektör')[['RSI', 'RSI_1D', 'RSI_1W']].mean().reset_index()
+            cols = st.columns(4)
+            for i, row in theme_avg.iterrows():
+                with cols[i % 4]:
+                    col = "#00ff88" if row['RSI'] > 60 else "#ff3333" if row['RSI'] < 40 else "#f1c40f"
+                    draw_battery(row['Sektör'], row['RSI'], col, delta_1d=(row['RSI'] - row['RSI_1D']))
 
 # ---------------------------------------------------------
-# TAB 3: V700 SEQUENTIAL MOTORU (TETİKLEYİCİ BAZLI)
+# TAB 3: KUŞBAKIŞI SEKTÖR (1D)
 # ---------------------------------------------------------
 with tab3:
-    st.markdown("### 🦈 Da Vinci: Sequential Kurulum ve Ralli Matrisi")
-    st.caption("Strateji: Omni Momentum Çapa (Anchor) atar, maks 4 mum içinde Füzyon pozitif kalarak (Constraint) Synergy dönüşü (Verify) aranır. Hedef bu noktadan itibaren başlar.")
-    
-    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-    with col_t1: 
-        sel_theme = st.selectbox("İncelenecek Tema", list(THEMES.keys()))
-    with col_t2: 
-        if sel_theme == "📌 Kendi Hisseni Gir":
-            sel_stock = st.text_input("Borsa Kodu (Örn: PLTR, TSLA)", value="PLTR").upper()
-        else:
-            sel_stock = st.selectbox("Hisse / ETF", THEMES[sel_theme])
-    with col_t3: 
-        lookback_days = st.number_input("Ralli Süresi (Gün)", min_value=1, max_value=60, value=6)
-    with col_t4: 
-        rally_pct = st.number_input("Hedef Yükseliş (%)", min_value=1, max_value=100, value=1)
+    st.subheader("🦅 Kuşbakışı ETF Sinyal Radarı")
+    if st.button("🔄 Sektör Sinyallerini Güncelle", key="btn_bird"):
+        st.session_state.battery_nonce = str(time.time())
         
-    if st.button("⚛️ RALLİ MATRİSİNİ VE İSTATİSTİKLERİ ÇIKAR", use_container_width=True):
-        if sel_stock:
-            with st.spinner(f"{sel_stock} için Numpy Motoru çalışıyor, geçmiş tarama jet hızıyla yapılıyor..."):
-                res = run_pre_rally_statistics(sel_stock, lookback_days, rally_pct)
-                
-                if "error" in res:
-                    st.error(res["error"])
-                elif res["stats"]["count"] == 0:
-                    st.warning(f"⚠️ {sel_stock} grafiğinde son 3 yılda kusursuz Sequential şartlarını sağlayan hiçbir kurulum tespit edilemedi.")
-                else:
-                    s = res['stats']
-                    df_events = res['events']
-                    
-                    st.success(f"Geçmişte tam şartlara uyan **{s['count']} adet** Kusursuz Kurulum bulundu! 🎯 Kurulum sonrası İsabet Oranı: **%{s['hit_rate']:.1f}**")
-                    
-                    st.markdown("#### 📂 BÖLÜM 1: Kurulum Raporları (Event-by-Event)")
-                    st.dataframe(df_events, use_container_width=True, hide_index=True)
-                    
-                    st.markdown("#### 📊 BÖLÜM 2: Kurulum Anındaki Sub-İndikatör Durumları (Matris)")
-                    
-                    matrix_html = f"""
-                    <div class="matrix-title">TETİKLEME (TRIGGER) ANINDAKİ DURUMLAR</div>
-                    <table class="matrix-table">
-                        <tr>
-                            <th>SYNERGY (Onay)</th><th>%</th>
-                            <th>FÜZYON (Kısıt)</th><th>%</th>
-                            <th>O. MOMENTUM (Çapa)</th><th>%</th>
-                            <th>WHALE (Filtre)</th><th>%</th>
-                            <th>RS (Filtre)</th><th>%</th>
-                        </tr>
-                        <tr>
-                            <td>Y TO B</td><td class="val">{s['Syn_Y2B']:.0f}%</td>
-                            <td>Y TO B</td><td class="val">{s['Fus_Y2B']:.0f}%</td>
-                            <td>Y TO B</td><td class="val">{s['Omni_Y2B']:.0f}%</td>
-                            <td>Y TO R (IN)</td><td class="val">{s['Whale_Y2R']:.0f}%</td>
-                            <td>INCREASE</td><td class="val">{s['RS_Inc']:.0f}%</td>
-                        </tr>
-                        <tr>
-                            <td>R TO B</td><td class="val">{s['Syn_R2B']:.0f}%</td>
-                            <td>R TO B</td><td class="val">{s['Fus_R2B']:.0f}%</td>
-                            <td>R TO B</td><td class="val">{s['Omni_R2B']:.0f}%</td>
-                            <td>R TO Y (OUT)</td><td class="val">{s['Whale_R2Y']:.0f}%</td>
-                            <td>DECREASE</td><td class="val">{s['RS_Dec']:.0f}%</td>
-                        </tr>
-                        <tr>
-                            <td>Y TO DB</td><td class="val">{s['Syn_Y2DB']:.0f}%</td>
-                            <td>Y TO DB</td><td class="val">{s['Fus_Y2DB']:.0f}%</td>
-                            <td>Y TO DB</td><td class="val">{s['Omni_Y2DB']:.0f}%</td>
-                            <td>WHALE INCREASE</td><td class="val">{s['Whale_Inc']:.0f}%</td>
-                            <td>Y TO B</td><td class="val">{s['RS_Y2B']:.0f}%</td>
-                        </tr>
-                        <tr>
-                            <td>B TO DB</td><td class="val">{s['Syn_B2DB']:.0f}%</td>
-                            <td>B TO DB</td><td class="val">{s['Fus_B2DB']:.0f}%</td>
-                            <td>B TO DB</td><td class="val">{s['Omni_B2DB']:.0f}%</td>
-                            <td>WHALE DECREASE</td><td class="val">{s['Whale_Dec']:.0f}%</td>
-                            <td></td><td></td>
-                        </tr>
-                    </table>
-                    """
-                    st.markdown(matrix_html, unsafe_allow_html=True)
+    with st.spinner("1D Sinyaller Hesaplanıyor..."):
+        df_bird = calculate_signals(all_etfs_to_scan, interval="1d", bypass_stamp=st.session_state.battery_nonce)
+        if not df_bird.empty:
+            df_bird['Kapsam'] = df_bird['Ticker'].map(etf_name_map)
+            st.dataframe(
+                df_bird[['Kapsam', 'Ticker', 'Sinyal', 'Efor', 'Fiyat', '1 Gün (%)', '1 Hafta (%)', 'Whale Power', 'Fusion']]
+                .style.map(style_signals, subset=['Sinyal']).map(style_percentages, subset=['1 Gün (%)', '1 Hafta (%)']).map(style_efor, subset=['Efor']),
+                use_container_width=True, hide_index=True
+            )
 
-        else:
-             st.warning("Lütfen bir hisse sembolü girin.")
+# ---------------------------------------------------------
+# TAB 4: VALUATION GAP (ÇARPAN UÇURUMU) SEKTÖR ORTALAMALI
+# ---------------------------------------------------------
+with tab4:
+    st.subheader("⚖️ Tematik Çarpan Uçurumu ve Sektör Kıyaslaması")
+    st.markdown("Seçilen sektördeki hisseleri tarar, **Sektör Ortalamasını** bulur ve tüm hisseleri bu ortalamaya göre kıyaslar.")
+    
+    col_v1, col_v2 = st.columns([1, 4])
+    group_choice = col_v1.selectbox("Analiz Edilecek Tema:", list(ETF_INFO.keys()))
+    
+    if col_v2.button("🔄 Finansal Verileri ve Rasyoları Güncelle (API Çağrısı)", use_container_width=True):
+        st.session_state.val_nonce = str(time.time())
+        
+    if group_choice:
+        with st.spinner(f"{group_choice} rasyoları Yahoo Finance'tan canlı çekiliyor..."):
+            tickers = ETF_INFO[group_choice]['stocks']
+            df_val = fetch_valuation_data(tickers, st.session_state.val_nonce)
+            
+            if not df_val.empty:
+                df_val = df_val[df_val['MarketCap'] > 0].sort_values(by='MarketCap', ascending=False)
+                
+                # Calculate Sector Averages (Ignoring Zeros)
+                avg_pe = df_val[df_val['PE'] > 0]['PE'].mean()
+                avg_ps = df_val[df_val['PS'] > 0]['PS'].mean()
+                avg_peg = df_val[df_val['PEG'] > 0]['PEG'].mean()
+                
+                avg_pe = avg_pe if not pd.isna(avg_pe) else 0
+                avg_ps = avg_ps if not pd.isna(avg_ps) else 0
+                avg_peg = avg_peg if not pd.isna(avg_peg) else 0
+
+                st.markdown(f"""
+                <div style="background-color: #111; padding: 15px; border-left: 5px solid #f1c40f; border-radius: 5px; margin-bottom: 20px;">
+                    <h4 style="color: #f1c40f; margin:0;">📊 {ETF_INFO[group_choice]['area']} - Sektör Ortalamaları</h4>
+                    <p style="margin: 5px 0 0 0; font-size: 1.1rem;">
+                        Ortalama F/K (PE): <strong>{avg_pe:.1f}</strong> | 
+                        Ortalama F/S (PS): <strong>{avg_ps:.1f}</strong> | 
+                        Ortalama PEG: <strong>{avg_peg:.1f}</strong>
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if not df_val.empty:
+                    leader = df_val.iloc[0]
+                    st.markdown(f"<div class='valuation-leader'>👑 Grup Lideri: {leader['Ticker']} (Değer: ${leader['MarketCap']/1e9:.1f}B | F/K: {leader['PE']:.1f} | F/S: {leader['PS']:.1f} | PEG: {leader['PEG']:.1f})</div><hr>", unsafe_allow_html=True)
+                    
+                    for i in range(1, len(df_val)):
+                        row = df_val.iloc[i]
+                        gap_mc = leader['MarketCap'] / row['MarketCap'] if row['MarketCap'] > 0 else 0
+                        pe_diff = row['PE'] - avg_pe
+                        pe_color = "#ff3333" if pe_diff > 0 else "#00ff88"
+                        pe_txt = f"Ortalamanın {abs(pe_diff):.1f} {'Üzerinde (Pahalı)' if pe_diff > 0 else 'Altında (Ucuz)'}" if avg_pe > 0 and row['PE'] > 0 else "Veri Yok"
+                        
+                        st.markdown(f'''
+                            <div class="valuation-gap-card">
+                                <h3><span class="valuation-laggard">{row['Ticker']}</span> <span style="font-size:0.9rem; color:#888;">(Değer: ${row['MarketCap']/1e9:.1f}B | F/K: {row['PE']:.1f} | PEG: {row['PEG']:.1f})</span></h3>
+                                <div style="color: {pe_color}; font-weight:bold; margin-bottom: 5px;">Rasyo Analizi: {pe_txt}</div>
+                                <div style="color: #e0e0e0; font-size: 0.9rem;">Lider {leader['Ticker']} ile arasındaki pazar hacmi farkı: <strong>{gap_mc:.1f}x</strong></div>
+                            </div>
+                        ''', unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# TAB 5, 6, 7: OMNI RADAR, HAFTALIK VE GELECEK
+# ---------------------------------------------------------
+with tab5:
+    st.subheader("🦈 Haftalık Momentum-Gap Avcısı")
+    if st.button("🔄 Haftalık Veriyi Yenile"): st.session_state.battery_nonce = str(time.time())
+    with st.spinner("1W Sinyaller Hesaplanıyor..."):
+        df_wk = calculate_signals(portfolio_tickers, interval="1wk", bypass_stamp=st.session_state.battery_nonce)
+        if not df_wk.empty: st.dataframe(df_wk[['Ticker', 'Sinyal', 'Efor', 'Fiyat', '1 Hafta (%)', 'Whale Power']].style.map(style_signals, subset=['Sinyal']).map(style_efor, subset=['Efor']), use_container_width=True, hide_index=True)
+
+with tab6:
+    st.subheader("🚨 4H & Günlük OMNI RADAR (Tuzaklar ve Kırılımlar)")
+    if st.button("🔄 Radar Verilerini Yenile"): st.session_state.battery_nonce = str(time.time())
+    with st.spinner("Piyasa taranıyor (Bull/Bear Trap Onaylı)..."):
+        df_radar = calculate_signals(portfolio_tickers, interval="1d", bypass_stamp=st.session_state.battery_nonce)
+        if not df_radar.empty:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("#### 🟢 POZİTİF (✅, Up, Re-Entry)")
+                st.dataframe(df_radar[df_radar['Sinyal'].isin(['✅', '🚀 UP KIRILIM', '🔄 WHALE RE-ENTRY'])].style.map(style_signals, subset=['Sinyal']), use_container_width=True, hide_index=True)
+            with c2:
+                st.markdown("#### 🔴 NEGATİF (⛔, Down)")
+                st.dataframe(df_radar[df_radar['Sinyal'].isin(['⛔', '🩸 DOWN KIRILIM'])].style.map(style_signals, subset=['Sinyal']), use_container_width=True, hide_index=True)
+
+with tab7:
+    st.subheader("🚀 FUTURE THEMES: Geleceğin Teknolojileri")
+    if st.button("🔄 Gelecek Temalarını Yenile"): st.session_state.battery_nonce = str(time.time())
+    future_tickers = list(set([t for tkrs in FUTURE_THEMES_MAP.values() for t in tkrs]))
+    with st.spinner("Future Themes evreni taranıyor..."):
+        df_future = calculate_signals(future_tickers, interval="1d", bypass_stamp=st.session_state.battery_nonce)
+        if not df_future.empty: st.dataframe(df_future[['Ticker', 'Sinyal', 'Efor', 'Fiyat', '1 Gün (%)', 'Whale Power', 'Fusion']].style.map(style_signals, subset=['Sinyal']).map(style_efor, subset=['Efor']), use_container_width=True, hide_index=True)
