@@ -153,24 +153,51 @@ def draw_battery(label, current, color, delta_1d=0.0):
 
 @st.cache_data(ttl=60)
 def fetch_live_trump_news(news_bypass_stamp):
-    rss_url = "https://news.google.com/rss/search?q=Trump+stock+market+OR+company+OR+executive+order+OR+law&hl=en-US&gl=US&ceid=US:en"
+    # DÜZELTME: Sadece Ticker bazlı değil, ekonomi ve makro kelimelerini de arıyoruz.
+    rss_url = "https://news.google.com/rss/search?q=Trump+OR+Fed+OR+Economy+OR+Tariffs+stock+market&hl=en-US&gl=US&ceid=US:en"
     news_alerts = []
     all_stocks = list(set([t for tkrs in ETF_INFO.values() for t in tkrs['stocks']]))
+    
     try:
         response = requests.get(rss_url, timeout=10)
         root = ET.fromstring(response.content)
-        for item in root.findall('.//item')[:40]:  
+        
+        for item in root.findall('.//item')[:15]:  # En güncel 15 haberi al
             title = item.find('title').text
             link = item.find('link').text
             pub_date = item.find('pubDate').text
+            
+            # Ticker Tespit Et
             detected_tickers = [ticker for ticker in all_stocks if re.search(rf"\b{ticker}\b", title) or f"({ticker})" in title]
-            if detected_tickers:
-                news_alerts.append({"Tarih": pub_date[:16], "Gelişme / Haber Başlığı": title, "Hedef Ticker": ", ".join(detected_tickers), "Kaynak Link": link})
-        if not news_alerts:
-            for item in root.findall('.//item')[:6]:
-                news_alerts.append({"Tarih": item.find('pubDate').text[:16], "Gelişme / Haber Başlığı": item.find('title').text, "Hedef Ticker": "📊 MAKRO / YASA / SEKTÖR", "Kaynak Link": item.find('link').text})
+            ticker_str = ", ".join(detected_tickers) if detected_tickers else "Genel Makro / Endeks"
+            
+            # Sektör Etkisi Mantığı (Keyword Algılama)
+            title_lower = title.lower()
+            impact = "⚖️ Nötr / Sektörel Rotasyon"
+            if any(k in title_lower for k in ["tariff", "tax", "china", "trade"]):
+                impact = "🔴 Tech & Çin İthalatı | 🟢 İç Üretim (XLI, XME)"
+            elif any(k in title_lower for k in ["oil", "gas", "energy", "drill", "fossil"]):
+                impact = "🟢 Fosil Yakıt (XLE, XOP) | 🔴 Temiz Enerji (ICLN)"
+            elif any(k in title_lower for k in ["crypto", "bitcoin", "sec", "deregulation"]):
+                impact = "🟢 Kripto & Fintek (WGMI, ARKF)"
+            elif any(k in title_lower for k in ["war", "defense", "military", "space"]):
+                impact = "🟢 Savunma & Uzay (XAR, ARKX)"
+            elif any(k in title_lower for k in ["fed", "rate", "inflation", "powell", "cpi", "yield"]):
+                impact = "📉 Likidite Etkisi (Tüm Piyasayı Etkiler)"
+            elif any(k in title_lower for k in ["ai", "chip", "semiconductor", "tech"]):
+                impact = "🟢 Çip & AI Altyapısı (SOXX, XLK)"
+            
+            news_alerts.append({
+                "Tarih": pub_date[:16], 
+                "Haber Başlığı": title, 
+                "İlgili Hisse": ticker_str, 
+                "Sektör Etkisi": impact,
+                "Link": link
+            })
+            
     except Exception as e:
-        return [{"Tarih": "-", "Gelişme / Haber Başlığı": f"Haber motoru başlatılamadı: {e}", "Hedef Ticker": "HATA", "Kaynak Link": ""}]
+        return [{"Tarih": "-", "Haber Başlığı": f"Haber motoru başlatılamadı: {e}", "İlgili Hisse": "HATA", "Sektör Etkisi": "HATA", "Link": ""}]
+    
     return news_alerts
 
 # ==========================================
@@ -325,24 +352,31 @@ def calculate_signals(ticker_list, interval="1d", bypass_stamp=""):
     if results: return pd.DataFrame(results).sort_values(by="Fusion", ascending=False)
     return pd.DataFrame()
 
+# DÜZELTME: Valuation Gap fonksiyonunda try/except eklendi ve fast_info önceliklendirildi.
 @st.cache_data(ttl=600)
 def fetch_valuation_data(ticker_list, bypass_stamp):
     funds = []
     for t in ticker_list:
         try:
             tk = yf.Ticker(t)
-            info = tk.info
-            mc = info.get('marketCap', tk.fast_info.get('marketCap', 0))
-            pe = info.get('trailingPE', 0)
-            ps = info.get('priceToSalesTrailing12Months', 0)
-            peg = info.get('pegRatio', 0)
+            # Market Cap fast_info'dan alınarak API bloklaması engellendi
+            mc = tk.fast_info.get('marketCap', 0)
             
-            # Hedging for None values
+            # Info verisi Rate Limit yerse sadece onu sıfırlarız, uygulamayı çökertmeyiz
+            try:
+                info = tk.info
+                pe = info.get('trailingPE', 0)
+                ps = info.get('priceToSalesTrailing12Months', 0)
+                peg = info.get('pegRatio', 0)
+            except:
+                pe, ps, peg = 0, 0, 0
+                
             pe = pe if pe is not None else 0
             ps = ps if ps is not None else 0
             peg = peg if peg is not None else 0
             
             funds.append({"Ticker": t, "MarketCap": mc, "PE": pe, "PS": ps, "PEG": peg})
+            time.sleep(0.1)  # Anti-Ban için ufak gecikme
         except: 
             funds.append({"Ticker": t, "MarketCap": 0, "PE": 0, "PS": 0, "PEG": 0})
     return pd.DataFrame(funds)
@@ -400,12 +434,6 @@ for k, v in ETF_INFO.items(): etf_name_map[k] = f"Alt Sektör: {v['area']}"
 with tab1:
     st.subheader("⚙️ Institutional Desk: Gelişmiş Makro Tetikleyiciler & RSS Canlı Haber Akışı")
     
-    c_mac1, c_mac2 = st.columns([1, 4])
-    if c_mac1.button("🔄 Makro ve Haberleri Güncelle", use_container_width=True):
-        st.session_state.macro_nonce = str(time.time())
-        st.session_state.news_nonce = str(time.time())
-        st.success("Haberler ve Makro veriler güncellendi!")
-
     t_cols = st.columns(4)
     for i, trig in enumerate(SYSTEM_TRIGGERS.keys()):
         with t_cols[i]:
@@ -417,11 +445,23 @@ with tab1:
         st.markdown(f"#### 💸 **Sermaye Akış Rotası:** ({st.session_state.active_trigger})")
         draw_smart_money_flow(SYSTEM_TRIGGERS[st.session_state.active_trigger])
         
-        st.markdown("#### 🔊 Canlı Medya ve Yasa Tarayıcı (RSS)")
+        st.divider()
+        st.markdown("#### 🔊 Canlı Medya, Makro ve Sektör Tarayıcı (RSS)")
+        
+        # DÜZELTME: Sadece Haberler İçin Özel Update Butonu
+        if st.button("🔄 Canlı Haberleri ve Etkilerini Güncelle", use_container_width=True):
+            st.session_state.news_nonce = str(time.time())
+            st.success("Küresel haber ağları yeniden tarandı!")
+            
         with st.spinner("Küresel haber ağları ve yasa tasarıları taranıyor..."):
             df_news = pd.DataFrame(fetch_live_trump_news(st.session_state.news_nonce))
             if not df_news.empty:
-                st.dataframe(df_news, use_container_width=True, hide_index=True, column_config={"Kaynak Link": st.column_config.LinkColumn("Haber Linki")})
+                st.dataframe(
+                    df_news, 
+                    use_container_width=True, 
+                    hide_index=True, 
+                    column_config={"Link": st.column_config.LinkColumn("Haber Linki")}
+                )
                 
     with col_docs:
         st.markdown("""
@@ -500,7 +540,7 @@ with tab4:
             if not df_val.empty:
                 df_val = df_val[df_val['MarketCap'] > 0].sort_values(by='MarketCap', ascending=False)
                 
-                # Calculate Sector Averages (Ignoring Zeros)
+                # Calculate Sector Averages (Ignoring Zeros due to Rate Limits)
                 avg_pe = df_val[df_val['PE'] > 0]['PE'].mean()
                 avg_ps = df_val[df_val['PS'] > 0]['PS'].mean()
                 avg_peg = df_val[df_val['PEG'] > 0]['PEG'].mean()
@@ -508,6 +548,10 @@ with tab4:
                 avg_pe = avg_pe if not pd.isna(avg_pe) else 0
                 avg_ps = avg_ps if not pd.isna(avg_ps) else 0
                 avg_peg = avg_peg if not pd.isna(avg_peg) else 0
+
+                # DÜZELTME: API Limit uyarısı
+                if avg_pe == 0 and avg_ps == 0:
+                    st.warning("⚠️ Yahoo Finance anlık rasyo (F/K, PEG) verilerini reddetti (Rate Limit sebebiyle). Sadece Piyasa Değeri (Market Cap) üzerinden kıyaslama yapılıyor. Değerler 0 görünüyorsa API soğuma süresindedir.")
 
                 st.markdown(f"""
                 <div style="background-color: #111; padding: 15px; border-left: 5px solid #f1c40f; border-radius: 5px; margin-bottom: 20px;">
@@ -529,7 +573,7 @@ with tab4:
                         gap_mc = leader['MarketCap'] / row['MarketCap'] if row['MarketCap'] > 0 else 0
                         pe_diff = row['PE'] - avg_pe
                         pe_color = "#ff3333" if pe_diff > 0 else "#00ff88"
-                        pe_txt = f"Ortalamanın {abs(pe_diff):.1f} {'Üzerinde (Pahalı)' if pe_diff > 0 else 'Altında (Ucuz)'}" if avg_pe > 0 and row['PE'] > 0 else "Veri Yok"
+                        pe_txt = f"Ortalamanın {abs(pe_diff):.1f} {'Üzerinde (Pahalı)' if pe_diff > 0 else 'Altında (Ucuz)'}" if avg_pe > 0 and row['PE'] > 0 else "Rasyo verisi anlık çekilemedi"
                         
                         st.markdown(f'''
                             <div class="valuation-gap-card">
