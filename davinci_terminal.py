@@ -53,12 +53,10 @@ if 'macro_nonce' not in st.session_state: st.session_state.macro_nonce = str(tim
 if 'battery_nonce' not in st.session_state: st.session_state.battery_nonce = str(time.time())
 if 'val_nonce' not in st.session_state: st.session_state.val_nonce = str(time.time())
 if 'news_nonce' not in st.session_state: st.session_state.news_nonce = str(time.time())
-if 'theme_period' not in st.session_state: st.session_state.theme_period = "Today"
 
 # ==========================================
 # 2. KURUMSAL NİŞ ETF & HİSSE EVRENİ (BİRLEŞTİRİLMİŞ)
 # ==========================================
-# Kuşbakışı ve Tarayıcılar İçin Ana Sektörler
 MAIN_SECTORS = {
     "XLK": "Ana Sektör: Teknoloji", "XLI": "Ana Sektör: Sanayi", "XLE": "Ana Sektör: Enerji",
     "XLV": "Ana Sektör: Sağlık", "XLF": "Ana Sektör: Finans", "XLY": "Ana Tüketim",
@@ -68,7 +66,6 @@ MAIN_SECTORS = {
     "IBIT": "Tema: Bitcoin", "SMH": "Tema: Yarı İletkenler"
 }
 
-# Görsel 1000259837_2.jpg Birebir Eşleşmesi ve Eski ETF'lerin Katılımı
 THEME_TRACKER_MAP = {
     "Software": ["IGV", "PSJ", "CLOU"],
     "Genomics": ["ARKG", "IDNA"],
@@ -77,7 +74,7 @@ THEME_TRACKER_MAP = {
     "Social Media": ["SOCL"],
     "Biotechnology": ["IBB", "XBI"],
     "Gold Miners": ["GDX", "GDXJ"],
-    "Medical": ["XLV"], # Görseldeki yapıyı bozmamak için dahil edildi
+    "Medical": ["XLV"], 
     "Silver Miners": ["SIL"],
     "Real Estate": ["VNQ", "XLRE", "REZ", "SRVR"],
     "Retail": ["XRT", "XLY"],
@@ -175,7 +172,6 @@ def fetch_live_trump_news(news_bypass_stamp):
     try:
         response = requests.get(rss_url, timeout=10)
         root = ET.fromstring(response.content)
-        
         for item in root.findall('.//item')[:15]:
             title = item.find('title').text
             link = item.find('link').text
@@ -186,30 +182,16 @@ def fetch_live_trump_news(news_bypass_stamp):
             
             title_lower = title.lower()
             impact = "⚖️ Nötr / Sektörel Rotasyon"
-            if any(k in title_lower for k in ["tariff", "tax", "china", "trade"]):
-                impact = "🔴 Tech & Çin İthalatı | 🟢 İç Üretim (XLI, XME)"
-            elif any(k in title_lower for k in ["oil", "gas", "energy", "drill", "fossil"]):
-                impact = "🟢 Fosil Yakıt (XLE, XOP) | 🔴 Temiz Enerji (ICLN)"
-            elif any(k in title_lower for k in ["crypto", "bitcoin", "sec", "deregulation"]):
-                impact = "🟢 Kripto & Fintek (WGMI, ARKF)"
-            elif any(k in title_lower for k in ["war", "defense", "military", "space"]):
-                impact = "🟢 Savunma & Uzay (XAR, ARKX)"
-            elif any(k in title_lower for k in ["fed", "rate", "inflation", "powell", "cpi", "yield"]):
-                impact = "📉 Likidite Etkisi (Tüm Piyasayı Etkiler)"
-            elif any(k in title_lower for k in ["ai", "chip", "semiconductor", "tech"]):
-                impact = "🟢 Çip & AI Altyapısı (SOXX, XLK)"
+            if any(k in title_lower for k in ["tariff", "tax", "china", "trade"]): impact = "🔴 Tech & Çin İthalatı | 🟢 İç Üretim"
+            elif any(k in title_lower for k in ["oil", "gas", "energy", "drill", "fossil"]): impact = "🟢 Fosil Yakıt | 🔴 Temiz Enerji"
+            elif any(k in title_lower for k in ["crypto", "bitcoin", "sec", "deregulation"]): impact = "🟢 Kripto & Fintek"
+            elif any(k in title_lower for k in ["war", "defense", "military", "space"]): impact = "🟢 Savunma & Uzay"
+            elif any(k in title_lower for k in ["fed", "rate", "inflation", "powell"]): impact = "📉 Likidite Etkisi"
+            elif any(k in title_lower for k in ["ai", "chip", "semiconductor", "tech"]): impact = "🟢 Çip & AI Altyapısı"
             
-            news_alerts.append({
-                "Tarih": pub_date[:16], 
-                "Haber Başlığı": title, 
-                "İlgili Hisse": ticker_str, 
-                "Sektör Etkisi": impact,
-                "Link": link
-            })
-            
+            news_alerts.append({"Tarih": pub_date[:16], "Haber Başlığı": title, "İlgili Hisse": ticker_str, "Sektör Etkisi": impact, "Link": link})
     except Exception as e:
         return [{"Tarih": "-", "Haber Başlığı": f"Haber motoru başlatılamadı: {e}", "İlgili Hisse": "HATA", "Sektör Etkisi": "HATA", "Link": ""}]
-    
     return news_alerts
 
 # ==========================================
@@ -231,13 +213,13 @@ def get_safe_df(raw_data, ticker):
         else: return pd.DataFrame()
     return raw_data.copy()
 
-# ---> YENİ THEME TRACKER MATEMATİĞİ <---
+# ---> YENİ THEME TRACKER MATEMATİĞİ (DELTA HESAPLARI İLE) <---
 @st.cache_data(ttl=600)
 def fetch_theme_performance(bypass_stamp):
     all_etfs = list(set([t for themes in THEME_TRACKER_MAP.values() for t in themes]))
     
-    # YTD hesabı için minimum 1 yıllık veri çekiyoruz
-    start_date = datetime.now() - timedelta(days=365)
+    # Delta (Fark) hesaplamak için veriyi en az 400 gün geriden çekiyoruz (Geçen yılın YTD hesabı için şart)
+    start_date = datetime.now() - timedelta(days=400)
     
     try:
         raw_data = yf.download(all_etfs, start=start_date, interval="1d", group_by='ticker', progress=False)
@@ -254,27 +236,41 @@ def fetch_theme_performance(bypass_stamp):
             
         close = df['Close']
         
-        # Dönem Performansları
-        today_perf = ((close.iloc[-1] / close.iloc[-2]) - 1) * 100 if len(close) > 1 else 0
-        w1_perf = ((close.iloc[-1] / close.iloc[-5]) - 1) * 100 if len(close) >= 5 else today_perf
-        m1_perf = ((close.iloc[-1] / close.iloc[-21]) - 1) * 100 if len(close) >= 21 else w1_perf
-        m3_perf = ((close.iloc[-1] / close.iloc[-63]) - 1) * 100 if len(close) >= 63 else m1_perf
+        # --- MEVCUT DÖNEM (CURRENT) ---
+        t_curr  = ((close.iloc[-1] / close.iloc[-2]) - 1) * 100 if len(close) > 1 else 0
+        w1_curr = ((close.iloc[-1] / close.iloc[-6]) - 1) * 100 if len(close) > 5 else t_curr
+        m1_curr = ((close.iloc[-1] / close.iloc[-22]) - 1) * 100 if len(close) > 21 else w1_curr
+        m3_curr = ((close.iloc[-1] / close.iloc[-64]) - 1) * 100 if len(close) > 63 else m1_curr
         
-        # YTD (Year To Date)
         ytd_df = df[df.index.year == current_year]
-        ytd_perf = ((close.iloc[-1] / ytd_df['Close'].iloc[0]) - 1) * 100 if not ytd_df.empty else m3_perf
+        ytd_curr = ((close.iloc[-1] / ytd_df['Close'].iloc[0]) - 1) * 100 if not ytd_df.empty else m3_curr
+
+        # --- ÖNCEKİ EŞDEĞER DÖNEM (PREVIOUS - DELTA İÇİN) ---
+        # Örnek: Eğer 1W (son 5 gün) bakıyorsak, önceki 1W (6. günden 11. güne)
+        t_prev  = ((close.iloc[-2] / close.iloc[-3]) - 1) * 100 if len(close) > 2 else 0
+        w1_prev = ((close.iloc[-6] / close.iloc[-11]) - 1) * 100 if len(close) > 10 else 0
+        m1_prev = ((close.iloc[-22] / close.iloc[-43]) - 1) * 100 if len(close) > 42 else 0
+        m3_prev = ((close.iloc[-64] / close.iloc[-127]) - 1) * 100 if len(close) > 126 else 0
         
+        # Önceki Yılın Aynı Dönemi YTD (Geçen yılın ilk gününden, geçen yılın BUGÜNÜNE kadar)
+        prev_year_df = df[(df.index.year == current_year - 1) & (df.index.dayofyear <= datetime.now().timetuple().tm_yday)]
+        if len(prev_year_df) > 0 and len(df[df.index.year == current_year - 1]) > 0:
+            first_day_prev_year = df[df.index.year == current_year - 1]['Close'].iloc[0]
+            ytd_prev = ((prev_year_df['Close'].iloc[-1] / first_day_prev_year) - 1) * 100
+        else:
+            ytd_prev = 0
+
         perf_data[t] = {
-            "Today": today_perf,
-            "1W": w1_perf,
-            "1M": m1_perf,
-            "3M": m3_perf,
-            "YTD": ytd_perf
+            "Today": t_curr, "Prev_Today": t_prev,
+            "1W": w1_curr, "Prev_1W": w1_prev,
+            "1M": m1_curr, "Prev_1M": m1_prev,
+            "3M": m3_curr, "Prev_3M": m3_prev,
+            "YTD": ytd_curr, "Prev_YTD": ytd_prev
         }
         
     perf_df = pd.DataFrame.from_dict(perf_data, orient='index')
     
-    # Temalara Göre Ortalama Al (Görseldeki İsimlerle Eşleşir)
+    # Temalara Göre Ortalama Al
     theme_perf = {}
     for theme, tickers in THEME_TRACKER_MAP.items():
         valid_tickers = [t for t in tickers if t in perf_df.index]
@@ -449,7 +445,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🚀 FUTURE THEMES"
 ])
 
-# Radar tarayıcı listeleri
 all_etfs_to_scan = list(MAIN_SECTORS.keys()) + list(ETF_INFO.keys())
 portfolio_tickers = sorted(list(set([t for tkrs in ETF_INFO.values() for t in tkrs['stocks']])))
 
@@ -477,57 +472,52 @@ with tab1:
         with st.spinner("Küresel haber ağları ve yasa tasarıları taranıyor..."):
             df_news = pd.DataFrame(fetch_live_trump_news(st.session_state.news_nonce))
             if not df_news.empty:
-                st.dataframe(
-                    df_news, 
-                    use_container_width=True, 
-                    hide_index=True, 
-                    column_config={"Link": st.column_config.LinkColumn("Haber Linki")}
-                )
+                st.dataframe(df_news, use_container_width=True, hide_index=True, column_config={"Link": st.column_config.LinkColumn("Haber Linki")})
                 
     with col_docs:
         st.markdown("""
-        <div class="macro-def-box">
-            <div class="macro-def-title">📚 Opex Pinning Nedir?</div>
-            <p style="font-size: 0.85rem; color: #b0b0b0;">3. Cuma vade sonlarına (OpEx) yaklaşırken, yoğun opsiyon (Open Interest) olan seviyelerde Market Maker'ların fiyatı buraya hapsetmesi durumudur. Fiyat sıkışır, sahte kırılımlar (Whipsaw) üretir.</p>
-        </div>
-        <div class="macro-def-box">
-            <div class="macro-def-title">📈 Gamma Squeeze Nedir?</div>
-            <p style="font-size: 0.85rem; color: #b0b0b0;">Aşırı Call opsiyon alımı sonrası piyasa yapıcıların (Dealers) hedge amaçlı panikle spot hisse alması sonucu oluşan parabolik fiyat erimesi (Melt-Up) döngüsüdür.</p>
-        </div>
-        <div class="macro-def-box">
-            <div class="macro-def-title">🌍 Geopolitical Shock</div>
-            <p style="font-size: 0.85rem; color: #b0b0b0;">Savaş, ambargo veya tedarik zinciri çöküşünde sermayenin büyüme hisselerinden (Tech/AI) kaçıp sert emtiaya (Bakır, Petrol, Savunma) ve nakde akmasıdır.</p>
-        </div>
-        <div class="macro-def-box">
-            <div class="macro-def-title">🏦 Liquidity Crunch (Fed)</div>
-            <p style="font-size: 0.85rem; color: #b0b0b0;">Merkez bankasının şahin politikalarla (faiz artışı/QT) piyasadan doları çekmesidir. Yüksek çarpanlı (Zarar eden Tech/Kripto) varlıklarda devasa margin call satışları getirir.</p>
-        </div>
+        <div class="macro-def-box"><div class="macro-def-title">📚 Opex Pinning Nedir?</div><p style="font-size: 0.85rem; color: #b0b0b0;">3. Cuma vade sonlarına (OpEx) yaklaşırken, yoğun opsiyon (Open Interest) olan seviyelerde Market Maker'ların fiyatı buraya hapsetmesi durumudur. Fiyat sıkışır, sahte kırılımlar (Whipsaw) üretir.</p></div>
+        <div class="macro-def-box"><div class="macro-def-title">📈 Gamma Squeeze Nedir?</div><p style="font-size: 0.85rem; color: #b0b0b0;">Aşırı Call opsiyon alımı sonrası piyasa yapıcıların (Dealers) hedge amaçlı panikle spot hisse alması sonucu oluşan parabolik fiyat erimesi (Melt-Up) döngüsüdür.</p></div>
+        <div class="macro-def-box"><div class="macro-def-title">🌍 Geopolitical Shock</div><p style="font-size: 0.85rem; color: #b0b0b0;">Savaş, ambargo veya tedarik zinciri çöküşünde sermayenin büyüme hisselerinden (Tech/AI) kaçıp sert emtiaya (Bakır, Petrol, Savunma) ve nakde akmasıdır.</p></div>
+        <div class="macro-def-box"><div class="macro-def-title">🏦 Liquidity Crunch (Fed)</div><p style="font-size: 0.85rem; color: #b0b0b0;">Merkez bankasının şahin politikalarla (faiz artışı/QT) piyasadan doları çekmesidir. Yüksek çarpanlı (Zarar eden Tech/Kripto) varlıklarda devasa margin call satışları getirir.</p></div>
         """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TAB 2: YENİ THEME TRACKER (PLOTLY & 1000259837_2.jpg FORMATI)
+# TAB 2: YENİ THEME TRACKER (DELTA/İVME GÖSTERGELİ)
 # ---------------------------------------------------------
 with tab2:
-    st.subheader("🔥 Theme Tracker: Sektörel Performans Matrisi")
+    st.subheader("🔥 Theme Tracker: Sektörel İvme ve Performans Matrisi")
     
     col_per, col_btn = st.columns([4, 1])
     with col_per:
-        period_selection = st.radio("Zaman Periyodu:", ["Today", "1W", "1M", "3M", "YTD"], horizontal=True)
+        period_selection = st.radio("Zaman Periyodu Seçin:", ["Today", "1W", "1M", "3M", "YTD"], horizontal=True)
     with col_btn:
         if st.button("🔄 Trackeri Yenile", use_container_width=True):
             st.session_state.battery_nonce = str(time.time())
             
-    with st.spinner("Piyasa verileri harmanlanıp sıralanıyor..."):
+    with st.spinner("Piyasa verileri, geçmiş eşdeğer periyot kıyaslamalarıyla birlikte harmanlanıyor..."):
         df_perf = fetch_theme_performance(st.session_state.battery_nonce)
         
         if not df_perf.empty:
-            # Ascending True veriyoruz çünkü Plotly Bar Horizontal'ı aşağıdan yukarıya doğru çizer.
-            # En iyi olanın (büyük değer) en üstte çıkması için datayı en alt satırdan üste dizeceğiz.
             df_sorted = df_perf.sort_values(by=period_selection, ascending=True)
             
-            # Görseldeki (1000259837_2.jpg) Renk Kodları: Pozitif => #3b82f6 (Mavi), Negatif => #ec4899 (Pembe)
+            # Görseldeki (1000259837_2.jpg) Renk Kodları: Pozitif => #3b82f6, Negatif => #ec4899
             colors = ['#3b82f6' if val >= 0 else '#ec4899' for val in df_sorted[period_selection]]
-            text_labels = [f"+{val:.2f}%" if val > 0 else f"{val:.2f}%" for val in df_sorted[period_selection]]
+            
+            # Delta (Artış/Azalış) Metinlerinin Oluşturulması
+            text_labels = []
+            for idx, row in df_sorted.iterrows():
+                val = row[period_selection]
+                prev_val = row[f"Prev_{period_selection}"]
+                delta = val - prev_val
+                
+                # Örn: +4.06%
+                val_str = f"+{val:.2f}%" if val > 0 else f"{val:.2f}%"
+                
+                # Örn: (🔺+1.20%) veya (🔻-0.50%)
+                delta_str = f" (🔺+{delta:.2f}%)" if delta > 0 else f" (🔻{delta:.2f}%)" if delta < 0 else " (➖ 0.00%)"
+                
+                text_labels.append(f"{val_str}{delta_str}")
             
             fig = go.Figure()
             
@@ -538,10 +528,9 @@ with tab2:
                 marker=dict(color=colors, line=dict(width=0)),
                 text=text_labels,
                 textposition='outside',
-                textfont=dict(color=colors, size=14, family="Arial", weight="bold")
+                textfont=dict(color='#e0e0e0', size=13, family="Arial", weight="bold")
             ))
             
-            # Görseldeki gibi temiz (Grid çizgileri olmayan) tasarım
             fig.update_layout(
                 height=850,
                 margin=dict(l=10, r=50, t=10, b=10),
@@ -552,10 +541,10 @@ with tab2:
                 showlegend=False
             )
             
-            # Çubukların yanındaki metnin dışarı taşmaması için x eksenine margin payı ekliyoruz
+            # Delta yazılarının grafiğin dışına taşmaması için ekstra boşluk bırakıyoruz
             min_x = df_sorted[period_selection].min()
             max_x = df_sorted[period_selection].max()
-            padding = (max_x - min_x) * 0.15 if (max_x - min_x) != 0 else 5
+            padding = (max_x - min_x) * 0.35 if (max_x - min_x) != 0 else 5
             fig.update_xaxes(range=[min_x - padding, max_x + padding])
             
             st.plotly_chart(fig, use_container_width=True)
@@ -602,15 +591,13 @@ with tab4:
                 avg_peg = avg_peg if not pd.isna(avg_peg) else 0
 
                 if avg_pe == 0 and avg_ps == 0:
-                    st.warning("⚠️ Yahoo Finance anlık rasyo (F/K, PEG) verilerini reddetti (Rate Limit sebebiyle). Sadece Piyasa Değeri (Market Cap) üzerinden kıyaslama yapılıyor. Değerler 0 görünüyorsa API soğuma süresindedir.")
+                    st.warning("⚠️ Yahoo Finance anlık rasyo (F/K, PEG) verilerini reddetti. Sadece Piyasa Değeri (Market Cap) üzerinden kıyaslama yapılıyor.")
 
                 st.markdown(f"""
                 <div style="background-color: #111; padding: 15px; border-left: 5px solid #f1c40f; border-radius: 5px; margin-bottom: 20px;">
                     <h4 style="color: #f1c40f; margin:0;">📊 {ETF_INFO[group_choice]['area']} - Sektör Ortalamaları</h4>
                     <p style="margin: 5px 0 0 0; font-size: 1.1rem;">
-                        Ortalama F/K (PE): <strong>{avg_pe:.1f}</strong> | 
-                        Ortalama F/S (PS): <strong>{avg_ps:.1f}</strong> | 
-                        Ortalama PEG: <strong>{avg_peg:.1f}</strong>
+                        Ortalama F/K (PE): <strong>{avg_pe:.1f}</strong> | Ortalama F/S (PS): <strong>{avg_ps:.1f}</strong> | Ortalama PEG: <strong>{avg_peg:.1f}</strong>
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
