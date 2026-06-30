@@ -55,7 +55,7 @@ if 'val_nonce' not in st.session_state: st.session_state.val_nonce = str(time.ti
 if 'news_nonce' not in st.session_state: st.session_state.news_nonce = str(time.time())
 
 # ==========================================
-# 2. KURUMSAL NİŞ ETF & HİSSE EVRENİ (BİRLEŞTİRİLMİŞ)
+# 2. KURUMSAL NİŞ ETF & HİSSE EVRENİ
 # ==========================================
 MAIN_SECTORS = {
     "XLK": "Ana Sektör: Teknoloji", "XLI": "Ana Sektör: Sanayi", "XLE": "Ana Sektör: Enerji",
@@ -63,9 +63,10 @@ MAIN_SECTORS = {
     "XLB": "Ana Sektör: Materyal", "XLC": "Ana Sektör: İletişim", "XLRE": "Ana Sektör: Gayrimenkul",
     "XLU": "Ana Sektör: Kamu Hizmetleri", "IGV": "Tema: Yazılım", "ARKG": "Tema: Genomik", 
     "CIBR": "Tema: Siber Güvenlik", "IBB": "Tema: Biyoteknoloji", "GDX": "Tema: Altın Madenciliği",
-    "IBIT": "Tema: Bitcoin", "SMH": "Tema: Yarı İletkenler"
+    "IBIT": "Tema: Bitcoin", "SMH": "Tema: Yarı İletkenler", "DRIV": "Tema: Akıllı Mobilite"
 }
 
+# JEDI, SLV, SMH, TAN, REMX, COPX, DRIV, QTUM sisteme entegre edildi
 THEME_TRACKER_MAP = {
     "Software": ["IGV", "PSJ", "CLOU"],
     "Genomics": ["ARKG", "IDNA"],
@@ -74,8 +75,8 @@ THEME_TRACKER_MAP = {
     "Social Media": ["SOCL"],
     "Biotechnology": ["IBB", "XBI"],
     "Gold Miners": ["GDX", "GDXJ"],
+    "Silver & Miners": ["SIL", "SLV"],
     "Medical": ["XLV"], 
-    "Silver Miners": ["SIL"],
     "Real Estate": ["VNQ", "XLRE", "REZ", "SRVR"],
     "Retail": ["XRT", "XLY"],
     "China Internet": ["KWEB"],
@@ -87,10 +88,11 @@ THEME_TRACKER_MAP = {
     "Transports": ["IYT", "HULL"],
     "Telecom": ["XLC"],
     "Banks": ["XLF", "KRE"],
-    "Aerospace": ["XAR", "ARKX", "UFO", "SPACE_RACE"],
+    "Aerospace & Defense": ["XAR", "ARKX", "UFO", "SPACE_RACE", "JEDI"],
     "Materials": ["XLB", "COPX", "LIT", "REMX", "XME"],
     "Oil & Gas": ["XLE", "XOP", "OIH"],
     "Industrials": ["XLI", "PAVE"],
+    "Smart Mobility & EV": ["DRIV"],
     "AI": ["AIQ", "BOTZ"],
     "Robotics": ["ROBO", "BOTZ"],
     "Solar": ["TAN", "ICLN"],
@@ -213,12 +215,9 @@ def get_safe_df(raw_data, ticker):
         else: return pd.DataFrame()
     return raw_data.copy()
 
-# ---> YENİ THEME TRACKER MATEMATİĞİ (DELTA HESAPLARI İLE) <---
 @st.cache_data(ttl=600)
 def fetch_theme_performance(bypass_stamp):
     all_etfs = list(set([t for themes in THEME_TRACKER_MAP.values() for t in themes]))
-    
-    # Delta (Fark) hesaplamak için veriyi en az 400 gün geriden çekiyoruz (Geçen yılın YTD hesabı için şart)
     start_date = datetime.now() - timedelta(days=400)
     
     try:
@@ -236,7 +235,7 @@ def fetch_theme_performance(bypass_stamp):
             
         close = df['Close']
         
-        # --- MEVCUT DÖNEM (CURRENT) ---
+        # --- MEVCUT DÖNEM ---
         t_curr  = ((close.iloc[-1] / close.iloc[-2]) - 1) * 100 if len(close) > 1 else 0
         w1_curr = ((close.iloc[-1] / close.iloc[-6]) - 1) * 100 if len(close) > 5 else t_curr
         m1_curr = ((close.iloc[-1] / close.iloc[-22]) - 1) * 100 if len(close) > 21 else w1_curr
@@ -245,14 +244,12 @@ def fetch_theme_performance(bypass_stamp):
         ytd_df = df[df.index.year == current_year]
         ytd_curr = ((close.iloc[-1] / ytd_df['Close'].iloc[0]) - 1) * 100 if not ytd_df.empty else m3_curr
 
-        # --- ÖNCEKİ EŞDEĞER DÖNEM (PREVIOUS - DELTA İÇİN) ---
-        # Örnek: Eğer 1W (son 5 gün) bakıyorsak, önceki 1W (6. günden 11. güne)
+        # --- ÖNCEKİ EŞDEĞER DÖNEM (DELTA İÇİN) ---
         t_prev  = ((close.iloc[-2] / close.iloc[-3]) - 1) * 100 if len(close) > 2 else 0
         w1_prev = ((close.iloc[-6] / close.iloc[-11]) - 1) * 100 if len(close) > 10 else 0
         m1_prev = ((close.iloc[-22] / close.iloc[-43]) - 1) * 100 if len(close) > 42 else 0
         m3_prev = ((close.iloc[-64] / close.iloc[-127]) - 1) * 100 if len(close) > 126 else 0
         
-        # Önceki Yılın Aynı Dönemi YTD (Geçen yılın ilk gününden, geçen yılın BUGÜNÜNE kadar)
         prev_year_df = df[(df.index.year == current_year - 1) & (df.index.dayofyear <= datetime.now().timetuple().tm_yday)]
         if len(prev_year_df) > 0 and len(df[df.index.year == current_year - 1]) > 0:
             first_day_prev_year = df[df.index.year == current_year - 1]['Close'].iloc[0]
@@ -483,7 +480,7 @@ with tab1:
         """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TAB 2: YENİ THEME TRACKER (DELTA/İVME GÖSTERGELİ)
+# TAB 2: THEME TRACKER (ETF İSİMLERİ & DELTA GÖSTERİMİ İLE)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("🔥 Theme Tracker: Sektörel İvme ve Performans Matrisi")
@@ -501,8 +498,19 @@ with tab2:
         if not df_perf.empty:
             df_sorted = df_perf.sort_values(by=period_selection, ascending=True)
             
-            # Görseldeki (1000259837_2.jpg) Renk Kodları: Pozitif => #3b82f6, Negatif => #ec4899
             colors = ['#3b82f6' if val >= 0 else '#ec4899' for val in df_sorted[period_selection]]
+            
+            # Dinamik Y Eksen Etiketleri Oluşturma (ETF İsimleri Parantez İçinde)
+            y_labels = []
+            for theme in df_sorted.index:
+                tickers = THEME_TRACKER_MAP.get(theme, [])
+                # Çok uzun listelerde (Örn: Bitcoin Miners) sadece ilk 3'ünü gösterip "+" ekliyoruz
+                if len(tickers) > 3:
+                    ticker_str = f" ({', '.join(tickers[:3])}+)"
+                else:
+                    ticker_str = f" ({', '.join(tickers)})" if tickers else ""
+                
+                y_labels.append(f"{theme} <span style='font-size: 11px; color: #888;'>{ticker_str}</span>")
             
             # Delta (Artış/Azalış) Metinlerinin Oluşturulması
             text_labels = []
@@ -511,10 +519,7 @@ with tab2:
                 prev_val = row[f"Prev_{period_selection}"]
                 delta = val - prev_val
                 
-                # Örn: +4.06%
                 val_str = f"+{val:.2f}%" if val > 0 else f"{val:.2f}%"
-                
-                # Örn: (🔺+1.20%) veya (🔻-0.50%)
                 delta_str = f" (🔺+{delta:.2f}%)" if delta > 0 else f" (🔻{delta:.2f}%)" if delta < 0 else " (➖ 0.00%)"
                 
                 text_labels.append(f"{val_str}{delta_str}")
@@ -522,7 +527,7 @@ with tab2:
             fig = go.Figure()
             
             fig.add_trace(go.Bar(
-                y=df_sorted.index,
+                y=y_labels,
                 x=df_sorted[period_selection],
                 orientation='h',
                 marker=dict(color=colors, line=dict(width=0)),
@@ -532,7 +537,7 @@ with tab2:
             ))
             
             fig.update_layout(
-                height=850,
+                height=900,
                 margin=dict(l=10, r=50, t=10, b=10),
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
@@ -541,7 +546,6 @@ with tab2:
                 showlegend=False
             )
             
-            # Delta yazılarının grafiğin dışına taşmaması için ekstra boşluk bırakıyoruz
             min_x = df_sorted[period_selection].min()
             max_x = df_sorted[period_selection].max()
             padding = (max_x - min_x) * 0.35 if (max_x - min_x) != 0 else 5
