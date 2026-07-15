@@ -471,16 +471,39 @@ def fetch_earnings_fair_value(ticker_list, bypass_stamp):
             
             try:
                 cal = tk.calendar
-                if cal is not None and not cal.empty and 'Earnings Date' in cal:
-                    first_date = cal['Earnings Date'].iloc[0]
-                    if isinstance(first_date, list):
-                        first_date = first_date[0]
-                    if first_date:
+                first_date = None
+
+                # Yfinance yeni sürümleri (Dictionary döndürür)
+                if isinstance(cal, dict) and 'Earnings Date' in cal:
+                    dates = cal['Earnings Date']
+                    if isinstance(dates, list) and len(dates) > 0:
+                        first_date = dates[0]
+                    elif dates:
+                        first_date = dates
+
+                # Yfinance eski sürümleri (DataFrame döndürür)
+                elif hasattr(cal, 'empty') and not cal.empty:
+                    if 'Earnings Date' in cal:
+                        first_date = cal['Earnings Date'].iloc[0]
+                    elif 'Earnings Date' in cal.index:
+                        first_date = cal.loc['Earnings Date'].iloc[0]
+
+                if first_date:
+                    # Tarihi formatla (datetime.date'e çevir)
+                    if hasattr(first_date, 'date'):
                         earn_date = first_date.date()
-                        days_left_sort = (earn_date - datetime.now().date()).days
+                    else:
+                        earn_date = pd.to_datetime(first_date).date()
+                        
+                    days_left_sort = (earn_date - datetime.now().date()).days
+                    
+                    # Sadece gelecekteki (veya bugünkü) bilançoları listeye dahil et
+                    if days_left_sort >= 0:
                         days_left = f"{days_left_sort} Gün"
                         earn_date_str = earn_date.strftime("%d-%m-%Y")
-            except:
+                    else:
+                        earn_date_str = "Bekleniyor"
+            except Exception as e:
                 pass
                 
             fv = info.get('targetMeanPrice', info.get('targetMedianPrice', 'Bilinmiyor'))
