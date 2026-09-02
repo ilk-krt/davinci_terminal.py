@@ -1,11 +1,3701 @@
 """
-AETHER APEX — makro rejim, tema takibi ve TradingView sinyal motorlarının
-çok sembollü tarayıcıya dönüştürülmüş hali.
+AETHER APEX — makro, tema ve sinyal tarayıcı (TEK DOSYA SÜRÜMÜ)
 
-Çalıştırma:  streamlit run app.py
+Bu dosya build_single_file.py tarafından üretilmiştir; elle düzenlemeyin.
+Kaynak: apex/*.py + app.py
+
+Çalıştırma:  streamlit run apex_app.py
 """
 
 from __future__ import annotations
+
+
+# ==========================================================================
+# KAYNAK: apex/indicators.py
+# ==========================================================================
+
+
+import numpy as np
+import pandas as pd
+
+
+# --------------------------------------------------------------------------
+# Hareketli ortalamalar
+# --------------------------------------------------------------------------
+def sma(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n).mean()
+
+
+def ema(s: pd.Series, n: int) -> pd.Series:
+    return s.ewm(span=n, adjust=False).mean()
+
+
+def rma(s: pd.Series, n: int) -> pd.Series:
+    """Wilder yumuşatması — ta.rma. RSI ve ATR bunu kullanır."""
+    return s.ewm(alpha=1.0 / n, adjust=False).mean()
+
+
+def wma(s: pd.Series, n: int) -> pd.Series:
+    """
+    ta.wma — en yeni bara n ağırlığı verir.
+    rolling().apply() yerine konvolüsyon: yüzlerce sembol taranırken
+    tarama süresini kat kat kısaltıyor, sonuç birebir aynı.
+    """
+    w = np.arange(1, n + 1, dtype=float)
+    w /= w.sum()
+    x = s.to_numpy(dtype=float)
+    if len(x) < n:
+        return pd.Series(np.full(len(x), np.nan), index=s.index)
+    conv = np.convolve(np.nan_to_num(x), w[::-1], mode="valid")
+    out = np.full(len(x), np.nan)
+    out[n - 1:] = conv
+    # NaN içeren pencereler NaN kalmalı (nan_to_num kirletmesin)
+    nan_win = pd.Series(np.isnan(x)).rolling(n).max().to_numpy()
+    out[nan_win == 1] = np.nan
+    return pd.Series(out, index=s.index)
+
+
+def vwma(src: pd.Series, vol: pd.Series, n: int) -> pd.Series:
+    return sma(src * vol, n) / sma(vol, n).replace(0, np.nan)
+
+
+def stdev(s: pd.Series, n: int) -> pd.Series:
+    """ta.stdev — popülasyon (ddof=0)."""
+    return s.rolling(n).std(ddof=0)
+
+
+# --------------------------------------------------------------------------
+# Temel dönüşümler
+# --------------------------------------------------------------------------
+def highest(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n).max()
+
+
+def lowest(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n).min()
+
+
+def crossover(a: pd.Series, b: pd.Series) -> pd.Series:
+    return (a > b) & (a.shift(1) <= b.shift(1))
+
+
+def crossunder(a: pd.Series, b: pd.Series) -> pd.Series:
+    return (a < b) & (a.shift(1) >= b.shift(1))
+
+
+def roc(s: pd.Series, n: int) -> pd.Series:
+    prev = s.shift(n)
+    return (s - prev) / prev.replace(0, np.nan) * 100.0
+
+
+def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    pc = close.shift(1)
+    return pd.concat([high - low, (high - pc).abs(), (low - pc).abs()],
+                     axis=1).max(axis=1)
+
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
+    return rma(true_range(high, low, close), n)
+
+
+def rsi(s: pd.Series, n: int = 14) -> pd.Series:
+    """
+    ta.rsi. Kesintisiz yükselişte düşüş ortalaması 0 olur; bölme NaN vermemeli,
+    Pine'da olduğu gibi 100 dönmelidir (tersi 0). Bu ayrım önemli: NaN dönerse
+    bütün momentum zinciri (OMNI konsensüsü, konfluans) sessizce boşa düşer.
+    """
+    d = s.diff()
+    up = rma(d.clip(lower=0), n)
+    dn = rma((-d).clip(lower=0), n)
+    out = 100.0 - 100.0 / (1.0 + up / dn.replace(0, np.nan))
+    out = out.mask((dn == 0) & (up > 0), 100.0)
+    out = out.mask((up == 0) & (dn > 0), 0.0)
+    out = out.mask((up == 0) & (dn == 0), 50.0)
+    return out
+
+
+def stoch(src: pd.Series, high: pd.Series, low: pd.Series, n: int) -> pd.Series:
+    ll, hh = lowest(low, n), highest(high, n)
+    return 100.0 * (src - ll) / (hh - ll).replace(0, np.nan)
+
+
+def mfi(src: pd.Series, vol: pd.Series, n: int = 14) -> pd.Series:
+    d = src.diff()
+    up = (vol * src.where(d > 0, 0.0)).rolling(n).sum()
+    dn = (vol * src.where(d < 0, 0.0)).rolling(n).sum()
+    return 100.0 - 100.0 / (1.0 + up / dn.replace(0, np.nan))
+
+
+def cci(src: pd.Series, n: int = 20) -> pd.Series:
+    m = sma(src, n)
+    mad = _rolling_mad(src, n)
+    return (src - m) / (0.015 * mad.replace(0, np.nan))
+
+
+def _rolling_mad(s: pd.Series, n: int) -> pd.Series:
+    """Ortalamadan mutlak sapmanın ortalaması — CCI için, vektörleştirilmiş."""
+    x = s.to_numpy(dtype=float)
+    out = np.full(len(x), np.nan)
+    if len(x) < n:
+        return pd.Series(out, index=s.index)
+    win = np.lib.stride_tricks.sliding_window_view(x, n)
+    with np.errstate(invalid="ignore"):
+        res = np.abs(win - win.mean(axis=1, keepdims=True)).mean(axis=1)
+    out[n - 1:] = res
+    return pd.Series(out, index=s.index)
+
+
+def tsi(close: pd.Series, long_n: int = 25, short_n: int = 13) -> pd.Series:
+    pc = close.diff()
+    num = ema(ema(pc, long_n), short_n)
+    den = ema(ema(pc.abs(), long_n), short_n)
+    return 100.0 * num / den.clip(lower=0.001)
+
+
+def percentrank(s: pd.Series, n: int) -> pd.Series:
+    """
+    ta.percentrank — önceki n değerin yüzde kaçı mevcut değerden küçük/eşit.
+    Kayan pencere görünümüyle vektörleştirildi (rolling.apply yerine).
+    """
+    x = s.to_numpy(dtype=float)
+    m = len(x)
+    out = np.full(m, np.nan)
+    if m < n + 1:
+        return pd.Series(out, index=s.index)
+    win = np.lib.stride_tricks.sliding_window_view(x, n + 1)
+    prev, cur = win[:, :-1], win[:, -1:]
+    with np.errstate(invalid="ignore"):
+        cnt = (prev <= cur).sum(axis=1).astype(float)
+        bad = np.isnan(win).any(axis=1)
+    res = 100.0 * cnt / n
+    res[bad] = np.nan
+    out[n:] = res
+    return pd.Series(out, index=s.index)
+
+
+def percentile_lin(s: pd.Series, n: int, p: float) -> pd.Series:
+    return s.rolling(n).quantile(p / 100.0, interpolation="linear")
+
+
+def barssince(cond: pd.Series) -> pd.Series:
+    idx = np.arange(len(cond), dtype=float)
+    last = pd.Series(np.where(cond.to_numpy(), idx, np.nan),
+                     index=cond.index).ffill()
+    return pd.Series(idx, index=cond.index) - last
+
+
+def leaky_reservoir(q: pd.Series, alpha: float,
+                    negative_leak: float = 1.30) -> pd.Series:
+    """
+    APEX CORE'un sızdıran haznesi: ch = ch*(1-alpha) + q, negatif akış
+    `negative_leak` katıyla hızlı boşalır (satışlar alımlardan hızlı drene eder).
+    """
+    out = np.empty(len(q), dtype=float)
+    acc = 0.0
+    vals = q.to_numpy(dtype=float)
+    for i, v in enumerate(vals):
+        if not np.isfinite(v):
+            v = 0.0
+        acc = acc * (1.0 - alpha) + (v if v >= 0 else v * negative_leak)
+        out[i] = acc
+    return pd.Series(out, index=q.index)
+
+
+def ratcheting_atr_stop(low: pd.Series, atr14: pd.Series, mult: float,
+                        entry_price: float | None = None,
+                        hard_stop_pct: float = 20.0) -> pd.Series:
+    """
+    V719'un iz süren zırhı: stop = low - mult*ATR, SADECE yukarı kayar.
+    Girişten `hard_stop_pct` kadar aşağıda sert bir taban vardır.
+    """
+    calc = (low - atr14 * mult).to_numpy(dtype=float)
+    out = np.empty(len(calc), dtype=float)
+    prev = np.nan
+    floor = (entry_price * (1 - hard_stop_pct / 100.0)
+             if entry_price else -np.inf)
+    for i, c in enumerate(calc):
+        if not np.isfinite(c):
+            out[i] = prev
+            continue
+        prev = c if not np.isfinite(prev) else max(prev, c)
+        out[i] = max(prev, floor)
+    return pd.Series(out, index=low.index)
+
+
+def normal_cdf(z: np.ndarray) -> np.ndarray:
+    """Abramowitz-Stegun yaklaşımı — V719'un hibrit delta motoru için."""
+    z = np.clip(z, -8.0, 8.0)
+    t = 1.0 / (1.0 + 0.2316419 * np.abs(z))
+    d = 0.3989422804014327 * np.exp(-z * z / 2.0)
+    p = d * t * (0.319381530 + t * (-0.356563782 + t *
+                 (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+    return np.where(z >= 0, 1.0 - p, p)
+
+
+def f_tanh(x):
+    return np.tanh(np.clip(2.0 * np.asarray(x, dtype=float), -60.0, 60.0) / 2.0)
+
+
+def f_contrast(x, gamma: float):
+    x = np.asarray(x, dtype=float)
+    return 50.0 * (1.0 + np.tanh((x - 50.0) / 50.0 * gamma) / np.tanh(gamma))
+
+
+def safe_last(s, default=np.nan) -> float:
+    """Serinin son geçerli değeri — kısa geçmişte patlamasın."""
+    try:
+        v = pd.Series(s).dropna()
+        return float(v.iloc[-1]) if len(v) else float(default)
+    except Exception:
+        return float(default)
+
+
+def safe_bool(s, default: bool = False) -> bool:
+    try:
+        v = pd.Series(s).dropna()
+        return bool(v.iloc[-1]) if len(v) else default
+    except Exception:
+        return default
+
+# ==========================================================================
+# KAYNAK: apex/universe.py
+# ==========================================================================
+
+
+from typing import Any
+
+# --------------------------------------------------------------------------
+# ANA SEKTÖR ETF'LERİ
+# --------------------------------------------------------------------------
+MAIN_SECTORS: dict[str, str] = {
+    "XLK": "Teknoloji", "XLI": "Sanayi", "XLE": "Enerji", "XLV": "Sağlık",
+    "XLF": "Finans", "XLY": "Tüketim (Döngüsel)", "XLP": "Tüketim (Defansif)",
+    "XLB": "Materyal", "XLC": "İletişim", "XLRE": "Gayrimenkul",
+    "XLU": "Kamu Hizmetleri", "SPY": "S&P 500", "QQQ": "Nasdaq 100",
+    "IWM": "Russell 2000",
+}
+
+# --------------------------------------------------------------------------
+# ETF İÇERİKLERİ
+#   agirlik : portföy ağırlığı (%) — bilinenler
+#   rol     : şirketin temadaki rolü
+#   gruplar : alt kırılım (ağırlık bilinmeyen ETF'ler için)
+# --------------------------------------------------------------------------
+ETF: dict[str, dict[str, Any]] = {}
+
+
+def _add(sym: str, name: str, kategori: str, aciklama: str = "", *,
+         agirlik: dict[str, float] | None = None,
+         rol: dict[str, str] | None = None,
+         gruplar: dict[str, list[str]] | None = None) -> None:
+    ETF[sym] = {"name": name, "kategori": kategori, "aciklama": aciklama,
+                "agirlik": agirlik or {}, "rol": rol or {},
+                "gruplar": gruplar or {}}
+
+
+# ========================= 1. TEKNOLOJİ & YAPAY ZEKÂ ======================
+_add("XLK", "Technology Select Sector", "Teknoloji & YZ",
+     "Donanım devleri, yazılım ekosistemleri ve yarı iletken liderleri.",
+     agirlik={"NVDA": 15.2, "AAPL": 11.9, "MSFT": 8.3, "MU": 5.75, "AVGO": 5.45,
+              "AMD": 3.9, "INTC": 3.6, "CSCO": 2.85, "PLTR": 2.5, "AMAT": 2.35},
+     rol={"NVDA": "Yapay zekâ ve GPU", "AAPL": "Tüketici elektroniği",
+          "MSFT": "Bulut ve kurumsal yazılım", "MU": "Bellek (DRAM/NAND)",
+          "AVGO": "Altyapı ve kablosuz haberleşme çipleri",
+          "AMD": "İşlemci ve GPU tasarımı", "INTC": "Yarı iletken üretimi",
+          "CSCO": "Ağ donanımı ve telekom", "PLTR": "YZ veri analitiği",
+          "AMAT": "Çip üretim ekipmanları"},
+     gruplar={"Yazılım & SaaS": ["MSFT", "CRM", "ADBE", "ORCL", "NOW", "INTU"],
+              "Donanım & Altyapı": ["AAPL", "CSCO", "IBM", "HPE"],
+              "Yarı İletken Tasarım": ["NVDA", "AVGO", "AMD", "QCOM", "INTC"]})
+
+_add("IGV", "iShares Expanded Tech-Software", "Teknoloji & YZ",
+     "Donanım içermez; bulut altyapısı, kurumsal yazılım ve güvenlik yazılımı.",
+     gruplar={"Kurumsal Yazılım": ["MSFT", "CRM", "ORCL", "ADBE"],
+              "İş Süreçleri & İK": ["NOW", "INTU", "WDAY", "PLTR", "PAYC"],
+              "Veri ve Bulut": ["SNOW", "DDOG", "DT", "TEAM"],
+              "Yazılım Tabanlı Güvenlik": ["PANW", "CRWD", "NET"]})
+
+_add("CLOU", "Global X Cloud Computing", "Teknoloji & YZ",
+     "Saf bulut altyapısı, gözlemlenebilirlik ve SaaS.",
+     agirlik={"DOCN": 6.05, "DDOG": 5.75, "AKAM": 5.55, "TWLO": 4.95, "ZS": 4.4,
+              "SNOW": 4.2, "PAYC": 4.0, "ZM": 3.9, "NOW": 3.8, "NET": 3.6},
+     rol={"DOCN": "Geliştirici bulut altyapısı (IaaS)",
+          "DDOG": "Bulut uygulama izleme (observability)",
+          "AKAM": "İçerik dağıtım ağı ve güvenlik",
+          "TWLO": "Bulut iletişim platformu (CPaaS)",
+          "ZS": "Zero Trust kurumsal güvenlik",
+          "SNOW": "Bulut veri deposu ve analitik",
+          "PAYC": "Bulut İK ve bordro", "ZM": "Video konferans",
+          "NOW": "Dijital iş akışı yönetimi",
+          "NET": "Web altyapısı, güvenlik ve CDN"})
+
+_add("CIBR", "First Trust Nasdaq Cybersecurity", "Teknoloji & YZ",
+     "Ağ güvenliği, uç nokta koruması, bulut güvenliği ve siber danışmanlık.",
+     gruplar={"Yeni Nesil Bulut & Uç Nokta": ["CRWD", "PANW", "ZS"],
+              "Ağ Güvenliği (Firewall)": ["FTNT", "CHKP", "CSCO", "JNPR"],
+              "Kimlik & Tehdit Analizi": ["OKTA", "CYBR", "TENB", "QLYS"],
+              "Tüketici & Dijital Altyapı": ["GEN", "NET", "AKAM"]})
+
+_add("BOTZ", "Global X Robotics & AI", "Teknoloji & YZ",
+     "YZ algoritmalarından endüstriyel robot kollarına ve cerrahi robota.",
+     gruplar={"YZ İşlemcileri": ["NVDA"],
+              "Tıbbi Robotik": ["ISRG"],
+              "Fabrika Otomasyonu (Japonya)": ["KEYS", "FANUY", "YASKY", "OMRNY"],
+              "YZ Yazılımı ve Görü": ["PATH", "AI", "CGNX"],
+              "Ağır Otomasyon": ["ROK"]})
+
+_add("AIQ", "Global X Artificial Intelligence & Technology", "Teknoloji & YZ",
+     "Bellek ve çip tarafı ağırlıklı, küresel YZ ekosistemi.",
+     agirlik={"MU": 4.8, "INTC": 4.45, "AMD": 4.4, "CSCO": 4.0, "AVGO": 3.4,
+              "NVDA": 3.2, "TSM": 3.2, "GOOGL": 3.05, "AAPL": 3.0},
+     rol={"MU": "YZ sunucuları için DRAM/NAND",
+          "INTC": "Veri merkezi ve AI PC işlemcileri",
+          "AMD": "MI300 serisi YZ hızlandırıcıları",
+          "CSCO": "YZ veri merkezi ağ altyapısı",
+          "AVGO": "Özel YZ ASIC çipleri ve hızlı bağlantı",
+          "NVDA": "GPU ve CUDA platformunun lideri",
+          "TSM": "En gelişmiş YZ çiplerini üreten dökümhane",
+          "GOOGL": "LLM ve bulut ekosistemi",
+          "AAPL": "Cihaz üstü YZ entegrasyonu"})
+ETF["AIQ"]["aciklama"] += (" SK Hynix (000660.KS) ve Samsung (005930.KS) fonun "
+                           "ilk sıralarında ama ABD hattında işlem görmediği için "
+                           "taramaya dahil edilmedi.")
+
+# ========================= 2. YARI İLETKENLER =============================
+_add("SOXX", "iShares Semiconductor", "Yarı İletken",
+     "ABD menşeili çip tasarımcıları ve üretim ekipmanı sağlayıcıları.",
+     agirlik={"MU": 10.2, "AMD": 8.95, "INTC": 7.1, "AVGO": 7.0, "NVDA": 6.75,
+              "MRVL": 5.65, "AMAT": 4.65, "QCOM": 3.95, "MPWR": 3.8, "TXN": 3.75},
+     rol={"MU": "Bellek ve veri depolama çipleri",
+          "AMD": "CPU ve GPU tasarımı", "INTC": "Entegre cihaz üreticisi (IDM)",
+          "AVGO": "Ağ ve altyapı çipleri", "NVDA": "YZ ve grafik işlemcileri",
+          "MRVL": "Veri altyapısı ve bulut çipleri",
+          "AMAT": "Çip üretim ekipmanları", "QCOM": "Mobil işlemci ve 5G",
+          "MPWR": "Güç yönetimi çözümleri", "TXN": "Analog ve gömülü işlemciler"})
+
+_add("SMH", "VanEck Semiconductor", "Yarı İletken",
+     "SOXX'tan farkı: TSMC ve ASML çok yüksek ağırlıkta.",
+     gruplar={"Dökümhaneler": ["TSM", "INTC"],
+              "Litografi": ["ASML"],
+              "GPU / YZ": ["NVDA", "AMD"],
+              "Ağ ve Veri Merkezi": ["AVGO", "MRVL", "QCOM"],
+              "Üretim Ekipmanı": ["AMAT", "LRCX", "KLAC"]})
+
+_add("EUV", "Lithography & Semiconductor Photonics", "Yarı İletken",
+     "Litografi, optik ve çip üretim metrolojisi — YZ altyapısının darboğazı.",
+     agirlik={"TSM": 9.6, "ASML": 8.0, "GLW": 5.2, "LRCX": 5.0, "AMAT": 4.8,
+              "LITE": 4.3, "CIEN": 4.3, "KLAC": 4.1, "COHR": 4.1, "MTSI": 3.3},
+     rol={"TSM": "3nm ve altı çipleri üreten dev dökümhane",
+          "ASML": "EUV litografi makinelerinin tek üreticisi",
+          "GLW": "Veri merkezi camı ve fiber optik altyapı",
+          "LRCX": "Gofret işleme ve çip üretim ekipmanı",
+          "AMAT": "Yarı iletken malzeme mühendisliği",
+          "LITE": "Optik veri iletimi ve YZ ağları için lazer",
+          "CIEN": "Yüksek hızlı veri merkezi optik ağ mimarisi",
+          "KLAC": "Optik denetim ve metroloji sistemleri",
+          "COHR": "Endüstriyel lazer ve optik bileşenler",
+          "MTSI": "Yüksek hızlı veri iletimi bileşenleri"})
+
+_add("PHOTON", "Fotonik & Optik (özel sepet)", "Yarı İletken",
+     "Kullanıcı tanımlı fotonik sepeti.",
+     gruplar={"Fotonik": ["AAOI", "COHR", "LITE", "POET", "AXTI", "IQE", "LRCX"]})
+
+_add("QTUM", "Defiance Quantum", "Yarı İletken",
+     "Kuantum bilişim ve yüksek performanslı hesaplama.",
+     gruplar={"Saf Kuantum": ["IONQ", "RGTI", "QUBT", "QBTS"],
+              "Kurumsal Ar-Ge": ["IBM", "GOOGL", "HON", "NVDA"]})
+
+# ========================= 3. ENERJİ, EMTİA, MADENCİLİK ===================
+_add("XLE", "Energy Select Sector", "Enerji & Emtia",
+     "Dev entegre petrol, gaz ve rafine ürün şirketleri.",
+     gruplar={"Entegre Devler": ["XOM", "CVX"],
+              "Arama ve Üretim (E&P)": ["COP", "EOG", "OXY", "DVN"],
+              "Petrol Sahası Hizmetleri": ["SLB", "BKR", "HAL"],
+              "Rafineri ve Dağıtım": ["MPC", "VLO", "PSX"],
+              "Boru Hattı (Midstream)": ["WMB", "OKE", "KMI"]})
+
+_add("XOP", "SPDR Oil & Gas Exploration", "Enerji & Emtia",
+     "Eşit ağırlığa yakın; petrol fiyatına en duyarlı upstream şirketleri.",
+     gruplar={"Bağımsız Upstream": ["FANG", "CTRA", "EQT", "APA", "AR", "CHK",
+                                    "RRC", "MTDR"],
+              "Büyük Entegre": ["COP", "XOM", "CVX", "OXY"]})
+
+_add("OIH", "VanEck Oil Services", "Enerji & Emtia",
+     "Kuyu açan, sismik analiz yapan, platform kuran teknoloji sağlayıcıları.",
+     gruplar={"Büyük Üçlü": ["SLB", "HAL", "BKR"],
+              "Açık Deniz Sondaj": ["RIG", "NE", "VAL", "SDRL"],
+              "Karada Sondaj": ["HP", "PTEN", "NBR"],
+              "Ekipman ve Kuyu Teknolojisi": ["NOV", "CHX", "WHD", "TDW"]})
+
+_add("COPX", "Global X Copper Miners", "Enerji & Emtia",
+     "Elektrifikasyon, YZ veri merkezleri ve yeşil dönüşümün ana hammaddesi.",
+     gruplar={"Saf Bakır Madenleri": ["FCX", "SCCO", "IVPAF", "ANFGY", "LUNMF",
+                                      "FQVLF"],
+              "Çeşitlendirilmiş Devler": ["BHP", "RIO", "TECK", "GLNCY", "VALE"]})
+
+_add("LIT", "Global X Lithium & Battery Tech", "Enerji & Emtia",
+     "Maden çıkarmadan batarya hücresine ve elektrikli araca uzanan zincir.",
+     gruplar={"Lityum Madenciliği": ["ALB", "SQM", "ALTM"],
+              "Batarya Hücresi": ["PCRFY", "TTDKY"],
+              "Elektrikli Araç": ["TSLA", "RIVN", "LCID"]})
+
+_add("URA", "Global X Uranium", "Enerji & Emtia",
+     "YZ veri merkezlerinin baz yük ihtiyacıyla canlanan nükleer döngü.",
+     gruplar={"Uranyum Üreticileri": ["CCJ", "NXE", "UEC", "UUUU", "DNN"],
+              "Nükleer Teknoloji ve SMR": ["BWXT", "LEU", "SMR", "CEG"]})
+
+_add("REMX", "VanEck Rare Earth & Strategic Metals", "Enerji & Emtia",
+     "Mıknatıs, savunma jetleri, rüzgâr türbini için kritik elementler.",
+     gruplar={"Batı Üreticileri": ["MP", "LYSDY"],
+              "Stratejik Metaller": ["ALB", "ALTM"]})
+
+_add("GDX", "VanEck Gold Miners", "Enerji & Emtia",
+     "Altın fiyatını kaldıraçlı yansıtan üreticiler.",
+     gruplar={"Küresel Devler": ["NEM", "GOLD", "AEM", "GFI", "AU", "KGC"],
+              "Royalty / Streaming": ["WPM", "FNV", "RGLD"],
+              "Bölgesel Üreticiler": ["EGO", "BTG", "HMY", "SBSW"]})
+
+_add("XME", "SPDR Metals & Mining", "Enerji & Emtia",
+     "ABD yerleşik demir, çelik, alüminyum ve kömür üreticileri.",
+     gruplar={"Demir & Çelik": ["NUE", "STLD", "CLF", "X", "RS"],
+              "Alüminyum & Bakır": ["AA", "KALU", "FCX"],
+              "Kömür": ["AMR", "HCC", "ARCH"],
+              "Değerli Metaller": ["HL", "RGLD"]})
+
+_add("ICLN", "iShares Global Clean Energy", "Enerji & Emtia",
+     "Güneş, rüzgâr, hidroelektrik ve hidrojen odaklı küresel ekosistem.",
+     gruplar={"Güneş": ["ENPH", "FSLR", "SEDG"],
+              "Rüzgâr": ["VWDRY", "ORSTY"],
+              "Yenilenebilir Üretim": ["IBDRY"],
+              "Hidrojen ve Yakıt Hücresi": ["PLUG", "BE"]})
+
+_add("TAN", "Invesco Solar", "Enerji & Emtia", "Saf güneş enerjisi zinciri.",
+     gruplar={"Panel ve İnverter": ["FSLR", "ENPH", "SEDG", "RUN", "NXT"]})
+
+# ========================= 4. ALTYAPI, TAŞIMA, SAVUNMA ====================
+_add("XLU", "Utilities Select Sector", "Altyapı & Savunma",
+     "Elektrik şebekeleri, regüle gaz hatları ve baz yük üreten holdingler.",
+     agirlik={"NEE": 14.15, "SO": 7.35, "DUK": 6.9, "CEG": 6.45, "AEP": 5.05,
+              "SRE": 4.25, "D": 3.8, "ETR": 3.65, "VST": 3.45, "XEL": 3.35},
+     rol={"NEE": "Dünyanın en büyük rüzgâr ve güneş üreticisi",
+          "SO": "Güneydoğu ABD'nin dev regüle elektrik ve gaz şebekesi",
+          "DUK": "Geniş ölçekli elektrik altyapısı",
+          "CEG": "ABD'nin en büyük nükleer üreticisi (YZ/veri merkezi odaklı)",
+          "AEP": "Dev elektrik iletim şebekesi",
+          "SRE": "Enerji altyapısı, doğalgaz dağıtımı ve LNG",
+          "D": "Veri merkezlerinin kalbi Virginia'nın ana sağlayıcısı",
+          "ETR": "Körfez bölgesi nükleer ve temiz elektrik",
+          "VST": "Nükleer ve bağımsız üretim, veri merkezi partneri",
+          "XEL": "Yenilenebilir entegrasyonlu regüle şebeke"})
+
+_add("XLI", "Industrial Select Sector", "Altyapı & Savunma",
+     "Havacılık, lojistik, ağır makine ve savunma devleri.",
+     gruplar={"Ağır İş Makinası": ["CAT", "DE"],
+              "Konglomera": ["GE", "HON", "MMM", "EMR"],
+              "Savunma ve Havacılık": ["LMT", "RTX", "BA"],
+              "Demiryolu": ["UNP", "NSC", "CSX"],
+              "Kargo ve Lojistik": ["UPS", "FDX"]})
+
+_add("PAVE", "Global X US Infrastructure Development", "Altyapı & Savunma",
+     "Şebeke yenileme, fabrika kurulumu ve elektrifikasyondan beslenenler.",
+     gruplar={"Veri Merkezi ve Şebeke": ["ETN", "PH", "HUBB", "POWL"],
+              "İklimlendirme": ["TT", "CARR", "JCI"],
+              "Kiralama ve Tedarik": ["URI", "FAST", "GWW"],
+              "Çimento ve Agrega": ["VMC", "MLM", "EXP"],
+              "Mühendislik ve İnşaat": ["J", "ACM", "PWR", "EME"]})
+
+_add("IYT", "iShares Transportation Average", "Altyapı & Savunma",
+     "Demiryolları, kargo, havayolları ve yolculuk paylaşım platformları.",
+     gruplar={"Demiryolu": ["UNP", "CSX", "NSC"],
+              "Kargo ve Dağıtım": ["UPS", "FDX", "EXPD", "JBHT", "ODFL"],
+              "Yeni Nesil Mobilite": ["UBER", "LYFT"],
+              "Havayolları": ["DAL", "UAL", "LUV"]})
+
+_add("JETS", "US Global Jets", "Altyapı & Savunma",
+     "Havayolları, uçak üreticileri ve havalimanı işletmecileri.",
+     gruplar={"ABD Bayrak Taşıyıcı": ["DAL", "UAL", "AAL"],
+              "Düşük Maliyetli": ["LUV", "JBLU", "ALK", "ALGT", "ULCC", "SKYW"],
+              "Uçak Üreticileri": ["BA", "ERJ", "EADSY"]})
+
+_add("XAR", "SPDR Aerospace & Defense", "Altyapı & Savunma",
+     "Eşit ağırlıklı; büyük yükleniciler + jet motoru ve alt sistem üreticileri.",
+     gruplar={"Ana Yükleniciler": ["LMT", "RTX", "NOC", "GD", "LHX"],
+              "Jet Motoru ve Yapısal": ["TDG", "HWM", "HEI", "SPR", "CW", "TXT"],
+              "Alt Sistem": ["BWXT", "HII", "PSN"]})
+
+_add("ARKX", "ARK Space Exploration & Innovation", "Altyapı & Savunma",
+     "Uzay, savunma ve otonom sistem inovasyonu.",
+     agirlik={"RKLB": 10.05, "AMD": 7.3, "LHX": 7.1, "TER": 6.3, "DE": 5.4,
+              "KTOS": 5.45, "AVAV": 4.0, "AMZN": 4.0, "ACHR": 3.9, "GOOG": 3.8},
+     rol={"RKLB": "Küçük fırlatma aracı ve uydu üretimi",
+          "AMD": "Uzay/savunma sistemleri için işlemci",
+          "LHX": "Savunma haberleşme ve uzay sistemleri",
+          "TER": "Test ve otomasyon ekipmanı", "DE": "Otonom tarım makineleri",
+          "KTOS": "İnsansız savunma sistemleri", "AVAV": "Taktik İHA",
+          "AMZN": "Kuiper uydu takımyıldızı ve bulut",
+          "ACHR": "eVTOL hava taksisi", "GOOG": "Uzay verisi ve YZ altyapısı"})
+
+_add("UFO", "Procure Space", "Altyapı & Savunma",
+     "Uydu haberleşmesi, roket fırlatma ve küresel konumlandırma.",
+     gruplar={"Uydu Haberleşme": ["SIRI", "IRDM", "SATS", "VSAT"],
+              "Konumlandırma": ["GRMN"],
+              "Uzay Savunma": ["LMT", "BA", "NOC", "LHX"],
+              "Yeni Nesil Uzay": ["RKLB", "SPCE"]})
+
+_add("SPACE_RACE", "SpaceX & Yeni Uzay (özel sepet)", "Altyapı & Savunma",
+     "Kullanıcı tanımlı yeni nesil uzay sepeti.",
+     gruplar={"Fırlatma ve Uydu": ["RKLB", "ASTS", "LUNR", "SATS", "PL", "SPIR",
+                                   "BKSY", "SIDU"]})
+
+# ========================= 5. FİNANS & FİNTEK =============================
+_add("XLF", "Financial Select Sector", "Finans",
+     "Yatırım bankaları, sigorta, kredi kartı ağları ve ticari bankalar.",
+     gruplar={"Ticari Bankalar": ["JPM", "BAC", "WFC", "C"],
+              "Yatırım Bankacılığı": ["GS", "MS", "BLK", "SCHW"],
+              "Ödeme Ağları": ["V", "MA", "AXP"],
+              "Sigorta ve Holding": ["BRK-B", "MMC", "CB", "PGR"]})
+
+_add("KRE", "SPDR Regional Banking", "Finans",
+     "Ticari gayrimenkul ve KOBİ kredilerini fonlayan orta ölçekli bankalar.",
+     gruplar={"Büyük Bölgesel": ["MTB", "RF", "HBAN", "FITB", "KEY", "CFG",
+                                 "TFC", "FHN"],
+              "Niş / Ticari": ["WAL", "ZION", "CMA"]})
+
+_add("ARKF", "ARK Fintech Innovation", "Finans",
+     "Dijital cüzdanlar, kripto borsaları ve yeni nesil ödeme sistemleri.",
+     gruplar={"Kripto Altyapı": ["COIN", "HOOD"],
+              "Ödeme ve Cüzdan": ["XYZ", "PYPL", "TOST", "AFRM", "SOFI"],
+              "E-Ticaret Tabanı": ["SHOP", "MELI", "SE"],
+              "Dijital Bankacılık": ["NU", "INTR"]})
+
+# ========================= 6. İLETİŞİM & TÜKETİCİ =========================
+_add("XLC", "Communication Services Select Sector", "Tüketici & Medya",
+     "Sosyal medya, arama, streaming ve telekom liderleri.",
+     gruplar={"Sosyal ve Reklam": ["META", "GOOGL", "PINS"],
+              "Streaming": ["NFLX", "DIS", "WBD", "PARA"],
+              "Telekom": ["TMUS", "T", "VZ"],
+              "Kablo / Genişbant": ["CMCSA", "CHTR"]})
+
+_add("XLY", "Consumer Discretionary Select Sector", "Tüketici & Medya",
+     "E-ticaret, otomotiv, restoran ve giyim devleri.",
+     gruplar={"E-Ticaret": ["AMZN", "EBAY"],
+              "Otomotiv": ["TSLA", "F", "GM"],
+              "Yapı Marketleri": ["HD", "LOW"],
+              "Restoran ve Otel": ["MCD", "SBUX", "MAR", "HLT", "CMG"],
+              "Giyim ve Lüks": ["NKE", "TJX", "LULU"],
+              "Seyahat": ["BKNG", "ABNB"]})
+
+_add("XRT", "SPDR Retail", "Tüketici & Medya",
+     "Eşit ağırlıklı; süpermarketten online otomobil perakendesine.",
+     gruplar={"Dijital Perakende": ["CVNA", "AMZN", "CHWY"],
+              "Giyim Mağazaları": ["ANF", "GAP", "BOOT", "ROST", "TJX", "M", "JWN"],
+              "Süpermarket ve Toptan": ["COST", "WMT", "TGT", "DLTR", "DG"],
+              "Otomotiv ve Elektronik": ["AZO", "BBY"]})
+
+_add("XHB", "SPDR Homebuilders", "Tüketici & Medya",
+     "Konut üretim döngüsü ve ev içi donanım markaları.",
+     gruplar={"Konut Geliştiriciler": ["DHI", "LEN", "PHM", "NVR", "TOL", "KBH"],
+              "Yapı Marketleri": ["HD", "LOW", "BLDR"],
+              "Boya ve Kimyasal": ["SHW"],
+              "Ev Aletleri ve Mobilya": ["WHR", "TT", "MHK", "OC"]})
+
+# ========================= 7. SAĞLIK & GENOMİK ============================
+_add("XLV", "Health Care Select Sector", "Sağlık",
+     "Dev ilaç üreticileri ile sağlık sigortası şirketlerinin birleşimi.",
+     gruplar={"Mega İlaç": ["LLY", "MRK", "ABBV", "PFE", "BMY", "JNJ"],
+              "Sigorta ve Bakım": ["UNH", "ELV", "HUM", "CVS"],
+              "Biyoteknoloji Devleri": ["AMGN", "GILD", "REGN", "VRTX"],
+              "Yaşam Bilimleri": ["TMO", "DHR"]})
+
+_add("IHI", "iShares Medical Devices", "Sağlık",
+     "Cerrahi cihazlar, protezler ve laboratuvar tanı ekipmanları.",
+     gruplar={"Cerrahi Robotik": ["ISRG"],
+              "Kardiyovasküler ve Ortopedi": ["SYK", "BSX", "MDT", "EW", "ZBH"],
+              "Diyabet Takibi": ["DXCM", "ABT"],
+              "Laboratuvar Tanı": ["TMO", "BDX"]})
+
+_add("XBI", "SPDR Biotech", "Sağlık",
+     "Eşit ağırlıklı; klinik aşamadaki yenilikçi moleküller ve FDA adayları.",
+     gruplar={"Büyük Klinik": ["VRTX", "AMGN", "GILD", "MRNA", "BIIB", "REGN"],
+              "Nadir Hastalık ve Gen Tedavisi": ["ALNY", "BMRN", "INCY", "UTHR",
+                                                 "EXAS"]})
+
+_add("ARKG", "ARK Genomic Revolution", "Sağlık",
+     "CRISPR, DNA dizileme, hücresel tedavi ve YZ destekli ilaç keşfi.",
+     gruplar={"Gen Düzenleme": ["CRSP", "NTLA", "BEAM", "EDIT"],
+              "Erken Teşhis": ["EXAS", "GH"],
+              "DNA Dizileme": ["TWST", "PACB", "ILMN"],
+              "RNA Tedavileri": ["IONS", "ALNY"],
+              "YZ Tabanlı İlaç Keşfi": ["SDGR", "RXRX"]})
+
+# ========================= 8. GAYRİMENKUL & VERİ MERKEZİ ==================
+_add("XLRE", "Real Estate Select Sector", "Gayrimenkul",
+     "S&P 500'deki en büyük kurumsal gayrimenkul sahipleri.",
+     gruplar={"Lojistik": ["PLD"],
+              "Verici Kuleleri": ["AMT", "CCI", "SBAC"],
+              "Veri Merkezi GYO": ["EQIX", "DLR"],
+              "Perakende Alanları": ["SPG", "O"],
+              "Sağlık Tesisleri": ["WELL", "VTR"],
+              "Depolama": ["PSA", "EXR"]})
+
+_add("SRVR", "Pacer Data & Infrastructure REIT", "Gayrimenkul",
+     "Bulut, YZ sunucuları ve 5G'nin fiziksel binaları ile fiber ağları.",
+     gruplar={"Veri Merkezleri": ["EQIX", "DLR"],
+              "Telekom Kuleleri": ["AMT", "CCI", "SBAC"],
+              "Fiber Altyapı": ["IRM", "UNIT"]})
+
+_add("REZ", "iShares Residential & Multisector REIT", "Gayrimenkul",
+     "Barınma, yaşlanma ve kişisel depolama odaklı GYO'lar.",
+     gruplar={"Sağlık ve Kıdemli Yaşam": ["WELL", "VTR", "OHI"],
+              "Kiralık Apartman": ["EQR", "AVB", "UDR", "CPT"],
+              "Müstakil Kiralık": ["INVH", "AMH"],
+              "Prefabrik Siteler": ["SUI", "ELS"],
+              "Bireysel Depolama": ["PSA", "CUBE"]})
+
+_add("VNQ", "Vanguard Real Estate", "Gayrimenkul",
+     "XLRE'ye göre çok daha geniş kapsamlı gayrimenkul havuzu.",
+     gruplar={"Lojistik": ["PLD"],
+              "Dijital Altyapı": ["AMT", "EQIX", "CCI", "DLR"],
+              "Perakende ve Net-Lease": ["SPG", "O", "KIM"],
+              "Depolama ve Konut": ["PSA", "AVB", "EQR"],
+              "Ormancılık GYO": ["WY", "RYN"]})
+
+# ========================= 9. KRİPTO ======================================
+_add("IBIT", "iShares Bitcoin Trust", "Kripto",
+     "Hisse havuzu yok; %100 spot Bitcoin tutar.",
+     gruplar={"Doğrudan Varlık": ["BTC-USD"]})
+
+_add("WGMI", "Valkyrie Bitcoin Miners", "Kripto",
+     "Madencilik şirketleri, veri merkezleri ve ASIC donanım tedarikçileri.",
+     gruplar={"Endüstriyel Madenciler": ["MARA", "RIOT", "CLSK", "HUT", "CIFR",
+                                          "IREN", "WULF", "CORZ", "HIVE", "BTDR"],
+              "YZ/HPC Dönüşümü Yapanlar": ["CORZ", "HUT", "IREN"],
+              "Donanım Tedarikçileri": ["NVDA", "AMD"]})
+
+def holdings(sym: str) -> list[str]:
+    """Bir ETF'in bilinen tüm bileşenleri (ağırlıklılar önce, sonra gruplar)."""
+    d = ETF.get(sym)
+    if not d:
+        return []
+    out = sorted(d["agirlik"], key=lambda t: -d["agirlik"][t])
+    for grup in d["gruplar"].values():
+        for t in grup:
+            if t not in out:
+                out.append(t)
+    return out
+
+
+def holding_meta(sym: str, ticker: str) -> dict[str, Any]:
+    d = ETF.get(sym, {})
+    grup = next((g for g, lst in d.get("gruplar", {}).items() if ticker in lst), "")
+    return {"agirlik": d.get("agirlik", {}).get(ticker),
+            "rol": d.get("rol", {}).get(ticker, ""),
+            "grup": grup}
+
+
+def all_etfs() -> list[str]:
+    return sorted(ETF)
+
+
+def etfs_by_category() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for sym, d in ETF.items():
+        out.setdefault(d["kategori"], []).append(sym)
+    return {k: sorted(v) for k, v in sorted(out.items())}
+
+
+def all_stocks() -> list[str]:
+    seen: list[str] = []
+    for sym in ETF:
+        for t in holdings(sym):
+            if t not in seen:
+                seen.append(t)
+    return sorted(seen)
+
+
+def etfs_containing(ticker: str) -> list[str]:
+    """Bir hissenin geçtiği tüm ETF'ler — çarpan etkisini görmek için."""
+    return sorted(s for s in ETF if ticker in holdings(s))
+
+
+# --------------------------------------------------------------------------
+# THEME TRACKER — sektörel ivme matrisi
+# --------------------------------------------------------------------------
+THEME_TRACKER: dict[str, list[str]] = {
+    "Yarı İletken": ["SMH", "SOXX", "EUV"],
+    "Yapay Zekâ": ["AIQ", "BOTZ"],
+    "Kuantum": ["QTUM", "IONQ", "RGTI", "QUBT"],
+    "Yazılım & SaaS": ["IGV", "CLOU", "PSJ"],
+    "Siber Güvenlik": ["CIBR", "HACK", "BUG"],
+    "Robotik & Otomasyon": ["BOTZ", "ROBO"],
+    "Teknoloji (Geniş)": ["XLK", "QQQ"],
+    "Veri Merkezi & Dijital GYO": ["SRVR"],
+    "Gayrimenkul": ["VNQ", "XLRE", "REZ"],
+    "Nükleer & Uranyum": ["URA", "NLR"],
+    "Kamu Hizmetleri": ["XLU"],
+    "Temiz Enerji": ["ICLN", "TAN"],
+    "Petrol & Gaz": ["XLE", "XOP", "OIH"],
+    "Bakır": ["COPX"],
+    "Lityum & Batarya": ["LIT"],
+    "Nadir Toprak": ["REMX"],
+    "Altın Madenciliği": ["GDX", "GDXJ"],
+    "Gümüş": ["SIL", "SLV"],
+    "Metal & Madencilik": ["XME", "SLX"],
+    "Savunma & Havacılık": ["XAR", "ITA"],
+    "Uzay": ["ARKX", "UFO"],
+    "Havayolları": ["JETS"],
+    "Taşımacılık": ["IYT"],
+    "Altyapı": ["PAVE", "XLI"],
+    "Konut İnşaatı": ["ITB", "XHB"],
+    "Bankalar": ["XLF", "KRE"],
+    "Fintek": ["ARKF"],
+    "Bitcoin": ["IBIT", "BITO"],
+    "Bitcoin Madenciliği": ["WGMI", "MARA", "RIOT", "CLSK", "IREN"],
+    "Biyoteknoloji": ["IBB", "XBI"],
+    "Genomik": ["ARKG", "IDNA"],
+    "Tıbbi Cihaz": ["IHI"],
+    "Sağlık (Geniş)": ["XLV", "VHT"],
+    "İlaç": ["PPH", "XPH"],
+    "Perakende": ["XRT", "XLY"],
+    "İletişim & Medya": ["XLC", "SOCL"],
+    "Tüketici Defansif": ["XLP"],
+    "Materyal": ["XLB"],
+    "Tarım & Gıda": ["MOO", "DBA"],
+    "Su Altyapısı": ["PHO", "FIW"],
+    "Çin İnterneti": ["KWEB"],
+    "Hindistan": ["INDA"],
+    "Japonya": ["EWJ"],
+    "Avrupa": ["VGK"],
+    "Gelişen Piyasalar": ["EEM"],
+    "Küçük Ölçekli (Small Cap)": ["IWM"],
+    "Büyüme": ["VUG", "IWF"],
+    "Değer": ["VTV", "IWD"],
+    "Temettü": ["SCHD", "VIG"],
+    "Volatilite": ["VIXY"],
+    "Uzun Vadeli Tahvil": ["TLT"],
+    "Yüksek Getirili Tahvil": ["HYG"],
+}
+
+# --------------------------------------------------------------------------
+# ÇARPAN (CHOKEPOINT) HİSSELERİ
+# Paranın hangi alt temaya gittiğinden bağımsız pay alan altyapı sahipleri.
+# --------------------------------------------------------------------------
+CHOKEPOINTS: dict[str, dict[str, Any]] = {
+    "NVDA": {
+        "rol": "İşlem gücü ve algoritma standardı",
+        "capex": "YZ Ar-Ge ve bulut yatırımları",
+        "mantik": "Sadece GPU üreticisi değil; CUDA ekosistemi YZ yazılımının "
+                  "çalıştığı tek efektif platform. Robotikten ilaç keşfine, "
+                  "otonom araçtan Bitcoin madenciliğine işlem gücü gerektiren "
+                  "her trend dönüp dolaşıp NVDA'ya bütçe ayırıyor.",
+    },
+    "AVGO": {
+        "rol": "Veri trafiği ve kurumsal entegrasyon",
+        "capex": "Veri merkezi ve siber güvenlik bütçeleri",
+        "mantik": "YZ veri merkezindeki binlerce çipin ultra hızlı konuşmasını "
+                  "sağlayan ağ çiplerini üretir. VMware ve Symantec ile kurumsal "
+                  "bulut yazılımı ve güvenliği de kontrol eder — sunucu yatırımı "
+                  "arttıkça hem çip hem yazılım bacağından çift yönlü nakit akışı.",
+    },
+    "CEG": {
+        "rol": "Temiz ve kesintisiz baz yük",
+        "capex": "Teknoloji devlerinin karbon-nötr enerji arayışı",
+        "mantik": "Hyperscaler'lar fosil kullanmayan, 7/24 kesintisiz baz yük "
+                  "talep ediyor. CEG ABD'nin en büyük nükleer filosuna sahip; "
+                  "Microsoft ve Amazon doğrudan PPA imzalıyor.",
+    },
+    "VST": {
+        "rol": "Bağımsız nükleer üretim",
+        "capex": "Veri merkezi elektrik anlaşmaları",
+        "mantik": "CEG ile aynı tez: nükleer baz yük + serbest piyasa fiyatlaması. "
+                  "Veri merkezi talebi arttıkça marjı doğrudan genişler.",
+    },
+    "ETN": {
+        "rol": "Güç dağıtımı ve elektrifikasyon",
+        "capex": "Şebeke yenileme, veri merkezi ve fabrika kurulumları",
+        "mantik": "Enerji üretilebilir, çip tasarlanabilir; ama transformatör ve "
+                  "güç yönetimi olmadan veri merkezine dağıtılamaz. Yeşil dönüşüm, "
+                  "veri merkezi inşası ve üretimin ABD'ye dönmesi — üçü de ETN'e "
+                  "doğrudan yeni sipariş demek.",
+    },
+    "EQIX": {
+        "rol": "Küresel veri otobanlarının kesişimi",
+        "capex": "Bulut ve YZ sunucu barındırma",
+        "mantik": "Bulut soyut görünür ama betonarme bina, sıvı soğutma ve fiber "
+                  "girişi ister. EQIX en kritik kesişim noktalarındaki binaları "
+                  "işletir; YZ patlaması metrekare kirasını teknoloji çarpanıyla "
+                  "fiyatlatır.",
+    },
+    "DLR": {
+        "rol": "Hiperölçek veri merkezi mülkiyeti",
+        "capex": "Bulut sağlayıcı kiralamaları",
+        "mantik": "EQIX ile aynı tez, daha büyük ölçekli tekil kiracılara odaklı.",
+    },
+    "FCX": {
+        "rol": "Elektrifikasyonun temel hammaddesi",
+        "capex": "EV şebekeleri, veri merkezi kablolaması, ağır sanayi",
+        "mantik": "Veri merkezi güç kabloları, rüzgâr türbinleri, EV bataryaları "
+                  "ve altyapı projeleri muazzam bakır tüketir. Hangi teknolojinin "
+                  "kazandığından bağımsız olarak elektrifikasyon içeren her "
+                  "senaryoda FCX pay alır.",
+    },
+    "PLD": {
+        "rol": "Lojistik mülkiyeti + mikro şebeke",
+        "capex": "E-ticaret dağıtım ağı ve çatı üstü güneş",
+        "mantik": "Küresel e-ticaretin en büyük depo sahibi. Çatılarını güneş "
+                  "paneliyle donatıp kendi mikro şebekesini kuruyor — hem lojistik "
+                  "büyümesinden kira topluyor hem enerji satıyor.",
+    },
+    "TSM": {
+        "rol": "Gelişmiş çip üretiminin tek kapısı",
+        "capex": "Tüm fabless çip tasarımcılarının üretim bütçesi",
+        "mantik": "NVDA, AMD, AAPL dahil en gelişmiş çipleri fiziksel olarak "
+                  "üreten tek dökümhane. Çip savaşını kim kazanırsa kazansın "
+                  "üretim TSM'de yapılır.",
+    },
+    "ASML": {
+        "rol": "EUV litografi tekeli",
+        "capex": "Dökümhane kapasite yatırımları",
+        "mantik": "3nm ve altı üretim için gereken EUV makinesini dünyada başka "
+                  "kimse yapamıyor. Çip kapasitesi artacaksa yolu ASML'den geçer.",
+    },
+}
+
+# --------------------------------------------------------------------------
+# FUTURE THEMES — varsayılan liste (kullanıcı arayüzden ekler/çıkarır)
+# --------------------------------------------------------------------------
+DEFAULT_FUTURE_THEMES: dict[str, dict[str, list[str]]] = {
+    "Chokepoint Çarpanları": {
+        "hisse": list(CHOKEPOINTS), "etf": []},
+    "Agentic AI & Yazılım": {
+        "hisse": ["NOW", "SOUN", "ADBE", "DT", "S", "EXTR", "PLTR", "AI"],
+        "etf": ["IGV", "CLOU"]},
+    "Uzay Bilişimi & Keşif": {
+        "hisse": holdings("SPACE_RACE"), "etf": ["ARKX", "UFO"]},
+    "Kuantum Bilişim": {
+        "hisse": ["IONQ", "RGTI", "QUBT", "QBTS"], "etf": ["QTUM"]},
+    "Fotonik & Optik Çipler": {
+        "hisse": holdings("PHOTON"), "etf": ["EUV"]},
+    "Neocloud & Enerji Pivotu": {
+        "hisse": ["CORZ", "IREN", "WULF", "APLD", "NBIS", "CIFR"],
+        "etf": ["WGMI"]},
+    "Nükleer & Temel Materyal": {
+        "hisse": ["CEG", "VST", "TLN", "SMR", "NNE", "UUUU", "MP", "LEU"],
+        "etf": ["URA", "REMX"]},
+}
+
+# --------------------------------------------------------------------------
+# BİLANÇO TAKİP LİSTESİ (varsayılan)
+# --------------------------------------------------------------------------
+DEFAULT_EARNINGS = sorted(set("""
+AAOI ABT ADBE AEHR AI ALAB AMAT AMD AMGN AMKR APLD ARM ASTS ASX ATRO AVGO
+BA BE BKR BTDR CEG CIEN CIFR CLSK COHR CORZ CRDO CRM CRSP CRWV DELL DOCN
+DT EMR EQIX ETN FCX FN FORM GFS GLW HEI HIMS HON HPE IBM INTC IONQ IRDM
+IREN ISRG KTOS LEU LHX LITE LMT LRCX LUNR MA MARA MBLY META MP MRVL MSFT
+NBIS NEE NOC NOW NTAP NTLA NVDA ONTO OUST PL PLTR POET PYPL QBTS QCOM QUBT
+RDW RGTI RIOT RKLB RTX SANM SMCI SMR SNOW SOUN SPIR STX TER TLN TMUS TSM
+UUUU VECO VSAT VST WDC WOLF WULF
+""".split()))
+
+# ==========================================================================
+# KAYNAK: apex/engine.py
+# ==========================================================================
+
+
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+
+# --------------------------------------------------------------------------
+# Script varsayılanları (Pine input'larının default değerleri)
+# --------------------------------------------------------------------------
+PARAMS: dict[str, Any] = {
+    # APEX CORE v3
+    "sens": 1.5,          # i_sens        Hassasiyet
+    "lenW": 21,           # i_lenW        Whale ataleti
+    "lenD": 8,            # i_lenD        Daily ataleti
+    "lenR": 13,           # i_lenR        Retail ataleti
+    "effort": 0.8,        # i_effort      Çaba ≠ Sonuç ağırlığı
+    "persist": 0.65,      # i_persist     Kalıcılık ρ
+    "anchor": 0.70,       # i_anchor      Çapa bileşimi
+    "trendL": 27,         # i_trendL      Trend penceresi
+    "dFastL": 5,          # i_dFastL      Daily hızlı çapa
+    "gamma": 1.2,         # i_gamma       Kontrast
+    "proMix": 0.65,       # i_proMix      PRO içinde whale ağırlığı
+    "smooth": 5,          # i_smooth      Final EMA
+    "lamLen": 60,         # i_lamLen      Kyle λ penceresi
+    "normLen": 252,       # i_normLen     Normalizasyon penceresi
+    "stSens": 2.0,        # i_stSens      Stealth hassasiyeti
+    "botCd": 10,          # i_botCd       Bot soğuma
+    "dotN": 3,            # i_dotN        Seesaw bar sayısı
+    "sqzLen": 20,         # i_sqzLen      Sıkışma penceresi
+    # APEX V665 OMNI
+    "volMult": 2.0,       # i_vol_mult    Afterburner hacim çarpanı
+    "emaBreak": 9,        # i_ema_break   EMA kırılım periyodu
+    "diaLen": 60,         # len_60        Diamond ekstrem penceresi
+    # ŞAHANE / V719
+    "vwmLen": 14,         # i_vwm_len     Efor çizgisi penceresi
+    "ultLen": 50,         # i_ult_len     Ultimate kanal
+    "ultMult": 1.5,       # i_ult_mult
+    "smcFast": 5,         # MSS tetik penceresi
+    "smcMid": 10,         # likidite havuzu penceresi
+    "kfLb": 3,            # i_kf_lb       Konfluans bileşen hafızası (bar)
+    "kfExpThr": 6,        # i_kf_expThr   MAGNITUDE eşiği
+    "kfEntryDir": 5,      # i_kf_entryDir DIRECTION giriş eşiği
+    "stopMult": 2.0,      # i_ouStopMult  İz süren stop ATR çarpanı
+    "hardStopPct": 20.0,  # i_hardStopPct Sert stop yüzdesi
+    # QUANTUM V883
+    "minLiqM": 5.0,       # i_min_liq     Min günlük hacim ($M)
+}
+
+BENCHMARK = "SPY"     # rejim kapısı ve göreli güç için
+TROY = 31.1034768     # (portföy tarafıyla ortak sabit; burada kullanılmıyor)
+
+
+@dataclass
+class SignalRow:
+    """Bir sembol için hesaplanmış tüm sinyal alanları."""
+    ticker: str
+    ok: bool = False
+    error: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+# ==========================================================================
+# APEX CORE v3 — Kyle-λ ayrıştırması
+# ==========================================================================
+def _f_prank(src: pd.Series, norm_len: int) -> pd.Series:
+    """3 kademeli yedekli yüzdelik sıra — kısa geçmişte de değer üretir."""
+    mid = max(int(round(norm_len / 3.0)), 20)
+    a = percentrank(src, norm_len)
+    b = percentrank(src, mid)
+    c = percentrank(src, 20)
+    return a.fillna(b).fillna(c).fillna(50.0)
+
+
+def _f_medabs(src: pd.Series, norm_len: int) -> pd.Series:
+    mid = max(int(round(norm_len / 3.0)), 20)
+    x = src.abs()
+    m = (x.rolling(norm_len).median()
+         .fillna(x.rolling(mid).median())
+         .fillna(x.rolling(20).median())
+         .fillna(x))
+    mn = sma(x, 20)
+    return pd.Series(
+        np.where(m > 0, m, np.where(mn.fillna(0) > 0, mn * 0.6745, 1.0)),
+        index=src.index)
+
+
+def _f_norm(src: pd.Series, norm_len: int) -> pd.Series:
+    sc = _f_medabs(src, norm_len)
+    return pd.Series(
+        f_tanh(np.where(sc > 0, src / (1.4826 * sc), 0.0) / 2.0),
+        index=src.index)
+
+
+def apex_core(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame:
+    """APEX CORE v3'ün bant ve sinyal serilerini üretir."""
+    p = {**PARAMS, **(p or {})}
+    o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
+    n_len = p["normLen"]
+    out = pd.DataFrame(index=df.index)
+
+    # --- temel güç zinciri ---
+    rsi14 = rsi(c, 14)
+    c_range = (h - l).clip(lower=0.001)
+    delta = ((c - l) - (h - c)) / c_range
+    up_w = h - np.maximum(o, c)
+    dn_w = np.minimum(o, c) - l
+    wick_d = (dn_w - up_w) / c_range
+
+    d_vol = sma(delta * v, 20) / sma(v, 20).clip(lower=0.001)
+    v_avg = sma(v, 20)
+    rv_raw = v / v_avg.clip(lower=1)
+    rvol = pd.Series(np.where(rv_raw > 2.5, 2.5 + np.log(rv_raw.clip(lower=1.6) - 1.5),
+                              rv_raw), index=df.index)
+
+    base_pwr = ((rsi14 - 50) + d_vol * 40 + wick_d * 20) * rvol * p["sens"]
+
+    logic_p = np.log1p(np.exp(np.minimum(base_pwr / 5, 600.0))) * 5
+    w_pwr = wma(pd.Series(np.minimum((np.log10(1 + logic_p) * 65) ** 0.8 * 1.8, 100),
+                          index=df.index), 2)
+
+    # --- Kyle λ: hacimle açıklanan hareket (WHALE) vs artık (RETAIL) ---
+    ret1 = (c / c.shift(1) - 1.0).fillna(0.0)
+    s_raw = np.sign(ret1) * np.sqrt(np.maximum(v * c, 1.0))
+    s_sd = stdev(s_raw, p["lamLen"])
+    s_n = pd.Series(np.where(s_sd > 0, s_raw / s_sd.replace(0, np.nan), 0.0),
+                    index=df.index).fillna(0.0)
+    corr = ret1.rolling(p["lamLen"]).corr(s_n)
+    sd_r, sd_s = stdev(ret1, p["lamLen"]), stdev(s_n, p["lamLen"])
+    lam = pd.Series(np.where((sd_s > 0) & corr.notna(),
+                             corr * sd_r / sd_s.replace(0, np.nan), 0.0),
+                    index=df.index).fillna(0.0)
+    expl = lam * s_n
+    resd = ret1 - expl
+
+    # --- üç aktörün akışı ---
+    trend_pos = stoch(c, h, l, p["trendL"])
+    trend_norm = pd.Series(f_tanh((trend_pos - 50.0) / 25.0), index=df.index)
+    fast_pos = stoch(c, h, l, p["dFastL"])
+    fast_norm = pd.Series(f_tanh((fast_pos - 50.0) / 25.0), index=df.index)
+    vol_w = np.sqrt(np.minimum(rvol, 4.0))
+
+    ret_sd = stdev(ret1, 20)
+    eff_res = (np.where(delta >= 0, 1.0, -1.0)
+               * np.clip(rvol - 1.0, 0.0, 3.0)
+               / np.maximum(1.0 + ret1.abs() / ret_sd.replace(0, np.nan).fillna(1e-9),
+                            0.5))
+    eff_res = pd.Series(eff_res, index=df.index).fillna(0.0)
+
+    k_per = p["persist"] * 0.38
+    w_sum = 1.5 + p["effort"]
+
+    q_w = (vol_w * (_f_norm(base_pwr, n_len)
+                    + 0.50 * _f_norm(expl, n_len)
+                    + p["effort"] * _f_norm(eff_res, n_len)) / w_sum
+           * (1.0 - k_per) + k_per * trend_norm)
+    fast_raw = ((rsi(c, 5) - 50) + delta * 30) * np.minimum(rvol, 3.0)
+    q_d = _f_norm(fast_raw, n_len) * (1.0 - k_per) + k_per * fast_norm
+    q_r = _f_norm(resd, n_len) * np.minimum(1.6, 1.0 / np.maximum(rvol, 0.6))
+
+    a_w, a_d, a_r = 2 / (p["lenW"] + 1), 2 / (p["lenD"] + 1), 2 / (p["lenR"] + 1)
+    ch_w = leaky_reservoir(q_w.fillna(0.0), a_w)
+    ch_d = leaky_reservoir(q_d.fillna(0.0), a_d)
+    ch_r = leaky_reservoir(q_r.fillna(0.0), a_r)
+
+    w_hd = 50.0 * (1.0 + _f_norm(base_pwr, n_len))
+    anchor = p["anchor"] * trend_pos + (1.0 - p["anchor"]) * w_hd
+    anchor_d = p["anchor"] * fast_pos + (1.0 - p["anchor"]) * w_hd
+
+    lv_w = (1 - p["persist"]) * _f_prank(ch_w, n_len) + p["persist"] * anchor
+    lv_d = (1 - p["persist"]) * _f_prank(ch_d, n_len) + p["persist"] * anchor_d
+    lv_r = (1 - p["persist"]) * _f_prank(ch_r, n_len) + p["persist"] * (100.0 - anchor)
+
+    whale = ema(pd.Series(f_contrast(lv_w, p["gamma"]), index=df.index), p["smooth"])
+    daily = ema(pd.Series(f_contrast(lv_d, p["gamma"]), index=df.index), p["smooth"])
+    retail = ema(pd.Series(f_contrast(lv_r, p["gamma"]), index=df.index), p["smooth"])
+
+    pro = ema(p["proMix"] * whale + (1 - p["proMix"]) * daily, 2)
+    ret_line = ema(retail, 2)
+
+    # --- sinyaller ---
+    w_inc = whale > whale.shift(1)
+    w_dec = whale < whale.shift(1)
+    red_cov = whale >= daily
+    y_bars = barssince(red_cov).fillna(0)
+    r_bars = barssince(~red_cov).fillna(0)
+
+    db_bottom = red_cov & (y_bars.shift(1).fillna(0) >= p["dotN"]) & w_inc
+    rd_top = (~red_cov) & (r_bars.shift(1).fillna(0) >= p["dotN"]) & w_dec
+    cross_up = crossover(pro, ret_line)
+    cross_dn = crossunder(pro, ret_line)
+
+    st_in = (c < c.shift(1)) & (whale > whale.shift(1) + p["stSens"]) & (rvol > 0.8)
+    st_out = (c > c.shift(1)) & (whale < whale.shift(1) - p["stSens"]) & (rvol > 0.8)
+    star = cross_up & w_inc
+    exhausted = (whale > 85.0) & (rvol < 0.8)
+
+    # adaptif toplama/dağıtım + LİKİDİTE SÜPÜRMESİ (stop avı)
+    w_p25 = percentile_lin(whale, n_len, 25)
+    w_p75 = percentile_lin(whale, n_len, 75)
+    lp5, hp5 = lowest(c, 5), highest(c, 5)
+    lw5, hw5 = lowest(whale, 5), highest(whale, 5)
+    lo20 = lowest(l, 20)
+
+    real_acc = ((c <= lp5.shift(1).fillna(c) * 1.005) & (whale > lw5 * 1.10)
+                & (lw5 <= w_p25.fillna(25.0)))
+    real_dist = ((c >= hp5.shift(1).fillna(c) * 0.995) & (whale < hw5 * 0.90)
+                 & (hw5 >= w_p75.fillna(75.0)))
+    sweep_bar = ((l <= lo20.shift(1).fillna(l)) & (c > lo20.shift(1).fillna(l))
+                 & w_inc)
+
+    # sıkışma (BB ⊂ KC)
+    bb_dev = 2.0 * stdev(c, p["sqzLen"])
+    kc_dev = 1.5 * sma(true_range(h, l, c), p["sqzLen"])
+    sqz_on = bb_dev < kc_dev
+    sqz_fire = (~sqz_on) & sqz_on.shift(1).fillna(False)
+    sqz_dur = sqz_on.groupby((~sqz_on).cumsum()).cumsum()
+
+    # ATR hedefleri (T1 = 1.8×, T2 = 3.5×; VCP ve sıkışma süresiyle ölçeklenir)
+    atr14 = atr(h, l, c, 14)
+    vcp = sma(atr14, 50) / atr14.clip(lower=0.001)
+    emlt = np.minimum(1.0 + sqz_dur / 25.0, 2.5)
+    t1 = c + atr14 * 1.8 * vcp * emlt
+    t2 = c + atr14 * 3.5 * vcp * emlt
+
+    out["whale"], out["daily"], out["retail"] = whale, daily, retail
+    out["pro"], out["ret_line"] = pro, ret_line
+    out["w_pwr"], out["rvol"], out["atr14"] = w_pwr, rvol, atr14
+    out["eff_res"] = eff_res
+    out["db_bottom"], out["rd_top"] = db_bottom, rd_top
+    out["cross_up"], out["cross_dn"] = cross_up, cross_dn
+    out["st_in"], out["st_out"], out["star"] = st_in, st_out, star
+    out["exhausted"] = exhausted
+    out["real_acc"], out["real_dist"], out["sweep_bar"] = real_acc, real_dist, sweep_bar
+    out["sqz_on"], out["sqz_fire"], out["sqz_dur"] = sqz_on, sqz_fire, sqz_dur
+    out["t1"], out["t2"] = t1, t2
+    out["w_inc"] = w_inc
+    return out
+
+
+# ==========================================================================
+# APEX V665 OMNI — momentum konsensüsü ve füzyon
+# ==========================================================================
+def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame:
+    p = {**PARAMS, **(p or {})}
+    o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
+    out = pd.DataFrame(index=df.index)
+    hlc3 = (h + l + c) / 3.0
+
+    # 5 bileşenli konsensüs
+    rsi_f, rsi_m = rsi(c, 7), rsi(c, 14)
+    mfi_v = mfi(hlc3, v, 14)
+    cci_n = ((cci(hlc3, 20) + 200) / 4).clip(0, 100)
+    tsi_n = (tsi(c, 25, 13) + 50).clip(0, 100)
+    raw_omni = (rsi_f + rsi_m + mfi_v + cci_n + tsi_n) / 5.0
+    mom = wma(raw_omni, 3)
+
+    # Fusion / Synergy hız motorları (aralığa normalize MACD)
+    len100, len60, len50, len20 = 100, p["diaLen"], 50, 20
+    f_macd = ema(c, 12) - ema(c, 26)
+    f_speed = ((f_macd - lowest(f_macd, len100))
+               / (highest(f_macd, len100) - lowest(f_macd, len100)).clip(lower=0.001)
+               * 100) - 50
+    f_sig = ema(f_speed, 9)
+    f_hist = (f_speed - f_sig) * 1.5
+
+    s_macd = ema(hlc3, 12) - ema(hlc3, 26)
+    s_speed = ((s_macd - lowest(s_macd, len100))
+               / (highest(s_macd, len100) - lowest(s_macd, len100)).clip(lower=0.001)
+               * 100) - 50
+    is_exhausted = (s_speed - sma(s_speed, len20)).abs() > 2.0 * stdev(s_speed, len20)
+
+    # Afterburner — hacim patlaması, yön değişiminde bir kez tetiklenir
+    roc9 = roc(c, 9)
+    vsa_anom = v > sma(v, 20) * p["volMult"]
+    roc_acc = roc9 - roc9.shift(1)
+    trig_up = vsa_anom & (roc_acc > 0) & (c > o) & (mom >= 50)
+    trig_dn = vsa_anom & (roc_acc < 0) & (c < o) & (mom <= 50)
+    ab_bull, ab_bear = _latch_direction(trig_up, trig_dn)
+
+    # Diamond — 60 barlık ekstremde dönüş, EMA9 teyitli
+    ema_focus = ema(c, p["emaBreak"])
+    ema_bull = (c > ema_focus) & (c.shift(1) > ema_focus.shift(1))
+    ema_bear = (c < ema_focus) & (c.shift(1) < ema_focus.shift(1))
+    dia_buy = ((l == lowest(l, len60)) & (s_speed > s_speed.shift(1)) & (c > o)
+               & (mom >= 40) & ema_bull)
+    dia_sell = ((h == highest(h, len60)) & (s_speed < s_speed.shift(1)) & (c < o)
+                & (mom <= 60) & ema_bear)
+
+    sqz_on = stdev(c, len20) * 2.0 < sma(true_range(h, l, c), len20) * 1.5
+
+    # 0–6 HUD skoru
+    hud = ((mom >= 50).astype(int) + (f_speed > f_sig).astype(int)
+           + (s_speed > s_speed.shift(1)).astype(int) + (~is_exhausted).astype(int)
+           + vsa_anom.astype(int) + sqz_on.astype(int))
+
+    out["mom"], out["f_speed"], out["f_sig"], out["f_hist"] = mom, f_speed, f_sig, f_hist
+    out["s_speed"], out["is_exhausted"] = s_speed, is_exhausted
+    out["vsa_anom"], out["ab_bull"], out["ab_bear"] = vsa_anom, ab_bull, ab_bear
+    out["dia_buy"], out["dia_sell"] = dia_buy, dia_sell
+    out["hud"], out["sqz_on"] = hud, sqz_on
+    out["ew_bull"] = crossover(f_speed, f_sig)
+    out["ew_bear"] = crossunder(f_speed, f_sig)
+    return out
+
+
+def _latch_direction(trig_up: pd.Series, trig_dn: pd.Series):
+    """Yön değişiminde bir kez ateşleyen mandal (arka arkaya tekrarı bastırır)."""
+    up = np.zeros(len(trig_up), dtype=bool)
+    dn = np.zeros(len(trig_up), dtype=bool)
+    state = 0
+    tu, td = trig_up.fillna(False).to_numpy(), trig_dn.fillna(False).to_numpy()
+    for i in range(len(tu)):
+        if tu[i] and state != 1:
+            up[i], state = True, 1
+        if td[i] and state != -1:
+            dn[i], state = True, -1
+    return pd.Series(up, index=trig_up.index), pd.Series(dn, index=trig_up.index)
+
+
+# ==========================================================================
+# ŞAHANE — SMC likidite süpürmesi, rejim kapısı, efor çizgisi
+# ==========================================================================
+def sahane_layer(df: pd.DataFrame, w_pwr: pd.Series,
+                 p: dict[str, Any] | None = None) -> pd.DataFrame:
+    p = {**PARAMS, **(p or {})}
+    o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
+    out = pd.DataFrame(index=df.index)
+
+    # Efor çizgisi: hacim ağırlıklı fiyat
+    raw_effort = (wma(c * v, p["vwmLen"]) / wma(v, p["vwmLen"]).clip(lower=0.001))
+    eff_price = wma(raw_effort, 3)
+    out["eff_price"] = eff_price
+    out["eff_up"] = crossover(c, eff_price)
+    out["eff_dn"] = crossunder(c, eff_price)
+
+    # Adaptive Ultimate: whale gücü arttıkça bant daralır
+    ult_basis = sma(c, p["ultLen"])
+    adaptive_mult = p["ultMult"] * (1.0 - w_pwr.fillna(0) / 250.0)
+    ult_dev = adaptive_mult * stdev(c, p["ultLen"])
+    out["ult_ceil"] = ult_basis + ult_dev
+    out["ult_floor"] = ult_basis - ult_dev
+    out["ult_up_cross"] = crossover(c, out["ult_ceil"])
+
+    # EMA200 rejim kapısı
+    ema200 = ema(c, 200)
+    out["ema200"] = ema200
+    out["regime_bull"] = c > ema200
+
+    # SMC — likidite havuzu süpürmesi + market structure shift teyidi
+    s_low = lowest(l, p["smcMid"]).shift(1)
+    s_high = highest(h, p["smcMid"]).shift(1)
+    mss_buy = highest(h, p["smcFast"]).shift(1)
+    mss_sell = lowest(l, p["smcFast"]).shift(1)
+
+    sweep_low = (l < s_low) & (c > s_low)
+    sweep_high = (h > s_high) & (c < s_high)
+    out["sweep_low"], out["sweep_high"] = sweep_low, sweep_high
+    out["smc_buy"] = sweep_low & (c > mss_buy) & (c > o)
+    out["smc_sell"] = sweep_high & (c < mss_sell) & (c < o)
+    return out
+
+
+# ==========================================================================
+# V719 KONFLUANS — MAGNITUDE 0–18 / DIRECTION −5…+5
+# ==========================================================================
+def confluence(df: pd.DataFrame, core: pd.DataFrame, omni: pd.DataFrame,
+               sah: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame:
+    p = {**PARAMS, **(p or {})}
+    c, v, l = df["Close"], df["Volume"], df["Low"]
+    out = pd.DataFrame(index=df.index)
+    lb = p["kfLb"]
+
+    kf_rvol = v / sma(v, 20).replace(0, np.nan)
+    kf_sma50 = sma(c, 50)
+
+    # Minervini MVP: hacim + 15 barda %10 + alıcı baskısı + 50MA üstü
+    cp = ((c - l) / (df["High"] - l).replace(0, np.nan)).fillna(0.5)
+    ret_log = np.log(c / c.shift(1)).replace([np.inf, -np.inf], np.nan)
+    rsd = stdev(ret_log, 20)
+    bvc = pd.Series(normal_cdf((ret_log / rsd.replace(0, np.nan)).fillna(0).to_numpy()),
+                    index=df.index)
+    bp = (0.375 * cp + 0.625 * bvc).clip(0, 1)
+    mvp = ((kf_rvol >= 1.5) & (c >= c.shift(15) * 1.10) & (bp > 0.5) & (c > kf_sma50))
+    out["mvp"], out["bp"] = mvp, bp
+
+    def recent(s: pd.Series) -> pd.Series:
+        return s.fillna(False).rolling(lb).max().fillna(0).astype(bool)
+
+    # MAGNITUDE — ölçülmüş ağırlıklarla (scriptte kayıtlı lift değerlerine göre)
+    mag = (3 * recent(omni["ab_bull"]).astype(int)
+           + 3 * recent(mvp).astype(int)
+           + 2 * recent(kf_rvol >= 2.0).astype(int)
+           + 2 * recent(crossover(omni["s_speed"], pd.Series(0.0, index=df.index))).astype(int)
+           + 2 * recent(sah["ult_up_cross"]).astype(int)
+           + 2 * recent(_effort_score(core, omni, sah) >= 4).astype(int)
+           + 1 * recent(core["star"]).astype(int)
+           + 1 * recent(omni["dia_buy"]).astype(int)
+           + 1 * recent(omni["ew_bull"]).astype(int)
+           + 1 * recent(kf_rvol >= 1.5).astype(int))
+
+    # DIRECTION — beş bağımsız üçlü
+    z = pd.Series(0.0, index=df.index)
+    d1 = np.sign(omni["s_speed"].fillna(0))
+    d2 = np.where(omni["s_speed"] > 25, 1, np.where(omni["s_speed"] < -25, -1, 0))
+    d3 = np.sign(omni["f_hist"].fillna(0))
+    d4 = np.where(omni["mom"] > 60, 1, np.where(omni["mom"] < 45, -1, 0))
+    d5 = np.where(c > kf_sma50, 1, np.where(c < kf_sma50, -1, 0))
+    direction = (d1 + d2 + d3 + d4 + d5).astype(int)
+
+    out["magnitude"] = mag
+    out["direction"] = pd.Series(direction, index=df.index)
+    out["risk_state"] = (mag >= p["kfExpThr"]) & (out["direction"] <= 0)
+    out["risk_hard"] = out["risk_state"] & (out["direction"] <= -2)
+    out["expand_state"] = (mag >= p["kfExpThr"]) & (out["direction"] > 0)
+    out["entry_state"] = (mag < p["kfExpThr"]) & (out["direction"] >= p["kfEntryDir"])
+
+    # İz süren ATR zırhı
+    out["trail_stop"] = ratcheting_atr_stop(
+        l, core["atr14"], p["stopMult"],
+        entry_price=safe_last(c), hard_stop_pct=p["hardStopPct"])
+    return out
+
+
+def _effort_score(core: pd.DataFrame, omni: pd.DataFrame,
+                  sah: pd.DataFrame) -> pd.Series:
+    """Efor kırılım gücü 0–8 (ŞAHANE V710 §1.15)."""
+    return (core["sqz_on"].astype(int)
+            + sah["smc_buy"].astype(int)
+            + core["sweep_bar"].astype(int)
+            + sah["ult_up_cross"].astype(int)
+            + (omni["mom"] >= 55).astype(int)
+            + (core["whale"] >= 60).astype(int)
+            + omni["vsa_anom"].astype(int)
+            + sah["eff_up"].astype(int)).clip(upper=8)
+
+
+# ==========================================================================
+# TEK SEMBOL ÖZETİ
+# ==========================================================================
+def _delta(series: pd.Series, back: int = 1) -> float:
+    """
+    Serinin `back` bar önceki değerine göre değişimi.
+    Tarayıcıda "WHALE 72" tek başına anlamsız — 72 ve YÜKSELİYOR mu, yoksa
+    85'ten düşerek mi 72'ye geldi, karar bunu bilmeye bağlı.
+    """
+    v = pd.Series(series).dropna()
+    if len(v) <= back:
+        return float("nan")
+    return float(v.iloc[-1] - v.iloc[-1 - back])
+
+
+def analyze(df: pd.DataFrame, ticker: str,
+            bench_close: pd.Series | None = None,
+            weekly_bull: bool | None = None,
+            p: dict[str, Any] | None = None) -> SignalRow:
+    """Bir sembolün tüm katmanlarını hesaplayıp son bardaki durumu döner."""
+    p = {**PARAMS, **(p or {})}
+    row = SignalRow(ticker=ticker)
+
+    df = df.dropna(subset=["Close"]).copy()
+    if len(df) < 60:
+        row.error = f"Yetersiz veri ({len(df)} bar, en az 60 gerekli)"
+        return row
+
+    try:
+        core = apex_core(df, p)
+        omni = apex_omni(df, p)
+        sah = sahane_layer(df, core["w_pwr"], p)
+        conf = confluence(df, core, omni, sah, p)
+    except Exception as exc:          # pragma: no cover - savunmacı
+        row.error = f"Hesaplama hatası: {exc}"
+        return row
+
+    c = df["Close"]
+    v = df["Volume"]
+    price = safe_last(c)
+    atr14 = safe_last(core["atr14"])
+    dollar_vol_m = safe_last(sma(c * v, 20)) / 1e6
+
+    # göreli güç (benchmark'a karşı 20 barlık momentum yüzdeliği)
+    rs_mom = rs_rank = np.nan
+    if bench_close is not None and len(bench_close) > 25:
+        rel = (c / bench_close.reindex(c.index).ffill()).dropna()
+        if len(rel) > 25:
+            rs_mom = safe_last(roc(rel, 20))
+            rs_rank = safe_last(percentrank(roc(rel, 20), min(100, len(rel) - 2)))
+
+    eff_score = safe_last(_effort_score(core, omni, sah))
+    whale = safe_last(core["whale"])
+    pro = safe_last(core["pro"])
+    ret_l = safe_last(core["ret_line"])
+    mag = safe_last(conf["magnitude"])
+    direction = safe_last(conf["direction"])
+
+    # Önceki bara ve önceki haftaya göre değişimler
+    d_whale = _delta(core["whale"])
+    d_whale5 = _delta(core["whale"], 5)
+    d_pro_ret = _delta(core["pro"] - core["ret_line"])
+    d_omni = _delta(omni["mom"])
+    d_omni5 = _delta(omni["mom"], 5)
+    d_mag = _delta(conf["magnitude"])
+    d_dir = _delta(conf["direction"])
+    d_wpwr = _delta(core["w_pwr"])
+
+    row.ok = True
+    row.data = {
+        "Fiyat": price,
+        "ATR": atr14,
+        "ATR %": (atr14 / price * 100.0) if price else np.nan,
+        "Hacim ($M)": dollar_vol_m,
+        "WHALE": whale,
+        "ΔWHALE": d_whale,
+        "ΔWHALE 5B": d_whale5,
+        "Whale Yön": _trend_arrow(d_whale, d_whale5),
+        "DAILY": safe_last(core["daily"]),
+        "RETAIL": safe_last(core["retail"]),
+        "PRO": pro,
+        "PRO-RET": pro - ret_l,
+        "ΔPRO-RET": d_pro_ret,
+        "Whale Power": safe_last(core["w_pwr"]),
+        "ΔWhale Power": d_wpwr,
+        "RVOL": safe_last(core["rvol"]),
+        "OMNI": safe_last(omni["mom"]),
+        "ΔOMNI": d_omni,
+        "ΔOMNI 5B": d_omni5,
+        "OMNI Yön": _trend_arrow(d_omni, d_omni5),
+        "Fusion": safe_last(omni["f_speed"]),
+        "Synergy": safe_last(omni["s_speed"]),
+        "HUD /6": int(safe_last(omni["hud"], 0)),
+        "Efor /8": int(eff_score) if np.isfinite(eff_score) else 0,
+        "MAGNITUDE": int(mag) if np.isfinite(mag) else 0,
+        "ΔMAG": d_mag,
+        "DIRECTION": int(direction) if np.isfinite(direction) else 0,
+        "ΔDIR": d_dir,
+        "RS %": rs_mom,
+        "RS Sıra": rs_rank,
+        "T1": safe_last(core["t1"]),
+        "T2": safe_last(core["t2"]),
+        "Stop": safe_last(conf["trail_stop"]),
+        "Rejim": bool(safe_bool(sah["regime_bull"])),
+        "Haftalık": weekly_bull,
+        "Sıkışma": bool(safe_bool(core["sqz_on"])),
+        "Sıkışma Süre": int(safe_last(core["sqz_dur"], 0)),
+        "1 Gün %": safe_last(roc(c, 1)),
+        "1 Hafta %": safe_last(roc(c, 5)),
+        "1 Ay %": safe_last(roc(c, 21)),
+        # olay bayrakları
+        "_star": safe_bool(core["star"]),
+        "_dia_buy": safe_bool(omni["dia_buy"]),
+        "_dia_sell": safe_bool(omni["dia_sell"]),
+        "_sweep": safe_bool(core["sweep_bar"]) or safe_bool(sah["smc_buy"]),
+        "_smc_sell": safe_bool(sah["smc_sell"]),
+        "_st_in": safe_bool(core["st_in"]),
+        "_st_out": safe_bool(core["st_out"]),
+        "_acc": safe_bool(core["real_acc"]),
+        "_dist": safe_bool(core["real_dist"]),
+        "_ab_bull": safe_bool(omni["ab_bull"]),
+        "_ab_bear": safe_bool(omni["ab_bear"]),
+        "_exhausted": safe_bool(core["exhausted"]) or safe_bool(omni["is_exhausted"]),
+        "_sqz_fire": safe_bool(core["sqz_fire"]),
+        "_cross_up": safe_bool(core["cross_up"]),
+        "_cross_dn": safe_bool(core["cross_dn"]),
+        "_entry": safe_bool(conf["entry_state"]),
+        "_risk": safe_bool(conf["risk_state"]),
+        "_risk_hard": safe_bool(conf["risk_hard"]),
+        "_expand": safe_bool(conf["expand_state"]),
+        "_mvp": safe_bool(conf["mvp"]),
+        "_eff_up": safe_bool(sah["eff_up"]),
+    }
+    row.data["Sinyal"] = headline_signal(row.data)
+    row.data["Efor"] = effort_state(row.data, safe_last(c), safe_last(sah["eff_price"]))
+    return row
+
+
+def _trend_arrow(d1: float, d5: float) -> str:
+    """
+    Bir barlık ve beş barlık değişimi tek okla özetler.
+
+      ⇈ hem dün hem hafta boyunca artıyor  (hızlanan güçlenme)
+      ↗ kısa vadede artıyor ama haftalık zayıf (yeni dönüş)
+      ↘ kısa vadede düşüyor ama haftalık güçlü (soluklanma)
+      ⇊ ikisi de düşüyor (hızlanan bozulma)
+    """
+    if not np.isfinite(d1) and not np.isfinite(d5):
+        return "—"
+    a = d1 if np.isfinite(d1) else 0.0
+    b = d5 if np.isfinite(d5) else 0.0
+    if a > 0.5 and b > 0.5:
+        return "⇈ güçleniyor"
+    if a > 0.5 >= b:
+        return "↗ dönüyor"
+    if a < -0.5 and b < -0.5:
+        return "⇊ bozuluyor"
+    if a < -0.5 <= b:
+        return "↘ soluklanıyor"
+    return "→ yatay"
+
+
+def headline_signal(d: dict[str, Any]) -> str:
+    """
+    Tek satırlık başlık sinyali — scriptlerin işaret önceliğini korur:
+    risk uyarıları her şeyin önünde, sonra en güçlü giriş tetikleyicileri.
+    """
+    if d.get("_risk_hard"):
+        return "🩸 GÜÇLÜ RİSK"
+    if d.get("_dia_sell") or d.get("_smc_sell"):
+        return "⛔ DIAMOND SAT"
+    if d.get("_dist") or d.get("_st_out"):
+        return "🐋 DAĞITIM"
+    if d.get("_ab_bear"):
+        return "🔻 AFTERBURNER AYI"
+    if d.get("_exhausted"):
+        return "⚠️ TÜKENME"
+    if d.get("_dia_buy"):
+        return "💎 DIAMOND AL"
+    if d.get("_star"):
+        return "⭐ GOLDEN STAR"
+    if d.get("_sweep"):
+        return "🎣 LİKİDİTE SÜPÜRMESİ"
+    if d.get("_st_in") or d.get("_acc"):
+        return "🐋 TOPLAMA"
+    if d.get("_ab_bull"):
+        return "🚀 AFTERBURNER"
+    if d.get("_entry"):
+        return "🟢 GİRİŞ BÖLGESİ"
+    if d.get("_mvp"):
+        return "📈 MINERVINI MVP"
+    if d.get("_sqz_fire"):
+        return "🎯 SIKIŞMA PATLADI"
+    if d.get("_cross_up"):
+        return "⚡ PRO ↗ RETAIL"
+    if d.get("_cross_dn"):
+        return "⚡ PRO ↘ RETAIL"
+    if d.get("_risk"):
+        return "⚠️ RİSK"
+    if d.get("Sıkışma"):
+        return "🕳️ SIKIŞMA"
+    if d.get("_expand"):
+        return "🟡 GENİŞLEME"
+    return "⚪ BEKLE"
+
+
+def effort_state(d: dict[str, Any], price: float, eff_price: float) -> str:
+    if not np.isfinite(price) or not np.isfinite(eff_price):
+        return "➖"
+    if d.get("_eff_up"):
+        return "🚀 EFOR KIRILIMI"
+    return "🟢 POZ" if price > eff_price else "🔴 NEG"
+
+
+SIGNAL_COLORS = {
+    "🩸 GÜÇLÜ RİSK": ("#4a0d12", "#ffffff"),
+    "⛔ DIAMOND SAT": ("#b71c1c", "#ffffff"),
+    "🐋 DAĞITIM": ("#7b1f14", "#ffffff"),
+    "🔻 AFTERBURNER AYI": ("#5c1a3a", "#ffffff"),
+    "⚠️ TÜKENME": ("#4a3a05", "#ffea00"),
+    "💎 DIAMOND AL": ("#00e6ff", "#04141a"),
+    "⭐ GOLDEN STAR": ("#ffd700", "#1a1400"),
+    "🎣 LİKİDİTE SÜPÜRMESİ": ("#00bfff", "#04141a"),
+    "🐋 TOPLAMA": ("#006064", "#ffffff"),
+    "🚀 AFTERBURNER": ("#ff9800", "#1a0d00"),
+    "🟢 GİRİŞ BÖLGESİ": ("#00e676", "#04140a"),
+    "📈 MINERVINI MVP": ("#1b5e20", "#ffffff"),
+    "🎯 SIKIŞMA PATLADI": ("#4a148c", "#ffffff"),
+    "⚡ PRO ↗ RETAIL": ("#0d3b52", "#00e5ff"),
+    "⚡ PRO ↘ RETAIL": ("#3b1020", "#ff80ab"),
+    "⚠️ RİSK": ("#3a2a05", "#ffd54f"),
+    "🕳️ SIKIŞMA": ("#26134a", "#b39dff"),
+    "🟡 GENİŞLEME": ("#3a3205", "#ffd600"),
+    "⚪ BEKLE": ("#15151c", "#8a8a95"),
+}
+
+# ==========================================================================
+# KAYNAK: apex/ui.py
+# ==========================================================================
+
+
+import streamlit as st
+
+
+# Doğrulanmış kategorik palet (koyu zemin adımları)
+SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181",
+          "#2f9e44", "#9085e9", "#e66767"]
+
+CHART_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#a0a0ab", size=12,
+              family='-apple-system, "Segoe UI", Roboto, Inter, sans-serif'),
+    margin=dict(t=8, b=8, l=8, r=8),
+    hoverlabel=dict(bgcolor="#131319", bordercolor="#2b2b36",
+                    font=dict(color="#ececf1", size=12)),
+)
+
+_CSS = """
+<style>
+:root {
+  --bg:#050506; --surface:#0d0d11; --surface-2:#131319;
+  --line:#24242e; --line-soft:#1b1b22; --edge:#3a3a48;
+  /* Kontrast: --ink-3 önceden #6e6e7a idi ve #050506 zemin üzerinde
+     yaklaşık 3.4:1 kalıyordu — bölüm başlıkları ve açıklamalar okunmuyordu.
+     Yeni değerler zemine karşı en az 7:1 (ink-2) ve 5.5:1 (ink-3). */
+  --ink:#f2f2f6; --ink-2:#c2c2cc; --ink-3:#9a9aa8;
+  --accent:#00e5ff; --pos:#2fbe86; --neg:#f0736f;
+}
+.stApp { background: var(--bg); color: var(--ink); }
+.block-container { padding-top: 2.1rem; padding-bottom: 3rem; max-width: 1600px; }
+.stApp, .stApp p, .stApp div, .stApp span,
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+}
+
+/* Başlık */
+.nx-brand { display:flex; align-items:baseline; gap:.6rem; }
+.nx-brand h1 { font-size:1.55rem; font-weight:700; letter-spacing:-.02em;
+  margin:0; color:var(--ink); }
+.nx-brand .tag { font-size:.62rem; font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--bg); background:var(--accent);
+  padding:.18rem .45rem; border-radius:4px; }
+.nx-meta { color:var(--ink-3); font-size:.8rem; margin-top:.35rem; }
+.nx-meta b { color:var(--ink-2); font-weight:600; }
+
+/* KPI kartları */
+.kpi { background:linear-gradient(160deg,var(--surface-2) 0%,var(--surface) 100%);
+  border:1px solid var(--line); border-radius:14px; padding:1rem 1.15rem 1.05rem;
+  position:relative; overflow:hidden; height:100%; }
+.kpi::before { content:""; position:absolute; inset:0 auto 0 0; width:3px;
+  background:var(--accent); opacity:.85; }
+.kpi.pos::before { background:var(--pos); } .kpi.neg::before { background:var(--neg); }
+.kpi-label { font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink-2); font-weight:700; margin-bottom:.5rem; }
+.kpi-value { font-size:1.45rem; font-weight:700; letter-spacing:-.02em;
+  line-height:1.2; color:var(--ink); }
+.kpi-sub { font-size:.78rem; color:var(--ink-2); margin-top:.4rem; }
+.kpi-value.pos,.kpi-sub.pos { color:var(--pos); }
+.kpi-value.neg,.kpi-sub.neg { color:var(--neg); }
+.badge { display:inline-block; font-size:.72rem; font-weight:600;
+  padding:.12rem .42rem; border-radius:5px; background:rgba(255,255,255,.05); }
+.badge.pos { background:rgba(47,190,134,.13); color:var(--pos); }
+.badge.neg { background:rgba(240,115,111,.13); color:var(--neg); }
+
+/* Bölüm başlığı */
+.nx-section { font-size:.74rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-2); font-weight:700; margin:1.7rem 0 .75rem;
+  padding-bottom:.45rem; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:.5rem; }
+.nx-section::before { content:""; width:3px; height:13px; border-radius:2px;
+  background:var(--accent); display:inline-block; }
+
+/* Sekmeler */
+.stTabs [data-baseweb="tab-list"] { gap:.15rem;
+  border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.stTabs [data-baseweb="tab"] { height:44px; padding:0 .95rem;
+  background:transparent; color:var(--ink-2); font-size:.88rem;
+  font-weight:600; border-radius:8px 8px 0 0; }
+.stTabs [data-baseweb="tab"]:hover { color:var(--ink)!important; }
+.stTabs [aria-selected="true"] { color:var(--ink)!important;
+  background:var(--surface)!important; border-bottom:2px solid var(--accent)!important; }
+
+/* Tablolar */
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+  border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+
+/* Butonlar — koyu zeminde görünür olsun (hover'a gerek kalmadan) */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
+[data-testid="stBaseButton-secondary"],
+[data-testid="stFileUploaderDropzone"] button {
+  background:#1c1c25!important; color:var(--ink)!important;
+  border:1px solid var(--edge)!important; border-radius:9px;
+  font-weight:600; font-size:.86rem; transition:all .12s ease;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset; }
+.stButton > button:hover, .stDownloadButton > button:hover,
+.stFormSubmitButton > button:hover {
+  background:#1b1b23!important; border-color:var(--accent)!important;
+  color:var(--accent)!important; }
+.stButton > button *, .stDownloadButton > button *,
+.stFormSubmitButton > button * { color:inherit!important; }
+.stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"],
+[data-testid="stBaseButton-primary"] {
+  background:var(--accent)!important; color:#04141a!important;
+  border-color:var(--accent)!important; }
+.stButton > button[kind="primary"] * { color:#04141a!important; }
+
+/* Giriş alanları ve etiket çipleri */
+.stTextInput input, .stNumberInput input, .stSelectbox > div > div,
+.stMultiSelect > div > div {
+  background:var(--surface)!important; border-color:var(--line)!important;
+  border-radius:9px!important; }
+[data-baseweb="tag"] { background-color:rgba(0,229,255,.13)!important;
+  color:var(--accent)!important; border:1px solid rgba(0,229,255,.28)!important;
+  border-radius:7px!important; }
+[data-baseweb="tag"] span, [data-baseweb="tag"] svg { color:var(--accent)!important; }
+div[role="radiogroup"] > label { background:var(--surface-2);
+  border:1px solid var(--edge); border-radius:8px; padding:.3rem .7rem;
+  margin-right:.35rem; }
+div[role="radiogroup"] > label:hover { border-color:var(--accent); }
+div[data-testid="stExpander"] { border:1px solid var(--line);
+  border-radius:12px; background:var(--surface); }
+div[data-testid="stExpander"] summary { color:var(--ink)!important; }
+div[data-testid="stAlert"] { border-radius:11px; border:1px solid var(--line); }
+a, a:visited { color:var(--accent); }
+
+/* Streamlit'in soluk metinleri: caption, widget etiketi, yardım ikonu */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p,
+.stMarkdown small, small { color:var(--ink-2)!important; }
+[data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label,
+.stSlider label, .stRadio label p, .stCheckbox label p, .stToggle label p {
+  color:var(--ink)!important; font-weight:600; }
+[data-testid="stMarkdownContainer"] p { color:var(--ink); }
+svg[data-testid="stTooltipHoverTarget"] { fill:var(--ink-2)!important; }
+[data-testid="stMetricLabel"] { color:var(--ink-2)!important; }
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
+  color:var(--ink)!important; font-weight:600; }
+[data-testid="stElementToolbar"] button { color:var(--ink)!important; }
+
+/* Tablo başlıkları */
+[data-testid="stDataFrame"] th, [data-testid="stDataEditor"] th {
+  color:var(--ink)!important; font-weight:700!important; }
+
+/* Delta rozetleri */
+.delta { font-size:.72rem; font-weight:700; padding:.1rem .35rem;
+  border-radius:5px; margin-left:.3rem; white-space:nowrap; }
+.delta.up { background:rgba(47,190,134,.16); color:#4fd6a0; }
+.delta.dn { background:rgba(240,115,111,.16); color:#ff8f8b; }
+.delta.flat { background:rgba(255,255,255,.06); color:var(--ink-2); }
+hr { border-color:var(--line-soft); }
+</style>
+"""
+
+
+def inject_theme() -> None:
+    st.markdown(_CSS, unsafe_allow_html=True)
+
+
+def section(title: str) -> None:
+    st.markdown(f"<div class='nx-section'>{title}</div>", unsafe_allow_html=True)
+
+
+def kpi(label: str, value: str, sub: str = "", tone: str = "") -> str:
+    cls = f" {tone}" if tone else ""
+    return (f"<div class='kpi{cls}'><div class='kpi-label'>{label}</div>"
+            f"<div class='kpi-value{cls}'>{value}</div>"
+            f"<div class='kpi-sub{cls}'>{sub}</div></div>")
+
+
+def badge(text: str, tone: str = "") -> str:
+    return f"<span class='badge {tone}'>{text}</span>"
+
+
+def signal_style(val) -> str:
+    """Sinyal hücresini scriptlerdeki renk diliyle boyar."""
+    if not isinstance(val, str):
+        return ""
+    for key, (bg, fg) in SIGNAL_COLORS.items():
+        if val == key:
+            return f"background-color:{bg};color:{fg};font-weight:700"
+    if val == "⚫ VERİ YOK":
+        return "background-color:#101014;color:#5a5a63"
+    return "background-color:#15151c;color:#8a8a95"
+
+# ==========================================================================
+# KAYNAK: apex/macro.py
+# ==========================================================================
+
+
+import calendar
+import datetime as dt
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+# Makro göstergelerin Yahoo sembolleri
+MACRO_TICKERS: dict[str, str] = {
+    "SPY": "SPY",          # geniş piyasa
+    "QQQ": "QQQ",          # teknoloji
+    "VIX": "^VIX",         # 30 günlük örtük oynaklık
+    "VIX3M": "^VIX3M",     # 3 aylık — vade yapısı için
+    "TLT": "TLT",          # uzun vadeli hazine
+    "HYG": "HYG",          # yüksek getirili şirket tahvili
+    "LQD": "LQD",          # yatırım yapılabilir tahvil
+    "DXY": "DX-Y.NYB",     # dolar endeksi
+    "GOLD": "GC=F",        # altın
+    "COPPER": "HG=F",      # bakır
+    "OIL": "CL=F",         # ham petrol
+    "BTC": "BTC-USD",      # kripto risk iştahı
+    "US10Y": "^TNX",       # 10 yıllık tahvil faizi
+}
+
+# 2026 FOMC toplantı tarihleri (son gün). Yeni yıl takvimi açıklanınca güncelleyin.
+FOMC_DATES_2026 = [
+    dt.date(2026, 1, 28), dt.date(2026, 3, 18), dt.date(2026, 4, 29),
+    dt.date(2026, 6, 17), dt.date(2026, 7, 29), dt.date(2026, 9, 16),
+    dt.date(2026, 11, 4), dt.date(2026, 12, 16),
+]
+FOMC_DATES_2027 = [
+    dt.date(2027, 1, 27), dt.date(2027, 3, 17), dt.date(2027, 4, 28),
+    dt.date(2027, 6, 16), dt.date(2027, 7, 28), dt.date(2027, 9, 22),
+    dt.date(2027, 11, 3), dt.date(2027, 12, 15),
+]
+
+
+# --------------------------------------------------------------------------
+# Takvim
+# --------------------------------------------------------------------------
+def third_friday(year: int, month: int) -> dt.date:
+    """Aylık opsiyon vadesi — ayın üçüncü cuması."""
+    c = calendar.Calendar(firstweekday=calendar.MONDAY)
+    fridays = [d for week in c.monthdatescalendar(year, month)
+               for d in week if d.weekday() == calendar.FRIDAY and d.month == month]
+    return fridays[2]
+
+
+def next_opex(today: dt.date | None = None) -> tuple[dt.date, int, bool]:
+    """Sıradaki OPEX tarihi, kalan gün ve üçlü cadı (quad witching) mı."""
+    today = today or dt.date.today()
+    d = third_friday(today.year, today.month)
+    if today > d:
+        m = today.month % 12 + 1
+        y = today.year + (1 if today.month == 12 else 0)
+        d = third_friday(y, m)
+    return d, (d - today).days, d.month in (3, 6, 9, 12)
+
+
+def next_fomc(today: dt.date | None = None) -> tuple[dt.date | None, int | None]:
+    today = today or dt.date.today()
+    future = [d for d in (FOMC_DATES_2026 + FOMC_DATES_2027) if d >= today]
+    if not future:
+        return None, None
+    return future[0], (future[0] - today).days
+
+
+# --------------------------------------------------------------------------
+# Ölçümler
+# --------------------------------------------------------------------------
+@dataclass
+class MacroReading:
+    """Tek bir makro göstergenin okuması."""
+    key: str
+    label: str
+    value: float
+    change_pct: float
+    detail: str = ""
+    tone: str = "neutral"     # good | bad | neutral
+
+
+@dataclass
+class MacroState:
+    readings: dict[str, MacroReading] = field(default_factory=dict)
+    scores: dict[str, float] = field(default_factory=dict)
+    regime: str = "BELİRSİZ"
+    regime_desc: str = ""
+    battery: dict[str, int] = field(default_factory=dict)
+    risk_score: float = 50.0
+    errors: list[str] = field(default_factory=list)
+    opex_date: str = ""
+    opex_days: int = 0
+    opex_quad: bool = False
+    fomc_date: str = ""
+    fomc_days: int | None = None
+    asof: str = ""
+
+    def get(self, key: str) -> float:
+        r = self.readings.get(key)
+        return r.value if r else float("nan")
+
+
+def _pct_change(s: pd.Series, n: int = 1) -> float:
+    s = s.dropna()
+    if len(s) <= n:
+        return float("nan")
+    return float((s.iloc[-1] / s.iloc[-1 - n] - 1) * 100)
+
+
+def _last(s: pd.Series) -> float:
+    s = pd.Series(s).dropna()
+    return float(s.iloc[-1]) if len(s) else float("nan")
+
+
+def build_macro_state(prices: dict[str, pd.DataFrame],
+                      today: dt.date | None = None) -> MacroState:
+    """
+    Çekilmiş fiyat serilerinden makro durumu hesaplar.
+    `prices`: {anahtar: OHLCV DataFrame} — anahtarlar MACRO_TICKERS ile aynı.
+    """
+    st = MacroState()
+    today = today or dt.date.today()
+    st.asof = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    opex_d, opex_dl, quad = next_opex(today)
+    st.opex_date, st.opex_days, st.opex_quad = opex_d.strftime("%d.%m.%Y"), opex_dl, quad
+    fomc_d, fomc_dl = next_fomc(today)
+    st.fomc_date = fomc_d.strftime("%d.%m.%Y") if fomc_d else "—"
+    st.fomc_days = fomc_dl
+
+    def close(key: str) -> pd.Series | None:
+        df = prices.get(key)
+        if df is None or df.empty or "Close" not in df:
+            return None
+        s = df["Close"].dropna()
+        return s if len(s) > 5 else None
+
+    def add(key: str, label: str, value: float, chg: float,
+            detail: str = "", tone: str = "neutral") -> None:
+        st.readings[key] = MacroReading(key, label, value, chg, detail, tone)
+
+    # --- VIX ve vade yapısı ---
+    vix = close("VIX")
+    vix3m = close("VIX3M")
+    if vix is not None:
+        v = _last(vix)
+        if v < 15:
+            tone, det = "good", "Rehavet — koruma ucuz, ani şoklara açık"
+        elif v < 22:
+            tone, det = "neutral", "Normal aralık"
+        elif v < 30:
+            tone, det = "bad", "Gerginlik — pozisyon boyutunu düşür"
+        else:
+            tone, det = "bad", "Panik bölgesi — dip arayışı erken"
+        add("VIX", "VIX", v, _pct_change(vix), det, tone)
+        st.scores["vix"] = float(np.clip((25 - v) / 15 * 100, 0, 100))
+
+        if vix3m is not None:
+            v3 = _last(vix3m)
+            ratio = v / v3 if v3 else np.nan
+            if np.isfinite(ratio):
+                inverted = ratio > 1.0
+                ts_series = (vix / vix3m.reindex(vix.index).ffill()).dropna()
+                ts_chg = _pct_change(ts_series, 5) if len(ts_series) > 6 else 0.0
+                add("VIX_TS", "VIX Vade Yapısı", ratio,
+                    ts_chg if np.isfinite(ts_chg) else 0.0,
+                    "TERSİNE DÖNMÜŞ — yakın vade korkusu uzun vadeyi aştı, "
+                    "kısa vadeli stres" if inverted else
+                    "Normal contango — piyasa sakin",
+                    "bad" if inverted else "good")
+                st.scores["vix_ts"] = float(np.clip((1.05 - ratio) / 0.25 * 100, 0, 100))
+
+    # --- SPY trend rejimi ---
+    spy = close("SPY")
+    if spy is not None and len(spy) > 200:
+        e50 = spy.ewm(span=50, adjust=False).mean()
+        e200 = spy.ewm(span=200, adjust=False).mean()
+        px, m50, m200 = _last(spy), _last(e50), _last(e200)
+        above50, above200 = px > m50, px > m200
+        golden = m50 > m200
+        if above50 and above200 and golden:
+            det, tone, sc = "Tam boğa dizilimi (fiyat > 50 EMA > 200 EMA)", "good", 90
+        elif above200 and not above50:
+            det, tone, sc = "Ana trend yukarı ama kısa vadede zayıf — long sinyal kalitesi düşer", "neutral", 55
+        elif not above200 and above50:
+            det, tone, sc = "Ayı piyasasında toparlanma — dikkatli", "neutral", 40
+        else:
+            det, tone, sc = "Fiyat 50 ve 200 EMA altında — long sinyalleri güvenilmez", "bad", 15
+        add("SPY_TREND", "SPY Trend Rejimi", (px / m50 - 1) * 100, _pct_change(spy),
+            det, tone)
+        st.scores["trend"] = float(sc)
+        st.readings["SPY_TREND"].detail = det
+
+    # --- Kredi iştahı: HYG / TLT ---
+    hyg, tlt = close("HYG"), close("TLT")
+    if hyg is not None and tlt is not None:
+        rel = (hyg / tlt.reindex(hyg.index).ffill()).dropna()
+        if len(rel) > 25:
+            mom = _pct_change(rel, 20)
+            tone = "good" if mom > 0 else "bad"
+            add("CREDIT", "Kredi İştahı (HYG/TLT)", mom, _pct_change(rel, 5),
+                "Riskli tahvil güvenli tahvile göre güçleniyor — risk alma isteği var"
+                if mom > 0 else
+                "Sermaye güvenli tahvile kaçıyor — riskten kaçınma", tone)
+            st.scores["credit"] = float(np.clip(50 + mom * 8, 0, 100))
+
+    # --- Dolar likiditesi ---
+    dxy = close("DXY")
+    if dxy is not None:
+        mom = _pct_change(dxy, 20)
+        add("DXY", "Dolar Endeksi", _last(dxy), mom,
+            "Dolar güçleniyor — küresel likidite sıkışıyor, riskli varlık aleyhine"
+            if mom > 0 else
+            "Dolar zayıflıyor — likidite gevşiyor, riskli varlık lehine",
+            "bad" if mom > 1 else "good" if mom < -1 else "neutral")
+        st.scores["dollar"] = float(np.clip(50 - mom * 10, 0, 100))
+
+    # --- Altın / Bakır: korku mu büyüme mi ---
+    gold, copper = close("GOLD"), close("COPPER")
+    if gold is not None and copper is not None:
+        rel = (gold / copper.reindex(gold.index).ffill()).dropna()
+        if len(rel) > 25:
+            mom = _pct_change(rel, 20)
+            add("GOLD_COPPER", "Altın / Bakır", mom, _pct_change(rel, 5),
+                "Altın bakırı geçiyor — korku ve durgunluk fiyatlanıyor" if mom > 0
+                else "Bakır altını geçiyor — büyüme ve sanayi talebi fiyatlanıyor",
+                "bad" if mom > 2 else "good" if mom < -2 else "neutral")
+            st.scores["growth"] = float(np.clip(50 - mom * 5, 0, 100))
+
+    # --- Kripto risk iştahı ---
+    btc = close("BTC")
+    if btc is not None:
+        mom = _pct_change(btc, 20)
+        add("BTC", "Bitcoin", _last(btc), _pct_change(btc),
+            "Risk iştahının ucu güçlü" if mom > 0 else "Riskli uç zayıflıyor",
+            "good" if mom > 0 else "bad")
+        st.scores["crypto"] = float(np.clip(50 + mom * 2, 0, 100))
+
+    # --- 10 yıllık faiz ---
+    tnx = close("US10Y")
+    if tnx is not None:
+        v = _last(tnx) / 10.0        # ^TNX 10 katı olarak gelir
+        mom = _pct_change(tnx, 20)
+        add("US10Y", "ABD 10Y Faiz", v, mom,
+            "Faizler yükseliyor — yüksek çarpanlı hisseler baskı altında"
+            if mom > 0 else "Faizler geriliyor — büyüme hisseleri rahatlar",
+            "bad" if mom > 3 else "good" if mom < -3 else "neutral")
+        st.scores["rates"] = float(np.clip(50 - mom * 3, 0, 100))
+
+    if not st.scores:
+        st.errors.append("Hiçbir makro gösterge çekilemedi — rejim hesaplanamadı.")
+        st.battery = {"Hisse": 50, "Tahvil": 50, "Kripto": 50,
+                      "Emtia": 50, "Gayrimenkul": 50}
+        return st
+
+    st.risk_score = float(np.mean(list(st.scores.values())))
+    st.regime, st.regime_desc = classify_regime(st)
+    st.battery = compute_battery(st)
+    return st
+
+
+def classify_regime(st: MacroState) -> tuple[str, str]:
+    """Ölçümlerden rejim etiketi türetir. Sıra önemlidir: en keskin durum önce."""
+    vix = st.get("VIX")
+    ts = st.get("VIX_TS")
+    trend = st.scores.get("trend", 50)
+    credit = st.scores.get("credit", 50)
+    dollar = st.scores.get("dollar", 50)
+    risk = st.risk_score
+
+    if np.isfinite(vix) and vix > 30 and trend < 30:
+        return ("🩸 LİKİDİTE KRİZİ",
+                f"VIX {vix:.1f} ile panik bölgesinde ve SPY ana trendin altında. "
+                f"Yüksek çarpanlı teknoloji, biyoteknoloji ve kriptoda margin call "
+                f"döngüsü riski var. Bu rejimde dip alımı erkendir; nakit ve uzun "
+                f"vadeli tahvil korunma sağlar.")
+
+    if np.isfinite(ts) and ts > 1.0 and credit < 45:
+        return ("🌍 JEOPOLİTİK / OLAY ŞOKU",
+                f"VIX vade yapısı tersine dönmüş (oran {ts:.2f}) ve kredi iştahı "
+                f"zayıf. Sermaye teknolojiden kaçıp altın, savunma, petrol ve "
+                f"hazineye sığınıyor. Tedarik zincirine bağlı şirketler en hızlı "
+                f"ezilen taraf.")
+
+    if st.opex_days <= 3:
+        quad = " ÜÇLÜ CADI (quad witching) — etki normalden güçlü." if st.opex_quad else ""
+        return ("🎯 OPEX PINNING",
+                f"Opsiyon vadesine {st.opex_days} gün kaldı ({st.opex_date}).{quad} "
+                f"Market maker'lar primi sıfırlamak için endeksi en yüksek açık "
+                f"pozisyonun olduğu Max Pain noktasına hapsetmeye çalışıyor. Trend "
+                f"kırılımları bu pencerede çoğunlukla tuzak (whipsaw) çıkar; vade "
+                f"geçmeden yeni pozisyon açmak risklidir.")
+
+    if np.isfinite(vix) and vix < 15 and trend > 70 and risk > 62:
+        return ("🚀 RİSK İŞTAHI / GAMMA",
+                f"VIX {vix:.1f} ile rehavet bölgesinde, SPY tam boğa diziliminde ve "
+                f"kredi iştahı açık. Dealer'lar call hedge'i için spot almak zorunda "
+                f"kaldığında parabolik hızlanma (gamma squeeze) görülebilir. Ancak "
+                f"koruma ucuzken piyasa şoka da en açık haldedir.")
+
+    if st.fomc_days is not None and st.fomc_days <= 3:
+        return ("🏦 FOMC BEKLEYİŞİ",
+                f"FOMC toplantısına {st.fomc_days} gün kaldı ({st.fomc_date}). "
+                f"Karar öncesi hacim düşer, karar anında oynaklık patlar. Stop "
+                f"mesafeleri normal ATR'ye göre dar kalır; pozisyon boyutunu "
+                f"küçültmek stop mantığını korur.")
+
+    if dollar < 35 and credit < 45:
+        return ("💵 DOLAR SIKIŞMASI",
+                "Dolar güçlenirken kredi iştahı zayıflıyor. Küresel likidite "
+                "çekiliyor; yüksek çarpanlı ve kaldıraçlı varlıklar önce satılır.")
+
+    if risk >= 62 and trend >= 50:
+        return ("🟢 RİSK AÇIK",
+                f"Bileşik risk skoru {risk:.0f}/100 ve SPY ana trendi yukarı. "
+                f"Trend, kredi ve oynaklık birlikte long tarafını destekliyor — "
+                f"sinyal kalitesi yüksek.")
+    if risk >= 62 and trend < 50:
+        return ("🟡 KARIŞIK — TREND ZAYIF",
+                f"Kredi iştahı ve oynaklık iyi görünüyor (bileşik skor {risk:.0f}/100) "
+                f"AMA fiyat SPY 50 EMA'sının altında. Bu ikisi çeliştiğinde rejim "
+                f"kapısı kapalı sayılır: long sinyalleri izleme listesi olarak "
+                f"kullanılır, pozisyon için trendin dönmesi beklenir.")
+    if risk <= 40 or trend < 25:
+        return ("🔴 RİSK KAPALI",
+                f"Bileşik risk skoru {risk:.0f}/100. Long sinyallerinin isabet "
+                f"oranı bu rejimde tarihsel olarak düşer; kısa vadeli işlemlerde "
+                f"pozisyon boyutunu küçültmek gerekir.")
+    return ("⚖️ GEÇİŞ / KARARSIZ",
+            f"Bileşik risk skoru {risk:.0f}/100. Göstergeler birbiriyle çelişiyor; "
+            f"tek yönlü agresif pozisyon için teyit bekleyin.")
+
+
+def compute_battery(st: MacroState) -> dict[str, int]:
+    """
+    Varlık sınıflarına sermaye akış eğilimi (0–100).
+    Elle yazılmış sabitler yerine ölçülen skorlardan türetilir.
+    """
+    trend = st.scores.get("trend", 50)
+    vix = st.scores.get("vix", 50)
+    credit = st.scores.get("credit", 50)
+    dollar = st.scores.get("dollar", 50)
+    growth = st.scores.get("growth", 50)
+    crypto = st.scores.get("crypto", 50)
+    rates = st.scores.get("rates", 50)
+
+    def clip(x: float) -> int:
+        return int(np.clip(round(x), 2, 98))
+
+    hisse = 0.40 * trend + 0.25 * credit + 0.20 * vix + 0.15 * dollar
+    tahvil = 100 - (0.55 * credit + 0.45 * vix)          # korku arttıkça tahvil dolar
+    kripto = 0.45 * crypto + 0.30 * credit + 0.25 * dollar
+    emtia = 0.50 * (100 - growth) + 0.30 * dollar + 0.20 * trend
+    gyo = 0.45 * rates + 0.35 * trend + 0.20 * credit
+
+    # OPEX haftasında her şey ortaya çekilir (pinning)
+    if st.opex_days <= 2:
+        pull = 0.35
+        hisse = hisse * (1 - pull) + 50 * pull
+        kripto = kripto * (1 - pull) + 50 * pull
+
+    return {"Hisse": clip(hisse), "Tahvil": clip(tahvil), "Kripto": clip(kripto),
+            "Emtia": clip(emtia), "Gayrimenkul": clip(gyo)}
+
+
+# --------------------------------------------------------------------------
+# Elle seçilebilen senaryolar (referans / eğitim amaçlı)
+# --------------------------------------------------------------------------
+MANUAL_SCENARIOS: dict[str, dict[str, Any]] = {
+    "🚀 GAMMA SQUEEZE": {
+        "battery": {"Hisse": 95, "Tahvil": 20, "Kripto": 90, "Emtia": 55,
+                    "Gayrimenkul": 65},
+        "desc": "Beklenmedik güvercin FED açıklaması, zayıf enflasyon verisi veya "
+                "yoğun call alımı sonrası piyasa yapıcıların delta-hedge için spot "
+                "hisseye saldırması. Hızlı şişme yaratır ama temele dayanmadığı "
+                "için sert düzeltme olasılığı masadadır.",
+    },
+    "🎯 OPEX PINNING": {
+        "battery": {"Hisse": 50, "Tahvil": 50, "Kripto": 48, "Emtia": 52,
+                    "Gayrimenkul": 50},
+        "desc": "Market maker'lar primleri (theta) sıfırlamak için endeksi en "
+                "yüksek açık pozisyon yoğunluğunun olduğu Max Pain noktasına "
+                "hapseder. Trend kırılımları çoğunlukla tuzak çıkar.",
+    },
+    "🌍 JEOPOLİTİK ŞOK": {
+        "battery": {"Hisse": 25, "Tahvil": 85, "Kripto": 35, "Emtia": 95,
+                    "Gayrimenkul": 40},
+        "desc": "Boğaz krizleri, gümrük tarifeleri veya enerji nakil hatlarına "
+                "saldırı. Sermaye riskten kaçıp altın, savunma, petrol ve hazineye "
+                "sığınır; tedarik zincirine bağlı şirketler anında ezilir.",
+    },
+    "🏦 LİKİDİTE KRİZİ (FED)": {
+        "battery": {"Hisse": 15, "Tahvil": 90, "Kripto": 10, "Emtia": 35,
+                    "Gayrimenkul": 25},
+        "desc": "İnatçı enflasyon, devasa tahvil ihracı veya Reverse Repo havuzunun "
+                "kuruması. Yüksek F/K'lı teknoloji, biyoteknoloji ve kriptoda "
+                "acımasız likidasyon ve margin call döngüleri.",
+    },
+}
+
+REGIME_GLOSSARY: list[tuple[str, str]] = [
+    ("OPEX Pinning",
+     "Aylık/üç aylık opsiyon vadesine yaklaşırken market maker'lar fiyatı "
+     "yatırımcıların büyük kısmının kaybedeceği Max Pain noktasına çeker. "
+     "Sahte kırılımlar artar, trend takip sistemleri bu pencerede kötü çalışır."),
+    ("Gamma Squeeze",
+     "Yoğun call alımı sonrası dealer'ların hedge amaçlı spot hisse almak zorunda "
+     "kalmasıyla oluşan parabolik yükseliş döngüsü. Kendi kendini besler, "
+     "beslediği kadar da hızlı çöker."),
+    ("VIX Vade Yapısı",
+     "VIX (30 gün) / VIX3M (3 ay) oranı 1'in üstüne çıkarsa yakın vade korkusu "
+     "uzun vadeyi aşmış demektir — kısa vadeli stres göstergesi. Normalde bu oran "
+     "1'in altındadır (contango)."),
+    ("Kredi İştahı (HYG/TLT)",
+     "Yüksek getirili şirket tahvilinin uzun vadeli hazineye göre performansı. "
+     "Yükseliyorsa piyasa risk almaya istekli, düşüyorsa sermaye güvenliğe kaçıyor. "
+     "Hisse senedi rallilerinin en güvenilir teyit göstergelerinden biridir."),
+    ("Altın / Bakır Oranı",
+     "Altın korkunun, bakır sanayi büyümesinin göstergesidir. Oran yükseliyorsa "
+     "piyasa durgunluk, düşüyorsa büyüme fiyatlıyor."),
+    ("Dolar Endeksi (DXY)",
+     "Dolar güçlendikçe küresel likidite sıkışır; gelişen piyasalar, emtia ve "
+     "yüksek çarpanlı büyüme hisseleri baskı görür."),
+]
+
+# ==========================================================================
+# KAYNAK: apex/store.py
+# ==========================================================================
+
+
+import base64
+import json
+import logging
+import os
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+_log = logging.getLogger(__name__)
+
+API = "https://api.github.com"
+DEFAULT_PATH = "apex_watchlist.json"
+
+
+class StorageError(RuntimeError):
+    pass
+
+
+@dataclass
+class LoadResult:
+    data: Any
+    sha: str | None
+    backend: str          # "github" | "local"
+    message: str = ""
+
+
+class Storage:
+    """GitHub'a yazar; yapılandırma yoksa yerel dosyaya düşer."""
+
+    def __init__(self, config: dict[str, Any] | None = None,
+                 local_path: str = DEFAULT_PATH):
+        cfg = dict(config or {})
+        self.token = (cfg.get("token") or "").strip()
+        self.repo = (cfg.get("repo") or "").strip()
+        self.branch = (cfg.get("branch") or "main").strip()
+        self.path = (cfg.get("path") or local_path).strip()
+        self.local_path = local_path
+        self.committer_name = cfg.get("committer_name") or "aether-nexus-bot"
+        self.committer_email = cfg.get("committer_email") or "bot@users.noreply.github.com"
+        self._sha: str | None = None
+
+    # -- durum -------------------------------------------------------------
+    @property
+    def enabled(self) -> bool:
+        return bool(self.token and self.repo)
+
+    @property
+    def backend(self) -> str:
+        return "github" if self.enabled else "local"
+
+    def describe(self) -> str:
+        if self.enabled:
+            return f"GitHub → {self.repo}@{self.branch}/{self.path}"
+        return f"Yerel dosya → {self.local_path} (kalıcı değil!)"
+
+    # -- iç yardımcılar ----------------------------------------------------
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+    def _url(self) -> str:
+        return f"{API}/repos/{self.repo}/contents/{self.path}"
+
+    # -- okuma -------------------------------------------------------------
+    def load(self, default: Any = None) -> LoadResult:
+        if default is None:
+            default = []
+
+        if self.enabled:
+            try:
+                r = requests.get(self._url(), headers=self._headers(),
+                                 params={"ref": self.branch}, timeout=20)
+                if r.status_code == 404:
+                    self._sha = None
+                    return LoadResult(default, None, "github",
+                                      "Depoda dosya yok, ilk kayıtta oluşturulacak.")
+                r.raise_for_status()
+                payload = r.json()
+                self._sha = payload.get("sha")
+                raw = base64.b64decode(payload.get("content", "")).decode("utf-8")
+                return LoadResult(json.loads(raw or "[]"), self._sha, "github")
+            except Exception as exc:
+                _log.error("GitHub okuma hatası: %s", exc)
+                raise StorageError(f"GitHub'dan okunamadı: {exc}") from exc
+
+        if os.path.exists(self.local_path):
+            with open(self.local_path, "r", encoding="utf-8") as f:
+                return LoadResult(json.load(f), None, "local")
+        return LoadResult(default, None, "local", "Yerel dosya bulunamadı.")
+
+    # -- yazma -------------------------------------------------------------
+    def save(self, data: Any, message: str = "portföy güncellendi") -> str:
+        body = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+        # Yerel kopya her zaman yazılır (aynı oturumda hızlı okuma için)
+        try:
+            with open(self.local_path, "w", encoding="utf-8") as f:
+                f.write(body)
+        except OSError as exc:
+            _log.warning("Yerel kopya yazılamadı: %s", exc)
+
+        if not self.enabled:
+            return "local"
+
+        payload = {
+            "message": message,
+            "content": base64.b64encode(body.encode("utf-8")).decode("ascii"),
+            "branch": self.branch,
+            "committer": {"name": self.committer_name, "email": self.committer_email},
+        }
+
+        for attempt in range(2):
+            if self._sha:
+                payload["sha"] = self._sha
+            else:
+                payload.pop("sha", None)
+            r = requests.put(self._url(), headers=self._headers(),
+                             json=payload, timeout=25)
+            if r.status_code in (200, 201):
+                self._sha = (r.json().get("content") or {}).get("sha")
+                return self._sha or "ok"
+            if r.status_code == 409 and attempt == 0:
+                # Başka bir yerden commit gelmiş; sha'yı tazeleyip bir kez daha dene
+                _log.info("GitHub 409 çakışması, sha tazeleniyor.")
+                try:
+                    self.load()
+                except StorageError:
+                    pass
+                continue
+            raise StorageError(
+                f"GitHub'a yazılamadı (HTTP {r.status_code}): {r.text[:300]}"
+            )
+        raise StorageError("GitHub'a yazılamadı: çakışma çözülemedi.")
+
+
+def storage_from_secrets(secrets: Any, local_path: str = DEFAULT_PATH) -> Storage:
+    """st.secrets nesnesinden Storage üretir; bölüm yoksa yerel moda düşer."""
+    cfg: dict[str, Any] = {}
+    try:
+        if secrets is not None and "github" in secrets:
+            cfg = dict(secrets["github"])
+    except Exception as exc:
+        _log.info("secrets okunamadı: %s", exc)
+    return Storage(cfg, local_path=local_path)
+
+# ==========================================================================
+# KAYNAK: apex/data.py
+# ==========================================================================
+
+
+import datetime as dt
+import logging
+import time
+from typing import Iterable
+
+import pandas as pd
+
+_log = logging.getLogger(__name__)
+
+# yfinance aralığı -> (geçmiş gün sayısı, yf interval)
+INTERVAL_PLAN: dict[str, tuple[int, str]] = {
+    "1d": (420, "1d"),
+    "1wk": (1500, "1wk"),
+    "4h": (170, "1h"),      # 1h çekip 4h'e yeniden örnekliyoruz
+    "1h": (60, "1h"),
+}
+
+
+def _extract(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """yf.download çıktısından tek sembolün OHLCV tablosunu ayıklar."""
+    if raw is None or len(raw) == 0:
+        return pd.DataFrame()
+    try:
+        if isinstance(raw.columns, pd.MultiIndex):
+            lv0 = raw.columns.get_level_values(0)
+            lv1 = raw.columns.get_level_values(1)
+            if ticker in set(lv0):
+                df = raw[ticker].copy()
+            elif ticker in set(lv1):
+                df = raw.xs(ticker, level=1, axis=1).copy()
+            else:
+                return pd.DataFrame()
+        else:
+            df = raw.copy()
+    except Exception as exc:
+        _log.warning("Sütun ayıklama hatası (%s): %s", ticker, exc)
+        return pd.DataFrame()
+
+    need = ["Open", "High", "Low", "Close", "Volume"]
+    if not all(col in df.columns for col in need):
+        return pd.DataFrame()
+    return df[need].dropna(subset=["Close"])
+
+
+def resample_4h(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    df = df.copy()
+    df.index = pd.to_datetime(df.index)
+    return df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min",
+                                  "Close": "last", "Volume": "sum"}).dropna()
+
+
+def fetch(tickers: Iterable[str], interval: str = "1d",
+          retries: int = 1) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """
+    Sembolleri toplu çeker. Döner: ({sembol: OHLCV}, [başarısız semboller])
+    """
+    tickers = sorted({t.strip().upper() for t in tickers if t and t.strip()})
+    if not tickers:
+        return {}, []
+
+    import yfinance as yf
+
+    days, yf_int = INTERVAL_PLAN.get(interval, INTERVAL_PLAN["1d"])
+    start = dt.datetime.now() - dt.timedelta(days=days)
+    out: dict[str, pd.DataFrame] = {}
+
+    for attempt in range(retries + 1):
+        missing = [t for t in tickers if t not in out]
+        if not missing:
+            break
+        try:
+            raw = yf.download(tickers=" ".join(missing), start=start,
+                              interval=yf_int, group_by="column",
+                              auto_adjust=False, progress=False, threads=True)
+            for t in missing:
+                df = _extract(raw, t)
+                if len(df) >= 30:
+                    out[t] = resample_4h(df) if interval == "4h" else df
+        except Exception as exc:
+            _log.warning("Toplu çekim hatası (deneme %s): %s", attempt + 1, exc)
+            time.sleep(1.5 * (attempt + 1))
+
+    # kalanları tek tek dene
+    for t in [t for t in tickers if t not in out]:
+        try:
+            hist = yf.Ticker(t).history(start=start, interval=yf_int)
+            if len(hist) >= 30:
+                need = ["Open", "High", "Low", "Close", "Volume"]
+                if all(c in hist.columns for c in need):
+                    df = hist[need].dropna(subset=["Close"])
+                    out[t] = resample_4h(df) if interval == "4h" else df
+        except Exception as exc:
+            _log.info("Tekil çekim hatası (%s): %s", t, exc)
+
+    failed = [t for t in tickers if t not in out]
+    return out, failed
+
+
+def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
+    """
+    Bilanço tarihleri ve analist hedef fiyatları.
+    yfinance sürümleri arasında `calendar` biçimi değiştiği için üç olasılık
+    da ele alınıyor (sözlük, DataFrame, index'te alan).
+    """
+    import yfinance as yf
+
+    rows: list[dict] = []
+    today = dt.date.today()
+
+    for t in sorted({x.strip().upper() for x in tickers if x and x.strip()}):
+        rec = {"Hisse": t, "Bilanço": "—", "Kalan Gün": None,
+               "Fiyat": None, "Hedef": None, "Potansiyel %": None,
+               "Analist": "", "_sort": 99999}
+        try:
+            tk = yf.Ticker(t)
+            info = {}
+            try:
+                info = tk.info or {}
+            except Exception:
+                pass
+
+            first_date = None
+            try:
+                cal = tk.calendar
+                if isinstance(cal, dict):
+                    d = cal.get("Earnings Date")
+                    first_date = d[0] if isinstance(d, (list, tuple)) and d else d
+                elif hasattr(cal, "empty") and not cal.empty:
+                    if "Earnings Date" in getattr(cal, "columns", []):
+                        first_date = cal["Earnings Date"].iloc[0]
+                    elif "Earnings Date" in getattr(cal, "index", []):
+                        first_date = cal.loc["Earnings Date"].iloc[0]
+            except Exception:
+                pass
+
+            if first_date is not None:
+                ed = (first_date.date() if hasattr(first_date, "date")
+                      else pd.to_datetime(first_date).date())
+                delta = (ed - today).days
+                rec["Bilanço"] = ed.strftime("%d.%m.%Y")
+                if delta >= 0:
+                    rec["Kalan Gün"] = delta
+                    rec["_sort"] = delta
+                else:
+                    rec["_sort"] = 90000 - delta   # geçmişler en sona
+
+            price = info.get("currentPrice") or info.get("previousClose")
+            target = info.get("targetMeanPrice") or info.get("targetMedianPrice")
+            rec["Fiyat"] = float(price) if isinstance(price, (int, float)) else None
+            rec["Hedef"] = float(target) if isinstance(target, (int, float)) else None
+            if rec["Fiyat"] and rec["Hedef"]:
+                rec["Potansiyel %"] = (rec["Hedef"] / rec["Fiyat"] - 1) * 100
+            n = info.get("numberOfAnalystOpinions")
+            key = info.get("recommendationKey", "")
+            rec["Analist"] = (f"{key} ({n})" if n else str(key or ""))
+        except Exception as exc:
+            _log.info("Bilanço verisi alınamadı (%s): %s", t, exc)
+        rows.append(rec)
+
+    df = pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"])
+    return df.reset_index(drop=True)
+
+# ==========================================================================
+# KAYNAK: apex/holdings.py
+# ==========================================================================
+
+
+from dataclasses import dataclass
+from typing import Any, Callable
+
+import numpy as np
+import pandas as pd
+
+
+# Hangi getiri sütunu hangi pencereyi temsil ediyor
+PERIOD_COLS: dict[str, str] = {
+    "1 Gün %": "1 gün",
+    "1 Hafta %": "1 hafta",
+    "1 Ay %": "1 ay",
+}
+
+# Akrana göre z eşiği: bu değerin altı 'geride', üstü 'lider'
+Z_ESIK = 0.75
+# Gürültü tabanı: dağılım çok darsa (herkes aynı) etiketleme yapma
+MIN_FARK_PP = 1.0
+
+
+@dataclass
+class Verdict:
+    key: str
+    label: str
+    icon: str
+    renk: str
+    aciklama: str
+    aksiyon: str
+
+
+VERDICTS: dict[str, Verdict] = {
+    "lider": Verdict(
+        "lider", "Sepeti taşıyan", "🟢", "#2fbe86",
+        "Akranlarının belirgin üstünde getiri. ETF'in yükselişi büyük ölçüde "
+        "bu isimlerden geliyor.",
+        "Trend takip mantığı burada çalışır; ekleme yapılacaksa geri çekilmede "
+        "yapılır, yeni tepede değil."),
+    "lider_yorgun": Verdict(
+        "lider_yorgun", "Lider ama yorgun", "🟠", "#c98500",
+        "Akranların üstünde ama tükenme/risk bayrağı açık — hareket "
+        "istatistiksel olarak uzamış.",
+        "Yeni giriş için kötü nokta. Mevcut pozisyonda kısmi kâr al, iz süren "
+        "stopu yukarı çek."),
+    "uyumlu": Verdict(
+        "uyumlu", "Sepetle uyumlu", "⚪", "#9a9aa8",
+        "Getirisi akran medyanına yakın. Ayrışma yok, ETF ile birlikte "
+        "hareket ediyor.",
+        "Tek hisse tercih etmenin ek getirisi yok; sepetle aynı işi yapar."),
+    "geride_akis_var": Verdict(
+        "geride_akis_var", "Geride ama para giriyor", "🟡", "#3987e5",
+        "Fiyat akranlarının gerisinde, fakat kurumsal akış hâlâ pozitif "
+        "(WHALE yüksek/yükseliyor ya da toplama-süpürme sinyali var). "
+        "Klasik gecikmeli katılım profili.",
+        "Yakalama adayı. Rejim kapısı açıkken ve akış yönü ⇈/↗ iken izlenir; "
+        "tetik, kendi direncinin hacimle kırılmasıdır."),
+    "geride_akis_yok": Verdict(
+        "geride_akis_yok", "Geride ve akış negatif", "🔴", "#e66767",
+        "Hem fiyat akranlarının gerisinde hem kurumsal akış çıkışta "
+        "(dağıtım/stealth çıkış ya da düşen WHALE). Geri kalması haklı.",
+        "Ucuz görünmesi tuzak. ETF yükselirken bunu almak, sepetin en zayıf "
+        "bacağını satın almaktır — akış dönene kadar uzak dur."),
+}
+
+
+# --------------------------------------------------------------------------
+# Göreli güç hesapları
+# --------------------------------------------------------------------------
+def robust_z(values: pd.Series) -> pd.Series:
+    """
+    Medyan ve MAD tabanlı z skoru.
+
+    Neden ortalama/standart sapma değil: bir ETF listesinde tek bir isim
+    %40 kazanmışsa ortalama yukarı kayar ve sağlıklı isimler yapay olarak
+    'geride' görünür. Medyan bu tek aykırı değerden etkilenmez.
+    """
+    v = pd.to_numeric(values, errors="coerce")
+    ok = v.dropna()
+    if len(ok) < 3:
+        return pd.Series(np.nan, index=v.index)
+    med = float(ok.median())
+    mad = float((ok - med).abs().median()) * 1.4826
+    if not np.isfinite(mad) or mad <= 1e-9:
+        std = float(ok.std(ddof=0))
+        if not np.isfinite(std) or std <= 1e-9:
+            return pd.Series(0.0, index=v.index).where(v.notna())
+        mad = std
+    return (v - med) / mad
+
+
+def classify_holding(z: float, fark_akran: float, d: dict[str, Any]) -> str:
+    """Bir bileşeni beş durumdan birine yerleştirir."""
+    akis_pozitif = (
+        bool(d.get("_acc")) or bool(d.get("_st_in")) or bool(d.get("_sweep"))
+        or bool(d.get("_dia_buy")) or bool(d.get("_star"))
+        or (np.isfinite(d.get("WHALE", np.nan)) and d.get("WHALE", 0) >= 55
+            and d.get("ΔWHALE", 0) >= 0)
+        or (np.isfinite(d.get("ΔWHALE 5B", np.nan)) and d.get("ΔWHALE 5B", 0) > 2)
+    )
+    akis_negatif = (
+        bool(d.get("_dist")) or bool(d.get("_st_out")) or bool(d.get("_risk_hard"))
+        or bool(d.get("_dia_sell")) or bool(d.get("_smc_sell"))
+        or (np.isfinite(d.get("WHALE", np.nan)) and d.get("WHALE", 100) < 45
+            and d.get("ΔWHALE", 0) <= 0)
+    )
+
+    geride = (np.isfinite(z) and z <= -Z_ESIK
+              and np.isfinite(fark_akran) and fark_akran <= -MIN_FARK_PP)
+    onde = (np.isfinite(z) and z >= Z_ESIK
+            and np.isfinite(fark_akran) and fark_akran >= MIN_FARK_PP)
+
+    if geride:
+        if akis_negatif and not akis_pozitif:
+            return "geride_akis_yok"
+        if akis_pozitif:
+            return "geride_akis_var"
+        return "geride_akis_yok" if not d.get("Rejim", True) else "geride_akis_var"
+    if onde:
+        if d.get("_exhausted") or d.get("_risk") or d.get("_risk_hard"):
+            return "lider_yorgun"
+        return "lider"
+    return "uyumlu"
+
+
+def build_holdings_table(
+        scan_df: pd.DataFrame, etf_sym: str, period_col: str,
+        etf_row: dict[str, Any] | None = None,
+        meta_fn: Callable[[str, str], dict[str, Any]] | None = None,
+) -> pd.DataFrame:
+    """
+    Tarama çıktısından ETF içi göreli güç tablosu üretir.
+
+    `scan_df` sadece bileşenleri içermelidir (ETF'in kendi satırı ayrı gelir).
+    `etf_row` ETF'in kendi tarama satırıdır; yoksa ETF'e göre kıyas boş kalır.
+    """
+    if scan_df is None or scan_df.empty or period_col not in scan_df.columns:
+        return pd.DataFrame()
+
+    meta_fn = meta_fn or uni.holding_meta
+    df = scan_df.copy()
+    df = df[df["Sembol"].notna()]
+    ret = pd.to_numeric(df[period_col], errors="coerce")
+    etf_ret = np.nan
+    if etf_row:
+        etf_ret = pd.to_numeric(pd.Series([etf_row.get(period_col)]),
+                                errors="coerce").iloc[0]
+
+    med = float(ret.dropna().median()) if ret.notna().any() else np.nan
+    z = robust_z(ret)
+
+    out = pd.DataFrame(index=df.index)
+    out["Sembol"] = df["Sembol"]
+    metas = [meta_fn(etf_sym, s) for s in df["Sembol"]]
+    out["Ağırlık %"] = [m.get("agirlik") for m in metas]
+    out["Rol"] = [m.get("rol") or m.get("grup") or "" for m in metas]
+    out["Getiri %"] = ret
+    out["ETF %"] = etf_ret
+    out["ETF'e Göre"] = ret - etf_ret
+    out["Akran Medyanı %"] = med
+    out["Akrana Göre"] = ret - med
+    out["Z"] = z
+    # Ağırlıklı katkı: bu isim ETF getirisinin kaç puanını açıkladı (yaklaşık)
+    out["Katkı pp"] = [
+        (w / 100.0 * r) if (w is not None and np.isfinite(r)) else np.nan
+        for w, r in zip(out["Ağırlık %"], ret)
+    ]
+
+    recs = df.to_dict("records")
+    durum_keys = [classify_holding(zz, ff, d)
+                  for zz, ff, d in zip(out["Z"], out["Akrana Göre"], recs)]
+    out["_durum"] = durum_keys
+    out["Durum"] = [f"{VERDICTS[k].icon} {VERDICTS[k].label}" for k in durum_keys]
+
+    for col in ["Sinyal", "Efor", "Fiyat", "WHALE", "ΔWHALE", "Whale Yön",
+                "PRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "HUD /6", "MAGNITUDE",
+                "DIRECTION", "ATR %", "RS Sıra", "Stop", "T1", "T2",
+                "Hacim ($M)", "Rejim", "Haftalık", "Hata"]:
+        if col in df.columns:
+            out[col] = df[col]
+
+    out["Teknik Not"] = [technical_note(d) for d in recs]
+    out["Neden"] = [
+        lag_reason(k, d, zz) for k, d, zz in zip(durum_keys, recs, out["Z"])
+    ]
+    return out.sort_values("Z", ascending=False, na_position="last")
+
+
+# --------------------------------------------------------------------------
+# Açıklama üretimi
+# --------------------------------------------------------------------------
+def _fmt(x: float, spec: str = "+.1f") -> str:
+    return format(x, spec) if np.isfinite(x) else "—"
+
+
+def technical_note(d: dict[str, Any]) -> str:
+    """
+    Bir hissenin son teknik durumunu düz cümlelerle özetler.
+    Motorun ürettiği ham sayılar burada okunur hâle gelir.
+    """
+    if d.get("Hata"):
+        return f"Veri yok — {d['Hata']}"
+
+    parts: list[str] = []
+
+    # 1) Ana trend / rejim
+    rejim = d.get("Rejim")
+    hafta = d.get("Haftalık")
+    t = "200 EMA **üstünde**" if rejim else "200 EMA **altında**"
+    if hafta is True:
+        t += ", haftalık trend teyitli"
+    elif hafta is False:
+        t += ", haftalık teyit yok"
+    parts.append(f"Ana trend: {t}.")
+
+    # 2) Kurumsal akış
+    wh = d.get("WHALE", np.nan)
+    dw = d.get("ΔWHALE", np.nan)
+    yon = d.get("Whale Yön", "")
+    pr = d.get("PRO-RET", np.nan)
+    if np.isfinite(wh):
+        akis = f"Kurumsal akış: WHALE {wh:.0f} ({_fmt(dw)} son barda, {yon})"
+        if np.isfinite(pr):
+            akis += f", PRO−RETAIL {_fmt(pr)}"
+        parts.append(akis + ".")
+
+    # 3) Momentum
+    om = d.get("OMNI", np.nan)
+    do = d.get("ΔOMNI", np.nan)
+    oy = d.get("OMNI Yön", "")
+    hud = d.get("HUD /6")
+    if np.isfinite(om):
+        mom = f"Momentum: OMNI {om:.0f} ({_fmt(do)}, {oy})"
+        if hud is not None:
+            mom += f", konsensüs {hud}/6"
+        parts.append(mom + ".")
+
+    # 4) Konfluans
+    mag, dr = d.get("MAGNITUDE"), d.get("DIRECTION")
+    if mag is not None and dr is not None:
+        parts.append(f"Konfluans: MAGNITUDE {mag}/18, DIRECTION {dr:+d} "
+                     f"(0'ın üstü alıcı baskısı).")
+
+    # 5) Volatilite karakteri ve seviyeler
+    atrp = d.get("ATR %", np.nan)
+    if np.isfinite(atrp):
+        kar = ("geniş ATR / yüksek beta" if atrp >= 3.5
+               else "temiz trend bandı" if atrp >= 1.8 else "dar, defansif")
+        parts.append(f"Oynaklık: ATR %{atrp:.1f} — {kar}.")
+
+    price = d.get("Fiyat", np.nan)
+    stop, t1, t2 = d.get("Stop", np.nan), d.get("T1", np.nan), d.get("T2", np.nan)
+    if np.isfinite(price) and np.isfinite(stop) and price:
+        risk = (price - stop) / price * 100
+        if risk >= 0:
+            seviye = f"Seviyeler: iz süren stop {stop:.2f} (%{risk:.1f} aşağıda)"
+        else:
+            # Ratchet stop yukarı çekildikten sonra fiyat altına düştüyse
+            seviye = (f"Seviyeler: iz süren stop {stop:.2f} fiyatın "
+                      f"%{abs(risk):.1f} ÜSTÜNDE — stop çoktan tetiklenmiş, "
+                      f"long kurgu bu seviyenin geri alınmasına bağlı")
+        hedefler = [f"{ad} {x:.2f}" + (" (fiyatın altında, geçilmiş hedef)"
+                                       if np.isfinite(price) and x < price else "")
+                    for ad, x in (("T1", t1), ("T2", t2)) if np.isfinite(x)]
+        if hedefler:
+            seviye += ", " + ", ".join(hedefler)
+        parts.append(seviye + ".")
+
+    # 6) Başlık sinyali ve olaylar
+    olaylar = []
+    for flag, isim in [("_sweep", "likidite süpürmesi"), ("_acc", "toplama"),
+                       ("_dist", "dağıtım"), ("_st_in", "stealth giriş"),
+                       ("_st_out", "stealth çıkış"), ("_ab_bull", "afterburner"),
+                       ("_exhausted", "tükenme"), ("Sıkışma", "sıkışma"),
+                       ("_mvp", "Minervini MVP"), ("_star", "golden star")]:
+        if d.get(flag):
+            olaylar.append(isim)
+    if olaylar:
+        parts.append("Açık bayraklar: " + ", ".join(olaylar) + ".")
+
+    return " ".join(parts)
+
+
+def lag_reason(durum: str, d: dict[str, Any], z: float) -> str:
+    """Durum etiketinin tek cümlelik gerekçesi — tabloda hızlı okunsun diye."""
+    wh, dw = d.get("WHALE", np.nan), d.get("ΔWHALE", np.nan)
+    if durum == "geride_akis_var":
+        if d.get("_sweep"):
+            return "Geride ama likidite süpürmesi var — stop avı sonrası dönüş kalıbı"
+        if d.get("_acc") or d.get("_st_in"):
+            return "Geride ama toplama sinyali açık — sessiz birikim"
+        return (f"Geride ama WHALE {wh:.0f} ({_fmt(dw)}) — akış hâlâ içeride"
+                if np.isfinite(wh) else "Geride, akış bozulmamış")
+    if durum == "geride_akis_yok":
+        if d.get("_dist") or d.get("_st_out"):
+            return "Geride ve dağıtım açık — düşüşün sebebi satış"
+        if not d.get("Rejim", True):
+            return "Geride ve 200 EMA altında — trend zaten aşağı"
+        return (f"Geride, WHALE {wh:.0f} ({_fmt(dw)}) — akış da destek vermiyor"
+                if np.isfinite(wh) else "Geride, akış desteği yok")
+    if durum == "lider_yorgun":
+        return "Akranların üstünde ama tükenme/risk bayrağı açık"
+    if durum == "lider":
+        return f"Akran medyanının {abs(z):.1f} MAD üstünde — sepeti taşıyor" \
+            if np.isfinite(z) else "Akranların üstünde"
+    return "Akran medyanına yakın — ayrışma yok"
+
+
+def holdings_narrative(table: pd.DataFrame, etf_sym: str, period_col: str) -> list[str]:
+    """Tablonun tepesine konacak 2–4 cümlelik canlı yorum."""
+    if table.empty:
+        return []
+    lab = PERIOD_COLS.get(period_col, period_col)
+    etf_ret = table["ETF %"].iloc[0] if "ETF %" in table else np.nan
+    med = table["Akran Medyanı %"].iloc[0] if "Akran Medyanı %" in table else np.nan
+    n = len(table)
+    poz = int((pd.to_numeric(table["Getiri %"], errors="coerce") > 0).sum())
+
+    out: list[str] = []
+    if np.isfinite(etf_ret):
+        katilim = f"{poz}/{n} bileşen artıda"
+        out.append(
+            f"**{etf_sym}** {lab} penceresinde **%{etf_ret:+.2f}**; içindeki "
+            f"{n} hissenin medyanı **%{med:+.2f}** ve {katilim}. "
+            + ("Yükselişi az sayıda isim taşıyor — katılım dar."
+               if etf_ret > 0 and poz < n * 0.5 else
+               "Katılım geniş, hareket sepetin geneline yayılmış."
+               if etf_ret > 0 else
+               "Sepet ekside; aşağıdaki ayrışma dip arayışı için kullanılır.")
+        )
+    else:
+        out.append(f"**{etf_sym}** içindeki {n} hissenin {lab} medyanı "
+                   f"**%{med:+.2f}**.")
+
+    for key in ["geride_akis_var", "geride_akis_yok", "lider_yorgun"]:
+        sel = table[table["_durum"] == key]
+        if sel.empty:
+            continue
+        v = VERDICTS[key]
+        isim = ", ".join(f"`{s}`" for s in sel["Sembol"].head(6))
+        out.append(f"{v.icon} **{v.label}** ({len(sel)}): {isim} — {v.aksiyon}")
+
+    return out
+
+
+def holdings_counts(table: pd.DataFrame) -> dict[str, int]:
+    if table.empty or "_durum" not in table:
+        return {}
+    return {k: int((table["_durum"] == k).sum()) for k in VERDICTS}
+
+# ==========================================================================
+# KAYNAK: apex/screener.py
+# ==========================================================================
+
+
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+# İşlem karakteri sınıfları — ATR%'ye göre
+KARAKTER_ESIK = {
+    "yuksek_beta": 3.5,     # ATR% >= 3.5 -> geniş ATR, yüksek beta
+    "orta": 1.8,            # 1.8–3.5 -> temiz trend, orta volatilite
+}                            # < 1.8 -> sakin / defansif
+
+
+@dataclass
+class SwingFilters:
+    """Kullanıcının pratik filtreleri — arayüzden açılıp kapatılır."""
+    min_dollar_vol_m: float = 5.0      # günlük ortalama işlem hacmi ($M)
+    earnings_buffer_days: int = 2      # bilanço ±N gün pozisyon açma
+    require_regime: bool = True        # SPY 50 EMA rejim kapısı
+    require_weekly: bool = False       # haftalık trend teyidi
+    min_price: float = 5.0             # penny hisse eleme
+    max_atr_pct: float = 12.0          # aşırı oynak olanları ele
+    min_score: int = 0
+
+
+def trade_character(atr_pct: float) -> str:
+    if not np.isfinite(atr_pct):
+        return "—"
+    if atr_pct >= KARAKTER_ESIK["yuksek_beta"]:
+        return "⚡ Yüksek beta / geniş ATR"
+    if atr_pct >= KARAKTER_ESIK["orta"]:
+        return "📈 Temiz trend / orta volatilite"
+    return "🛡️ Sakin / defansif"
+
+
+def character_note(atr_pct: float) -> str:
+    if not np.isfinite(atr_pct):
+        return ""
+    if atr_pct >= KARAKTER_ESIK["yuksek_beta"]:
+        return ("Kademeli ATR stop sistemi bu grupta anlamlı çalışır; hareket "
+                "geniş olduğu için stop mesafesi de geniş tutulmalı.")
+    if atr_pct >= KARAKTER_ESIK["orta"]:
+        return ("Sinyal-gürültü oranı iyi, whipsaw az. Trend takip ve kırılım "
+                "sistemleri bu bantta en verimli çalışır.")
+    return ("Hareket dar; swing için getiri/risk zayıf kalabilir. Pozisyon "
+            "boyutunu büyütmek yerine daha oynak bir aday aramak daha mantıklı.")
+
+
+def swing_score(d: dict[str, Any]) -> int:
+    """
+    0–100 swing uygunluk skoru.
+    Ağırlıklar V719 KONFLUANS'ın ölçülmüş lift değerleriyle uyumlu tutuldu:
+    en yüksek katkı Afterburner ve MVP tarafında, teyit katmanları daha düşük.
+    """
+    s = 0.0
+    # Konfluans motoru (en ağır bileşen)
+    s += np.clip(d.get("MAGNITUDE", 0), 0, 18) / 18 * 22
+    s += np.clip((d.get("DIRECTION", 0) + 5) / 10, 0, 1) * 18
+    # Kurumsal akış
+    s += np.clip(d.get("WHALE", 50), 0, 100) / 100 * 14
+    s += np.clip((d.get("PRO-RET", 0) + 50) / 100, 0, 1) * 8
+    # Momentum konsensüsü
+    s += np.clip(d.get("OMNI", 50), 0, 100) / 100 * 10
+    s += np.clip(d.get("HUD /6", 0), 0, 6) / 6 * 8
+    s += np.clip(d.get("Efor /8", 0), 0, 8) / 8 * 6
+    # Göreli güç
+    rs = d.get("RS Sıra", np.nan)
+    if np.isfinite(rs):
+        s += rs / 100 * 8
+    # Olay primleri
+    if d.get("_dia_buy"):
+        s += 6
+    if d.get("_sweep"):
+        s += 5
+    if d.get("_star"):
+        s += 4
+    if d.get("_ab_bull"):
+        s += 4
+    if d.get("_mvp"):
+        s += 4
+    if d.get("Sıkışma"):
+        s += 3
+    # Cezalar
+    if d.get("_risk_hard"):
+        s -= 25
+    elif d.get("_risk"):
+        s -= 12
+    if d.get("_exhausted"):
+        s -= 8
+    if d.get("_dist") or d.get("_st_out"):
+        s -= 10
+    if not d.get("Rejim", True):
+        s -= 6
+    return int(np.clip(round(s), 0, 100))
+
+
+def apply_filters(d: dict[str, Any], f: SwingFilters,
+                  earnings_days: int | None,
+                  market_regime_ok: bool) -> tuple[bool, list[str]]:
+    """Filtreleri uygular. Döner: (geçti mi, [engel gerekçeleri])."""
+    blocks: list[str] = []
+
+    price = d.get("Fiyat", np.nan)
+    if np.isfinite(price) and price < f.min_price:
+        blocks.append(f"Fiyat ${price:.2f} < ${f.min_price:.0f}")
+
+    dv = d.get("Hacim ($M)", np.nan)
+    if np.isfinite(dv) and dv < f.min_dollar_vol_m:
+        blocks.append(f"Likidite ${dv:.1f}M < ${f.min_dollar_vol_m:.0f}M "
+                      f"(spread genişler, stop kayar)")
+
+    atrp = d.get("ATR %", np.nan)
+    if np.isfinite(atrp) and atrp > f.max_atr_pct:
+        blocks.append(f"ATR %{atrp:.1f} aşırı oynak")
+
+    if earnings_days is not None and abs(earnings_days) <= f.earnings_buffer_days:
+        blocks.append(f"Bilanço {earnings_days} gün içinde — gap riski stop "
+                      f"mantığını bozar")
+
+    if f.require_regime and not market_regime_ok:
+        blocks.append("Piyasa rejimi kapalı (SPY 50 EMA altında)")
+
+    if f.require_regime and not d.get("Rejim", True):
+        blocks.append("Hisse 200 EMA altında")
+
+    if f.require_weekly and d.get("Haftalık") is False:
+        blocks.append("Haftalık trend teyidi yok")
+
+    if d.get("Skor", 0) < f.min_score:
+        blocks.append(f"Skor {d.get('Skor', 0)} < {f.min_score}")
+
+    return (not blocks), blocks
+
+
+def build_recommendations(rows: list[dict[str, Any]], f: SwingFilters,
+                          earnings_map: dict[str, int] | None,
+                          market_regime_ok: bool) -> pd.DataFrame:
+    """Sinyal satırlarını skorlayıp filtreleyerek tavsiye tablosu üretir."""
+    earnings_map = earnings_map or {}
+    out: list[dict[str, Any]] = []
+
+    for d in rows:
+        d = dict(d)
+        d["Skor"] = swing_score(d)
+        ed = earnings_map.get(d.get("Sembol", ""))
+        ok, blocks = apply_filters(d, f, ed, market_regime_ok)
+        price = d.get("Fiyat", np.nan)
+        stop = d.get("Stop", np.nan)
+        t1, t2 = d.get("T1", np.nan), d.get("T2", np.nan)
+        risk = price - stop if np.isfinite(price) and np.isfinite(stop) else np.nan
+
+        d["Uygun"] = ok
+        d["Engel"] = " · ".join(blocks)
+        d["Karakter"] = trade_character(d.get("ATR %", np.nan))
+        d["Risk %"] = (risk / price * 100) if np.isfinite(risk) and price else np.nan
+        d["R (T1)"] = ((t1 - price) / risk) if np.isfinite(risk) and risk > 0 else np.nan
+        d["R (T2)"] = ((t2 - price) / risk) if np.isfinite(risk) and risk > 0 else np.nan
+        d["Bilanço Gün"] = ed
+        out.append(d)
+
+    df = pd.DataFrame(out)
+    if df.empty:
+        return df
+    return df.sort_values(["Uygun", "Skor"], ascending=[False, False])
+
+
+# --------------------------------------------------------------------------
+# Swing yorumu — canlı veriden üretilir
+# --------------------------------------------------------------------------
+def swing_commentary(df: pd.DataFrame, macro_regime: str,
+                     regime_ok: bool, top_n: int = 6) -> dict[str, Any]:
+    """
+    Kullanıcının elle yazdığı swing notunun canlı veriyle yeniden üretilmiş hali:
+    hangi hisseler hangi karakterde, hangi filtreler devrede, rejim ne diyor.
+    """
+    if df.empty:
+        return {"gruplar": {}, "filtreler": [], "rejim": macro_regime, "notlar": []}
+
+    uygun = df[df["Uygun"]] if "Uygun" in df else df
+    gruplar: dict[str, list[dict[str, Any]]] = {}
+
+    for karakter in ["⚡ Yüksek beta / geniş ATR",
+                     "📈 Temiz trend / orta volatilite",
+                     "🛡️ Sakin / defansif"]:
+        sel = uygun[uygun["Karakter"] == karakter].head(top_n)
+        if not sel.empty:
+            gruplar[karakter] = sel[["Sembol", "Skor", "ATR %", "Sinyal",
+                                     "RS Sıra"]].to_dict("records")
+
+    filtreler = [
+        ("Bilanço ±2 gün", "Kazanç tarihine 2 günden az kalan hisselerde pozisyon "
+                           "açılmaz — gap riski ATR stop mantığını bozar."),
+        ("Likidite > $5M", "Günlük ortalama işlem hacmi eşiğin altındaysa spread "
+                           "genişler, stop gerçekleşen fiyattan uzağa kayar."),
+        ("Rejim kapısı", "SPY 50 EMA altındayken long sinyallerin isabet oranı "
+                         "düşer. Bu, likidite grabı korumasıyla aynı mantıkta ayrı "
+                         "bir gating katmanıdır: sinyal doğru olsa da ortam yanlışsa "
+                         "işlem açılmaz."),
+        ("200 EMA teyidi", "Hissenin kendi ana trendi aşağıysa swing long, trende "
+                           "karşı işlem olur."),
+    ]
+
+    notlar = []
+    if not regime_ok:
+        notlar.append(
+            "⚠️ Piyasa rejimi şu an KAPALI (SPY 50 EMA altında). Bu pencerede long "
+            "sinyallerin kalitesi tarihsel olarak düşer; tarama sonuçlarını izleme "
+            "listesi olarak kullanın, pozisyon açmak için rejimin dönmesini bekleyin."
+        )
+    if "ETF" in df.columns:
+        etf_sayisi = uygun["ETF"].nunique() if not uygun.empty else 0
+        notlar.append(
+            f"Sektör ETF'leri ({etf_sayisi} tema taranıyor) tek hisse haber riskini "
+            f"seyreltir; çoklu-hisse istatistiği tek isimden daha temiz çıkar."
+        )
+    notlar.append(
+        "Uzun vade ve swing listelerinin çakışması sorun değil, ancak pozisyonları "
+        "ayrı hesapta tutmak gerekir — aksi halde swing stopu uzun vadeli tezi keser."
+    )
+    return {"gruplar": gruplar, "filtreler": filtreler,
+            "rejim": macro_regime, "notlar": notlar}
+
+# ==========================================================================
+# KAYNAK: apex/news.py
+# ==========================================================================
+
+
+import logging
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from typing import Iterable
+
+import requests
+
+_log = logging.getLogger(__name__)
+
+FEEDS: dict[str, str] = {
+    "Makro & Fed": "Fed OR FOMC OR inflation OR CPI OR rate cut stock market",
+    "Tarife & Ticaret": "tariff OR trade war OR export controls chips",
+    "Yapay Zekâ & Çip": "AI chips OR semiconductor OR data center capex",
+    "Enerji & Nükleer": "nuclear power OR uranium OR grid OR utilities data center",
+    "Savunma & Uzay": "defense contract OR space launch OR satellite",
+    "Kripto": "bitcoin OR crypto ETF OR SEC crypto",
+}
+
+BASE = ("https://news.google.com/rss/search?q={q}"
+        "&hl=en-US&gl=US&ceid=US:en")
+
+IMPACT_RULES: list[tuple[tuple[str, ...], str]] = [
+    (("tariff", "trade war", "export control", "sanction"),
+     "🔴 Tedarik zinciri & Çin ithalatı | 🟢 İç üretim"),
+    (("nuclear", "uranium", "smr", "reactor"),
+     "🟢 Nükleer & Uranyum (URA, CEG, VST)"),
+    (("data center", "hyperscaler", "capex"),
+     "🟢 Veri merkezi zinciri (SRVR, XLU, PAVE)"),
+    (("oil", "opec", "crude", "gas", "drill"),
+     "🟢 Fosil yakıt (XLE, XOP) | 🔴 Temiz enerji"),
+    (("crypto", "bitcoin", "sec ", "stablecoin"),
+     "🟢 Kripto & Fintek (IBIT, WGMI, ARKF)"),
+    (("defense", "military", "missile", "space"),
+     "🟢 Savunma & Uzay (XAR, ARKX, UFO)"),
+    (("fed", "fomc", "powell", "rate", "inflation", "cpi"),
+     "📉 Likidite etkisi — tüm risk varlıkları"),
+    (("ai ", "artificial intelligence", "chip", "semiconductor", "gpu"),
+     "🟢 Çip & YZ altyapısı (SMH, SOXX, EUV)"),
+    (("copper", "lithium", "rare earth", "mining"),
+     "🟢 Emtia & Madencilik (COPX, LIT, REMX)"),
+    (("layoff", "recession", "slowdown", "downgrade"),
+     "🔴 Büyüme endişesi — döngüsel hisseler"),
+]
+
+
+def classify_impact(title: str) -> str:
+    t = title.lower()
+    for keys, impact in IMPACT_RULES:
+        if any(k in t for k in keys):
+            return impact
+    return "⚖️ Nötr / sektörel rotasyon"
+
+
+def fetch_news(known_tickers: Iterable[str], topics: Iterable[str] | None = None,
+               per_feed: int = 8, timeout: int = 12) -> tuple[list[dict], list[str]]:
+    """Seçili konu akışlarını çeker. Döner: (haberler, hatalar)."""
+    tickers = sorted({t.upper() for t in known_tickers if t and len(t) >= 2})
+    topics = list(topics or FEEDS)
+    items: list[dict] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+
+    for topic in topics:
+        q = FEEDS.get(topic)
+        if not q:
+            continue
+        url = BASE.format(q=requests.utils.quote(q))
+        try:
+            resp = requests.get(url, timeout=timeout,
+                                headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+        except Exception as exc:
+            errors.append(f"{topic}: {exc}")
+            continue
+
+        for node in root.findall(".//item")[:per_feed]:
+            title = (node.findtext("title") or "").strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            link = node.findtext("link") or ""
+            pub = (node.findtext("pubDate") or "")[:22]
+
+            hits = [t for t in tickers
+                    if re.search(rf"\b{re.escape(t)}\b", title)]
+            items.append({
+                "Konu": topic,
+                "Tarih": pub,
+                "Başlık": title,
+                "İlgili": ", ".join(hits[:6]) if hits else "Genel makro",
+                "Etki": classify_impact(title),
+                "Link": link,
+            })
+
+    items.sort(key=lambda r: _parse_date(r["Tarih"]), reverse=True)
+    return items, errors
+
+
+def _parse_date(s: str) -> datetime:
+    for fmt in ("%a, %d %b %Y %H:%M:%S", "%a, %d %b %Y %H:%M"):
+        try:
+            return datetime.strptime(s.strip()[:len(fmt) + 2].strip(), fmt)
+        except Exception:
+            continue
+    return datetime.min
+
+# ==========================================================================
+# KAYNAK: apex/playbook.py
+# ==========================================================================
+
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class Driver:
+    """Bir rejim sürücüsü (gamma, opex, vix, jeopolitik…)."""
+    key: str
+    label: str
+    icon: str
+    nedir: str
+    tetikleyiciler: list[str]          # haber başlığında aranan ifadeler
+    veri_isareti: str                  # hangi göstergeden anlaşılır
+    lehte_etf: list[str] = field(default_factory=list)
+    lehte_hisse: list[str] = field(default_factory=list)
+    aleyhte_etf: list[str] = field(default_factory=list)
+    aleyhte_hisse: list[str] = field(default_factory=list)
+    islem_notu: str = ""
+
+
+DRIVERS: dict[str, Driver] = {}
+
+
+def _d(**kw) -> None:
+    DRIVERS[kw["key"]] = Driver(**kw)
+
+
+# ---------------------------------------------------------------- GAMMA
+_d(
+    key="gamma",
+    label="Gamma Squeeze / Melt-Up",
+    icon="🚀",
+    nedir=(
+        "Yoğun call opsiyon alımı sonrası piyasa yapıcılar (dealer) açığa "
+        "sattıkları call'ları hedge etmek için spot hisse almak ZORUNDA kalır. "
+        "Fiyat yükseldikçe hedge ihtiyacı büyür — kendi kendini besleyen yukarı "
+        "sarmal oluşur. Temele değil opsiyon mekaniğine dayandığı için vade "
+        "geçince aynı hızla sönebilir."
+    ),
+    tetikleyiciler=[
+        "rate cut", "dovish", "soft cpi", "cooler inflation", "short squeeze",
+        "record high", "melt up", "call volume", "retail buying", "meme stock",
+        "beats estimates", "raises guidance", "blowout quarter", "squeeze",
+    ],
+    veri_isareti="VIX 15 altında + SPY tam boğa dizilimi + kredi iştahı açık",
+    lehte_etf=["QQQ", "XLK", "SOXX", "SMH", "ARKF", "ARKX", "WGMI", "IBIT"],
+    lehte_hisse=["NVDA", "AMD", "PLTR", "TSLA", "COIN", "MARA", "RIOT", "SMCI",
+                 "IONQ", "RKLB"],
+    aleyhte_etf=["TLT", "XLP", "XLU"],
+    aleyhte_hisse=["KO", "PG", "JNJ"],
+    islem_notu=(
+        "Yüksek beta ve geniş ATR'li isimler en çok hareket edeni olur; ATR "
+        "kademeli stop bu grupta anlamlı çalışır. Ancak koruma ucuzken piyasa "
+        "şoka en açık haldedir — pozisyonu vade haftasına taşımayın."
+    ),
+)
+
+# ---------------------------------------------------------------- OPEX
+_d(
+    key="opex",
+    label="OPEX Pinning / Max Pain",
+    icon="🎯",
+    nedir=(
+        "Aylık (üçüncü cuma) ve üç aylık opsiyon vadelerine yaklaşırken market "
+        "maker'lar taşıdıkları pozisyonun primini (theta) sıfırlamak için "
+        "endeksi en yüksek açık pozisyonun bulunduğu Max Pain seviyesine "
+        "çekmeye çalışır. Fiyat dar bir bantta hapsolur, kırılımlar tuzağa "
+        "dönüşür. Üçlü cadı (mart/haziran/eylül/aralık) aylarında etki en güçlü."
+    ),
+    tetikleyiciler=[
+        "options expiration", "opex", "quad witching", "triple witching",
+        "max pain", "open interest", "gamma exposure", "0dte",
+    ],
+    veri_isareti="OPEX'e 3 gün veya daha az kalması (üçlü cadı ayrıca işaretlenir)",
+    lehte_etf=[],
+    lehte_hisse=[],
+    aleyhte_etf=["Tüm trend takip stratejileri"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Bu pencerede yeni kırılım pozisyonu AÇMAYIN. Sinyal doğru olsa bile "
+        "fiyat vade sonuna kadar geri çekilip stopu tetikler. Mevcut pozisyonda "
+        "stopu biraz genişletmek ya da kısmi kâr almak, yeni giriş yapmaktan "
+        "daha mantıklıdır. Vade cumasından sonraki pazartesi bant çözülür."
+    ),
+)
+
+# ---------------------------------------------------------------- VIX
+_d(
+    key="vix",
+    label="Oynaklık Şoku / VIX Sıçraması",
+    icon="⚡",
+    nedir=(
+        "VIX'in hızla yükselmesi ve özellikle VIX/VIX3M oranının 1'in üstüne "
+        "çıkması (vade yapısının tersine dönmesi) yakın vadeli korkunun uzun "
+        "vadeyi aştığını gösterir. Bu, kaldıraçlı fonların pozisyon küçültmeye "
+        "zorlandığı andır — satış satışı besler."
+    ),
+    tetikleyiciler=[
+        "vix", "volatility", "selloff", "plunge", "correction", "crash",
+        "margin call", "risk off", "flight to safety", "circuit breaker",
+    ],
+    veri_isareti="VIX > 25 veya VIX/VIX3M oranı > 1.00",
+    lehte_etf=["TLT", "GLD", "XLP", "XLU", "VIXY"],
+    lehte_hisse=["NEM", "GOLD", "KO", "PG", "WMT"],
+    aleyhte_etf=["ARKG", "ARKF", "XBI", "IWM", "WGMI", "SOXX"],
+    aleyhte_hisse=["PLTR", "COIN", "MARA", "IONQ", "RKLB", "SMCI"],
+    islem_notu=(
+        "Oynaklık yükselirken ATR de genişler; sabit yüzdelik stop kullanan "
+        "sistemler erken kesilir. Pozisyon boyutunu ATR ile ters orantılı "
+        "küçültmek stop mantığını korur. VIX tepe yaptıktan sonra düşerken "
+        "alım yapmak, tepe anında almaktan tarihsel olarak çok daha isabetli."
+    ),
+)
+
+# ---------------------------------------------------------------- JEOPOLİTİK
+_d(
+    key="geo",
+    label="Jeopolitik / Tedarik Zinciri Şoku",
+    icon="🌍",
+    nedir=(
+        "Boğaz krizleri, gümrük tarifeleri, ihracat kontrolleri, enerji nakil "
+        "hatlarına saldırı. Sermaye büyümeden kaçıp sert varlığa (altın, "
+        "petrol, savunma) ve hazineye sığınır. Etki simetrik değildir: aynı "
+        "olay savunma ve enerjiyi yukarı, tedarik zincirine bağlı üretimi "
+        "aşağı çeker."
+    ),
+    tetikleyiciler=[
+        "tariff", "sanction", "export control", "taiwan", "strait", "war",
+        "missile", "invasion", "opec", "pipeline", "embargo", "trade war",
+        "chip ban", "rare earth restriction", "port strike",
+    ],
+    veri_isareti="VIX vade yapısı tersine dönmüş + altın/bakır oranı yükseliyor",
+    lehte_etf=["XAR", "ITA", "UFO", "ARKX", "GDX", "XLE", "XOP", "OIH", "REMX",
+               "URA", "TLT"],
+    lehte_hisse=["LMT", "RTX", "NOC", "GD", "LHX", "KTOS", "AVAV", "MP", "XOM",
+                 "CVX", "NEM"],
+    aleyhte_etf=["SOXX", "SMH", "EUV", "XRT", "JETS", "KWEB", "IYT"],
+    aleyhte_hisse=["TSM", "ASML", "AAPL", "NVDA", "NKE", "TSLA", "BA", "DAL"],
+    islem_notu=(
+        "Çip tarafında ikili etki vardır: ihracat kısıtı TSM ve ASML'yi vurur "
+        "ama ABD içi üretim teşviki INTC ve GFS lehine çalışır. Nadir toprak "
+        "kısıtı REMX ve MP için doğrudan yukarı katalizördür. Haber anında "
+        "değil, ilk paniğin geri çekilmesinde konumlanmak daha iyi fiyat verir."
+    ),
+)
+
+# ---------------------------------------------------------------- LİKİDİTE
+_d(
+    key="liquidity",
+    label="Likidite Sıkışması (FED / Hazine)",
+    icon="🏦",
+    nedir=(
+        "İnatçı enflasyon, şahin FED, devasa tahvil ihracı veya Reverse Repo "
+        "havuzunun kuruması piyasadaki dolar miktarını azaltır. En yüksek F/K'lı "
+        "ve nakit akışı en uzak vadeli varlıklar önce satılır — çünkü iskonto "
+        "oranı yükseldikçe uzak nakit akışı en çok değer kaybeder."
+    ),
+    tetikleyiciler=[
+        "hawkish", "rate hike", "quantitative tightening", "qt", "hot cpi",
+        "sticky inflation", "reverse repo", "treasury issuance", "debt ceiling",
+        "yields surge", "dollar surges", "liquidity",
+    ],
+    veri_isareti="DXY yükseliyor + 10Y faiz yükseliyor + kredi iştahı zayıflıyor",
+    lehte_etf=["TLT", "XLP", "XLV", "XLU"],
+    lehte_hisse=["BRK-B", "JNJ", "PG", "KO", "MRK"],
+    aleyhte_etf=["ARKG", "ARKF", "XBI", "IGV", "CLOU", "WGMI", "IBIT", "IWM"],
+    aleyhte_hisse=["SNOW", "DDOG", "NET", "CRWD", "COIN", "MARA", "RIVN",
+                   "IONQ", "RGTI"],
+    islem_notu=(
+        "Bu rejimde 'ucuzladı' diye alım en pahalı hatadır; likidite çekilirken "
+        "çarpanlar aylarca sıkışabilir. Kâr eden, nakit üreten ve borcu düşük "
+        "şirketler görece korunur. Kripto ve kâr etmeyen teknoloji en uçtaki "
+        "kaldıraç olduğu için ilk ve en sert satılan taraftır."
+    ),
+)
+
+# ---------------------------------------------------------------- FOMC
+_d(
+    key="fomc",
+    label="FOMC / Veri Bekleyişi",
+    icon="🏛️",
+    nedir=(
+        "Toplantı öncesi hacim çekilir, oynaklık bastırılır; karar anında ise "
+        "tek barda haftalık ATR kadar hareket olur. Bu, stop mesafelerinin "
+        "normal ATR'ye göre YETERSİZ kaldığı nadir durumlardan biridir."
+    ),
+    tetikleyiciler=[
+        "fomc", "powell", "fed meeting", "dot plot", "jackson hole",
+        "cpi report", "pce", "jobs report", "nonfarm payrolls", "fed minutes",
+    ],
+    veri_isareti="FOMC'a 3 gün veya daha az kalması",
+    lehte_etf=[],
+    lehte_hisse=[],
+    aleyhte_etf=["Kaldıraçlı ve yüksek beta her şey"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Karar öncesi yeni pozisyon açmayın ya da normal boyutun yarısıyla "
+        "açın. Karar sonrası ilk 30 dakikadaki hareket sık sık ters döner; "
+        "kapanışı beklemek yanlış yönde girmekten korur."
+    ),
+)
+
+# ---------------------------------------------------------------- YZ CAPEX
+_d(
+    key="ai_capex",
+    label="YZ Sermaye Harcaması Döngüsü",
+    icon="🤖",
+    nedir=(
+        "Hyperscaler'ların veri merkezi yatırım bütçesi, bu döngünün ana "
+        "yakıtıdır. Bütçe artışı zinciri yukarıdan aşağı besler: çip → ağ → "
+        "güç dağıtımı → elektrik üretimi → soğutma ve gayrimenkul. Bütçe "
+        "kesintisi aynı zinciri ters yönde vurur."
+    ),
+    tetikleyiciler=[
+        "capex", "data center", "hyperscaler", "ai spending", "gpu order",
+        "cloud growth", "training cluster", "inference demand", "nuclear ppa",
+        "power purchase agreement",
+    ],
+    veri_isareti="Yarı iletken ve kamu hizmetleri temalarının birlikte güçlenmesi",
+    lehte_etf=["SOXX", "SMH", "EUV", "XLU", "URA", "PAVE", "SRVR", "AIQ"],
+    lehte_hisse=["NVDA", "AVGO", "TSM", "ASML", "MU", "VRT", "ETN", "CEG",
+                 "VST", "EQIX", "DLR", "MRVL", "CRDO"],
+    aleyhte_etf=[],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Zincirin ucundaki çarpan hisseleri (NVDA, AVGO, ETN, CEG, EQIX) "
+        "paranın hangi alt temaya gittiğinden bağımsız pay alır. Alt temalar "
+        "dönüşümlü modaya girer; çarpanlar döngü boyunca kalır."
+    ),
+)
+
+# ---------------------------------------------------------------- ROTASYON
+_d(
+    key="rotation",
+    label="Sektör Rotasyonu",
+    icon="🔄",
+    nedir=(
+        "Paranın piyasadan çıkmadan sektör değiştirmesi. Endeks yatay görünse "
+        "de altında büyük bir yer değiştirme olur; tema takibi bunu endeksten "
+        "önce gösterir."
+    ),
+    tetikleyiciler=[
+        "rotation", "value over growth", "small cap", "breadth", "laggard",
+        "sector leadership", "defensive",
+    ],
+    veri_isareti="Tema takibinde liderlerin yavaşlarken diplerin hızlanması",
+    lehte_etf=["XLV", "XLP", "XLE", "KRE", "IWM"],
+    lehte_hisse=[],
+    aleyhte_etf=["QQQ", "XLK"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Rotasyon rejiminde 'dipten dönen' çeyrek (negatif getiri, pozitif "
+        "ivme) en yüksek getiriyi verir; 'yavaşlayan lider' çeyreğindeki "
+        "pozisyonlar ise kâr almanın zamanının geldiğini söyler."
+    ),
+)
+
+
+# --------------------------------------------------------------------------
+# Rejim -> sürücü eşlemesi
+# --------------------------------------------------------------------------
+REGIME_TO_DRIVERS: dict[str, list[str]] = {
+    "🩸 LİKİDİTE KRİZİ": ["liquidity", "vix"],
+    "🌍 JEOPOLİTİK / OLAY ŞOKU": ["geo", "vix"],
+    "🎯 OPEX PINNING": ["opex"],
+    "🚀 RİSK İŞTAHI / GAMMA": ["gamma", "ai_capex"],
+    "🏦 FOMC BEKLEYİŞİ": ["fomc", "liquidity"],
+    "💵 DOLAR SIKIŞMASI": ["liquidity"],
+    "🟢 RİSK AÇIK": ["gamma", "ai_capex", "rotation"],
+    "🟡 KARIŞIK — TREND ZAYIF": ["rotation", "vix"],
+    "🔴 RİSK KAPALI": ["liquidity", "vix", "rotation"],
+    "⚖️ GEÇİŞ / KARARSIZ": ["rotation", "opex"],
+}
+
+
+def drivers_for(regime: str) -> list[Driver]:
+    keys = REGIME_TO_DRIVERS.get(regime, ["rotation"])
+    return [DRIVERS[k] for k in keys if k in DRIVERS]
+
+
+_KW_CACHE: dict[str, re.Pattern] = {}
+
+
+def _kw_pattern(kw: str) -> re.Pattern:
+    """
+    Kelime sınırlı desen.
+
+    Düz alt dize araması "award" içindeki "war"ı jeopolitik sürücüsü sanıyordu.
+    \b sınırı bu tür yanlış eşleşmeleri engeller; çok kelimeli ifadelerde
+    aradaki boşluk esnek bırakılır.
+    """
+    if kw not in _KW_CACHE:
+        parts = [re.escape(w) for w in kw.split()]
+        _KW_CACHE[kw] = re.compile(r"\b" + r"\s+".join(parts) + r"\b")
+    return _KW_CACHE[kw]
+
+
+def match_drivers(title: str) -> list[str]:
+    """Bir haber başlığının hangi rejim sürücülerini beslediğini bulur."""
+    t = (title or "").lower()
+    return [key for key, d in DRIVERS.items()
+            if any(_kw_pattern(kw).search(t) for kw in d.tetikleyiciler)]
+
+
+def impacted(driver_keys: list[str]) -> dict[str, list[str]]:
+    """Bir veya birden çok sürücünün etkilediği ETF ve hisseler."""
+    lehte_e, lehte_h, aleyhte_e, aleyhte_h = [], [], [], []
+    for k in driver_keys:
+        d = DRIVERS.get(k)
+        if not d:
+            continue
+        for src, dst in ((d.lehte_etf, lehte_e), (d.lehte_hisse, lehte_h),
+                         (d.aleyhte_etf, aleyhte_e), (d.aleyhte_hisse, aleyhte_h)):
+            for x in src:
+                if x not in dst:
+                    dst.append(x)
+    return {"lehte_etf": lehte_e, "lehte_hisse": lehte_h,
+            "aleyhte_etf": aleyhte_e, "aleyhte_hisse": aleyhte_h}
+
+# ==========================================================================
+# KAYNAK: apex/themes.py
+# ==========================================================================
+
+
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+
+@dataclass
+class Quadrant:
+    key: str
+    label: str
+    icon: str
+    renk: str
+    aciklama: str
+    aksiyon: str
+
+
+QUADRANTS: dict[str, Quadrant] = {
+    "lider_hizlanan": Quadrant(
+        "lider_hizlanan", "Hızlanan lider", "🚀", "#2fbe86",
+        "Getiri pozitif VE ivme pozitif. Tema kazandırıyor ve kazandırma hızı "
+        "artıyor — para bu temaya yeni giriyor.",
+        "Ana avlanma sahası. Swing adaylarını önce burada arayın; trend takip "
+        "sistemleri en yüksek isabeti bu çeyrekte verir."),
+    "lider_yavaslayan": Quadrant(
+        "lider_yavaslayan", "Yavaşlayan lider", "🌤️", "#c98500",
+        "Getiri pozitif AMA ivme negatif. Tema hâlâ kazandırıyor, ancak önceki "
+        "döneme göre daha yavaş — giriş azalıyor.",
+        "Yeni pozisyon için geç kalınmış olabilir. Mevcut pozisyonlarda kısmi "
+        "kâr alma ve stop yukarı çekme zamanı."),
+    "dipten_donen": Quadrant(
+        "dipten_donen", "Dipten dönen", "🌱", "#3987e5",
+        "Getiri negatif AMA ivme pozitif. Tema hâlâ ekside, fakat düşüş hızı "
+        "kesiliyor — taban oluşumu buradan başlar.",
+        "En yüksek getiri potansiyeli burada, en yüksek yanılma payı da. "
+        "Rejim kapısı açıkken ve hisse bazında likidite süpürmesi/toplama "
+        "sinyali varken anlamlı."),
+    "hizlanan_dusus": Quadrant(
+        "hizlanan_dusus", "Hızlanan düşüş", "🩸", "#e66767",
+        "Getiri negatif VE ivme negatif. Tema kaybettiriyor ve kaybettirme "
+        "hızı artıyor — çıkış devam ediyor.",
+        "Dip arayışı erken. Bu temadaki long sinyalleri rejim kapısı kapalıyken "
+        "gelen sinyaller gibi ele alınmalı: izle, alma."),
+}
+
+PERIOD_LABELS: dict[str, str] = {
+    "Bugün": "son 1 işlem günü",
+    "1H": "son 5 işlem günü",
+    "1A": "son 21 işlem günü",
+    "3A": "son 63 işlem günü",
+    "YBB": "yılbaşından bugüne",
+}
+
+PERIOD_PREV: dict[str, str] = {
+    "Bugün": "ondan önceki gün",
+    "1H": "ondan önceki 5 gün",
+    "1A": "ondan önceki 21 gün",
+    "3A": "ondan önceki 63 gün",
+    "YBB": "geçen yılın aynı dönemi",
+}
+
+
+def classify_quadrant(getiri: float, ivme: float, esik: float = 0.0) -> str:
+    """Getiri/ivme ikilisini çeyreğe yerleştirir."""
+    if not np.isfinite(getiri) or not np.isfinite(ivme):
+        return "hizlanan_dusus" if getiri < 0 else "lider_yavaslayan"
+    if getiri >= esik and ivme >= 0:
+        return "lider_hizlanan"
+    if getiri >= esik and ivme < 0:
+        return "lider_yavaslayan"
+    if getiri < esik and ivme >= 0:
+        return "dipten_donen"
+    return "hizlanan_dusus"
+
+
+def build_table(perf: pd.DataFrame, period: str) -> pd.DataFrame:
+    """
+    Tema performans tablosuna GETİRİ, İVME ve ÇEYREK sütunlarını ekler.
+    `perf`: theme_performance() çıktısı (Bugün/1H/… ve Prev_* sütunları).
+    """
+    if perf.empty or period not in perf.columns:
+        return pd.DataFrame()
+
+    prev_col = f"Prev_{period}"
+    out = pd.DataFrame(index=perf.index)
+    out["Getiri %"] = perf[period]
+    out["Önceki %"] = perf[prev_col] if prev_col in perf.columns else np.nan
+    out["İvme"] = out["Getiri %"] - out["Önceki %"]
+    out["Çeyrek"] = [
+        QUADRANTS[classify_quadrant(g, i)].icon + " " + QUADRANTS[classify_quadrant(g, i)].label
+        for g, i in zip(out["Getiri %"], out["İvme"])
+    ]
+    out["_q"] = [classify_quadrant(g, i) for g, i in zip(out["Getiri %"], out["İvme"])]
+    out["Semboller"] = perf["Semboller"] if "Semboller" in perf.columns else ""
+    return out.sort_values("Getiri %", ascending=False)
+
+
+def summary(table: pd.DataFrame) -> dict[str, Any]:
+    """Çeyrek bazında özet: hangi temalar nerede."""
+    if table.empty:
+        return {}
+    out: dict[str, Any] = {}
+    for key, q in QUADRANTS.items():
+        sel = table[table["_q"] == key]
+        if sel.empty:
+            continue
+        out[key] = {
+            "quadrant": q,
+            "temalar": list(sel.index),
+            "n": len(sel),
+            "ort_getiri": float(sel["Getiri %"].mean()),
+            "ort_ivme": float(sel["İvme"].mean()),
+        }
+    return out
+
+
+def worked_example(table: pd.DataFrame, period: str) -> str:
+    """
+    Gerçek veriden somut bir örnek cümle üretir — açıklama soyut kalmasın.
+    En büyük ivme farkına sahip temayı seçer.
+    """
+    if table.empty or table["İvme"].isna().all():
+        return ""
+    row = table.loc[table["İvme"].abs().idxmax()]
+    tema = row.name
+    g, o, i = row["Getiri %"], row["Önceki %"], row["İvme"]
+    if not np.isfinite(o):
+        return ""
+    yon = "hızlanıyor" if i > 0 else "yavaşlıyor"
+    q = QUADRANTS[row["_q"]]
+    return (
+        f"**Örnek — {tema}:** {PERIOD_LABELS.get(period, period)} getirisi "
+        f"**%{g:+.2f}**, {PERIOD_PREV.get(period, 'önceki dönem')} getirisi "
+        f"**%{o:+.2f}** idi. İvme = {g:+.2f} − ({o:+.2f}) = **{i:+.2f}** → tema "
+        f"{yon}. Çeyrek: {q.icon} **{q.label}**. {q.aksiyon}"
+    )
+
+# ==========================================================================
+# KAYNAK: app.py
+# ==========================================================================
+
+
+# --- Modül kısayolları -------------------------------------------------------
+# Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
+# aynı isim alanında olduğundan ikisini de bu dosyanın global alanına bağlıyoruz.
+# (sys.modules kullanılmıyor: Streamlit betiği kendi isim alanında çalıştırır.)
+class _Namespace:
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+dta = eng = hld = mac = nws = pb = scr = thm = uni = _Namespace()
+
+
 
 import datetime as dt
 import json
@@ -16,19 +3706,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from apex import data as dta
-from apex import engine as eng
-from apex import holdings as hld
-from apex import macro as mac
-from apex import news as nws
-from apex import playbook as pb
-from apex import screener as scr
-from apex import themes as thm
-from apex import universe as uni
-from apex.store import Storage, StorageError, storage_from_secrets
-from apex.ui import (
-    CHART_LAYOUT, SERIES, badge, inject_theme, kpi, section, signal_style,
-)
 
 logging.basicConfig(level=logging.INFO)
 
