@@ -932,10 +932,32 @@ PARAMS: dict[str, Any] = {
     "botCd": 10,          # i_botCd       Bot soğuma
     "dotN": 3,            # i_dotN        Seesaw bar sayısı
     "sqzLen": 20,         # i_sqzLen      Sıkışma penceresi
-    # APEX V665 OMNI
+    # APEX V670 OMNI  (V665'ten düzeltilerek güncellendi — README'ye bakın)
     "volMult": 2.0,       # i_vol_mult    Afterburner hacim çarpanı
-    "emaBreak": 9,        # i_ema_break   EMA kırılım periyodu
-    "diaLen": 60,         # len_60        Diamond ekstrem penceresi
+    "emaBreak": 9,        # i_ema_break   Diamond geri alım EMA'sı
+    "diaLen": 60,         # i_dia_lookbk  Süpürülecek dip/tepe penceresi
+    "diaWindow": 5,       # i_dia_window  Süpürme sonrası geri alım penceresi
+    "diaCool": 10,        # i_dia_cool    Aynı yönde sinyaller arası bekleme
+    "diaRegime": False,   # i_dia_regime  EMA200 rejim filtresi (varsayılan kapalı)
+    "abReset": 20,        # i_ab_reset    Afterburner kilit açılma süresi
+    "rsiFast": 7,         # i_rsi_fast
+    "rsiMid": 14,         # i_rsi_mid     (MFI de bunu kullanır)
+    "rsiSlow": 21,        # i_rsi_slow    V665'te ölü koddu, artık konsensüste
+    "rocLen": 9,          # i_roc_len
+    "rocScale": 10.0,     # i_roc_scale   roc*ölçek+50 ile 0-100'e taşınır
+    "cciLen": 20,         # i_cci_len
+    "cciScale": 200.0,    # i_cci_scale
+    "tsiLong": 25,        # i_tsi_long
+    "tsiShort": 13,       # i_tsi_short
+    "omniSmooth": 3,      # i_omni_smooth
+    "omniW": {            # konsensüs ağırlıkları (0 = bileşeni kapat)
+        "rsiFast": 1.0, "rsiMid": 1.5, "rsiSlow": 1.0, "mfi": 1.5,
+        "cci": 1.0, "tsi": 1.5, "roc": 0.5,
+    },
+    "exhSigma": 2.0,      # i_exh_sigma   Tükenme eşiği (σ)
+    "bbMult": 2.0,        # i_bb_mult     Sıkışma: Bollinger çarpanı
+    "kcMult": 1.5,        # i_kc_mult     Sıkışma: Keltner çarpanı
+    "flatTol": 0.05,      # i_flat_tol    "Yatay" sayılma toleransı
     # ŞAHANE / V719
     "vwmLen": 14,         # i_vwm_len     Efor çizgisi penceresi
     "ultLen": 50,         # i_ult_len     Ultimate kanal
@@ -1150,75 +1172,191 @@ def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame
     o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
     out = pd.DataFrame(index=df.index)
     hlc3 = (h + l + c) / 3.0
+    len100, len20 = 100, 20
 
-    # 5 bileşenli konsensüs
-    rsi_f, rsi_m = rsi(c, 7), rsi(c, 14)
-    mfi_v = mfi(hlc3, v, 14)
-    cci_n = ((cci(hlc3, 20) + 200) / 4).clip(0, 100)
-    tsi_n = (tsi(c, 25, 13) + 50).clip(0, 100)
-    raw_omni = (rsi_f + rsi_m + mfi_v + cci_n + tsi_n) / 5.0
-    mom = wma(raw_omni, 3)
+    # ---- Ağırlıklı konsensüs (7 bileşen) --------------------------------
+    # V665 beş bileşen kullanıyor, yavaş RSI ile ROC'u hesaplayıp çöpe atıyordu.
+    w = p["omniW"]
+    rsi_f = rsi(c, p["rsiFast"])
+    rsi_m = rsi(c, p["rsiMid"])
+    rsi_s = rsi(c, p["rsiSlow"])
+    mfi_v = mfi(hlc3, v, p["rsiMid"])
+    roc_r = roc(c, p["rocLen"])
+    roc_n = ((roc_r * p["rocScale"]) + 50.0).clip(0, 100)
+    cci_n = ((cci(hlc3, p["cciLen"]) + p["cciScale"])
+             / (2.0 * p["cciScale"]) * 100.0).clip(0, 100)
+    # DÜZELTME: tsi ±100 salınır; V665'in `tsi + 50` formülü üst yarıyı 100'e,
+    # alt yarıyı 0'a kırpıyordu (ölçülen barların ~%3'ü). Doğrusu (tsi+100)/2.
+    tsi_n = ((tsi(c, p["tsiLong"], p["tsiShort"]) + 100.0) / 2.0).clip(0, 100)
 
-    # Fusion / Synergy hız motorları (aralığa normalize MACD)
-    len100, len60, len50, len20 = 100, p["diaLen"], 50, 20
+    w_sum = sum(w.values())
+    if w_sum <= 0:
+        raw_omni = pd.Series(50.0, index=df.index)
+    else:
+        raw_omni = (rsi_f * w["rsiFast"] + rsi_m * w["rsiMid"] + rsi_s * w["rsiSlow"]
+                    + mfi_v * w["mfi"] + cci_n * w["cci"] + tsi_n * w["tsi"]
+                    + roc_n * w["roc"]) / w_sum
+    mom = wma(raw_omni, p["omniSmooth"])
+    omni_center = mom - 50.0
+
+    # ---- Fusion / Synergy hız motorları ---------------------------------
     f_macd = ema(c, 12) - ema(c, 26)
-    f_speed = ((f_macd - lowest(f_macd, len100))
-               / (highest(f_macd, len100) - lowest(f_macd, len100)).clip(lower=0.001)
-               * 100) - 50
+    f_speed = _center_norm(f_macd, len100)
     f_sig = ema(f_speed, 9)
     f_hist = (f_speed - f_sig) * 1.5
 
     s_macd = ema(hlc3, 12) - ema(hlc3, 26)
-    s_speed = ((s_macd - lowest(s_macd, len100))
-               / (highest(s_macd, len100) - lowest(s_macd, len100)).clip(lower=0.001)
-               * 100) - 50
-    is_exhausted = (s_speed - sma(s_speed, len20)).abs() > 2.0 * stdev(s_speed, len20)
+    s_speed = _center_norm(s_macd, len100)
 
-    # Afterburner — hacim patlaması, yön değişiminde bir kez tetiklenir
-    roc9 = roc(c, 9)
-    vsa_anom = v > sma(v, 20) * p["volMult"]
-    roc_acc = roc9 - roc9.shift(1)
+    # Tükenme YÖNLÜ olmalı. V665 mutlak sapma kullanıyordu; bu tanım, uzun bir
+    # düşüşün ardından gelen sert toparlanmayı da "tükenmiş" sayıyor ve dip
+    # dönüşünü — yani Diamond'ın yakalamak için var olduğu kalıbı — bloke
+    # ediyordu. Doğru anlam: "zaten uzandığı yönde fazla uzamış".
+    #   yukarı tükenme = ortalamasının çok üstünde VE hız zaten pozitif bölgede
+    #   aşağı tükenme  = ortalamasının çok altında VE hız zaten negatif bölgede
+    # Sapma sıfırsa (tam yatay seri) her fark sonsuz σ sayılırdı; koruma var.
+    s_dev = stdev(s_speed, len20)
+    s_off = s_speed - sma(s_speed, len20)
+    exh_up = (s_dev > 0) & (s_off > p["exhSigma"] * s_dev) & (s_speed > 0)
+    exh_dn = (s_dev > 0) & (s_off < -p["exhSigma"] * s_dev) & (s_speed < 0)
+    is_exhausted = exh_up | exh_dn
+
+    # ---- Sıkışma: Bollinger, Keltner'ın içinde --------------------------
+    # V665 `stdev*2 < sma(tr)*1.5` yaklaşık ölçüsünü kullanıyordu; burada
+    # literatürdeki tanım var. (Bantların ortak tabanı sadeleştiği için
+    # matematiksel olarak dev < kc_range*kcMult'a indirgenir.)
+    bb_dev = p["bbMult"] * stdev(c, len20)
+    kc_rng = sma(true_range(h, l, c), len20)
+    sqz_on = bb_dev < kc_rng * p["kcMult"]
+    sqz_fire = (~sqz_on) & sqz_on.shift(1).fillna(False)
+    grp = (~sqz_on).cumsum()
+    sqz_dur = sqz_on.groupby(grp).cumsum().where(sqz_on, 0).astype(int)
+
+    # ---- Afterburner (kilit açmalı) -------------------------------------
+    # V665: mandal yalnızca TERS yönde tetikle sıfırlanıyordu; uzun bir
+    # trendde sinyal ömür boyu bir kez yanıyordu.
+    vsa_anom = v > sma(v, len20) * p["volMult"]
+    rvol = v / sma(v, len20).replace(0, np.nan)
+    roc_acc = roc_r - roc_r.shift(1)
     trig_up = vsa_anom & (roc_acc > 0) & (c > o) & (mom >= 50)
     trig_dn = vsa_anom & (roc_acc < 0) & (c < o) & (mom <= 50)
-    ab_bull, ab_bear = _latch_direction(trig_up, trig_dn)
+    mom_x = crossover(mom, pd.Series(50.0, index=df.index)) | \
+        crossunder(mom, pd.Series(50.0, index=df.index))
+    ab_bull, ab_bear = _latch_direction(trig_up, trig_dn, reset=mom_x,
+                                        reset_bars=p["abReset"])
 
-    # Diamond — 60 barlık ekstremde dönüş, EMA9 teyitli
+    # ---- Diamond: likidite süpürmesi + geri alım ------------------------
+    # V665'in koşulu ("60 barın dibi OL" ve "iki bardır EMA9 ÜSTÜNDE kapat")
+    # birbirini dışlıyordu; 16.000 barlık sınamada sinyal sıfır kez yandı.
     ema_focus = ema(c, p["emaBreak"])
-    ema_bull = (c > ema_focus) & (c.shift(1) > ema_focus.shift(1))
-    ema_bear = (c < ema_focus) & (c.shift(1) < ema_focus.shift(1))
-    dia_buy = ((l == lowest(l, len60)) & (s_speed > s_speed.shift(1)) & (c > o)
-               & (mom >= 40) & ema_bull)
-    dia_sell = ((h == highest(h, len60)) & (s_speed < s_speed.shift(1)) & (c < o)
-                & (mom <= 60) & ema_bear)
+    ema200 = ema(c, 200)
+    prior_low = lowest(l, p["diaLen"]).shift(1)
+    prior_high = highest(h, p["diaLen"]).shift(1)
+    sweep_low = (l < prior_low) & (c > prior_low)
+    sweep_high = (h > prior_high) & (c < prior_high)
+    since_low = barssince(sweep_low)
+    since_high = barssince(sweep_high)
 
-    sqz_on = stdev(c, len20) * 2.0 < sma(true_range(h, l, c), len20) * 1.5
+    mom_turn_up = (mom > mom.shift(1)) & (s_speed > s_speed.shift(1))
+    mom_turn_dn = (mom < mom.shift(1)) & (s_speed < s_speed.shift(1))
+    gate_bull = (c > ema200) if p["diaRegime"] else pd.Series(True, index=df.index)
+    gate_bear = (c < ema200) if p["diaRegime"] else pd.Series(True, index=df.index)
 
-    # 0–6 HUD skoru
-    hud = ((mom >= 50).astype(int) + (f_speed > f_sig).astype(int)
-           + (s_speed > s_speed.shift(1)).astype(int) + (~is_exhausted).astype(int)
-           + vsa_anom.astype(int) + sqz_on.astype(int))
+    # Veto yönlüdür: yukarı uzamışken ALMA, aşağı uzamışken SATMA.
+    # Ters yöndeki tükenme zaten dönüş kurgusunun kendisidir.
+    raw_buy = (crossover(c, ema_focus) & (since_low <= p["diaWindow"])
+               & mom_turn_up & ~exh_up & gate_bull)
+    raw_sell = (crossunder(c, ema_focus) & (since_high <= p["diaWindow"])
+                & mom_turn_dn & ~exh_dn & gate_bear)
+    dia_buy = _cooldown(raw_buy, p["diaCool"])
+    dia_sell = _cooldown(raw_sell, p["diaCool"])
+
+    # ---- Yönlü skorlar ---------------------------------------------------
+    # V665'te tek yönsüz skor vardı: sıkışma ve hacim anomalisi düşüşte bile
+    # artı sayılıyordu, üstelik ikisi aynı anda barların ~%0.5'inde oluştuğu
+    # için 6/6 fiilen erişilemezdi.
+    tol = p["flatTol"]
+    d_omni = omni_center - omni_center.shift(1)
+    rv1 = rvol.fillna(1.0) >= 1.0
+    bull = ((mom >= 50).astype(int) + (d_omni > tol).astype(int)
+            + (f_hist > 0).astype(int) + (f_speed > f_sig).astype(int)
+            + (s_speed > s_speed.shift(1)).astype(int)
+            + (rv1 & (c > o)).astype(int))
+    bear = ((mom < 50).astype(int) + (d_omni < -tol).astype(int)
+            + (f_hist < 0).astype(int) + (f_speed < f_sig).astype(int)
+            + (s_speed < s_speed.shift(1)).astype(int)
+            + (rv1 & (c < o)).astype(int))
 
     out["mom"], out["f_speed"], out["f_sig"], out["f_hist"] = mom, f_speed, f_sig, f_hist
     out["s_speed"], out["is_exhausted"] = s_speed, is_exhausted
-    out["vsa_anom"], out["ab_bull"], out["ab_bear"] = vsa_anom, ab_bull, ab_bear
+    out["exh_up"], out["exh_dn"] = exh_up, exh_dn
+    out["vsa_anom"], out["rvol"] = vsa_anom, rvol
+    out["ab_bull"], out["ab_bear"] = ab_bull, ab_bear
     out["dia_buy"], out["dia_sell"] = dia_buy, dia_sell
-    out["hud"], out["sqz_on"] = hud, sqz_on
+    out["sweep_low"], out["sweep_high"] = sweep_low, sweep_high
+    out["hud"], out["hud_bear"] = bull, bear          # hud = BOĞA skoru
+    out["hud_net"] = bull - bear
+    out["sqz_on"], out["sqz_fire"], out["sqz_dur"] = sqz_on, sqz_fire, sqz_dur
     out["ew_bull"] = crossover(f_speed, f_sig)
     out["ew_bear"] = crossunder(f_speed, f_sig)
     return out
 
 
-def _latch_direction(trig_up: pd.Series, trig_dn: pd.Series):
-    """Yön değişiminde bir kez ateşleyen mandal (arka arkaya tekrarı bastırır)."""
+def _center_norm(src: pd.Series, n: int) -> pd.Series:
+    """
+    Seriyi n barlık aralığına göre 0-100'e taşır, merkezini sıfıra çeker.
+
+    V665 burada `.clip(lower=0.001)` kullanıyordu. Bu sabit taban 300 dolarlık
+    bir hissede zararsız, 0.0004 dolarlık bir coinde MACD aralığının tamamından
+    büyük olduğu için tüm seriyi eziyordu. Aralık gerçekten sıfırsa değer
+    tanımsızdır; nötr (0) dönmek doğrusudur. Isınma barları NaN kalır.
+    """
+    hi, lo = highest(src, n), lowest(src, n)
+    rng = hi - lo
+    out = pd.Series(np.nan, index=src.index)
+    ok = rng > 0
+    out[ok] = (src[ok] - lo[ok]) / rng[ok] * 100.0 - 50.0
+    out[rng.notna() & ~ok] = 0.0
+    return out
+
+
+def _cooldown(sig: pd.Series, bars: int) -> pd.Series:
+    """Aynı yönde art arda sinyalleri bastırır (ilkini geçirir)."""
+    if bars <= 0:
+        return sig.fillna(False)
+    vals = sig.fillna(False).to_numpy()
+    out = np.zeros(len(vals), dtype=bool)
+    last = -(10 ** 9)
+    for i in range(len(vals)):
+        if vals[i] and (i - last) > bars:
+            out[i] = True
+            last = i
+    return pd.Series(out, index=sig.index)
+
+
+def _latch_direction(trig_up: pd.Series, trig_dn: pd.Series,
+                     reset: pd.Series | None = None,
+                     reset_bars: int | None = None):
+    """
+    Yön değişiminde bir kez ateşleyen mandal.
+
+    `reset` / `reset_bars` verilirse kilit ters yön beklemeden de açılır:
+    V665'te uzun bir yükselişte Afterburner ömür boyu tek kez yanıyordu.
+    """
     up = np.zeros(len(trig_up), dtype=bool)
     dn = np.zeros(len(trig_up), dtype=bool)
-    state = 0
+    state, last = 0, -(10 ** 9)
     tu, td = trig_up.fillna(False).to_numpy(), trig_dn.fillna(False).to_numpy()
+    rs = (reset.fillna(False).to_numpy() if reset is not None
+          else np.zeros(len(tu), dtype=bool))
     for i in range(len(tu)):
+        if state != 0 and (rs[i] or (reset_bars is not None
+                                     and (i - last) >= reset_bars)):
+            state = 0
         if tu[i] and state != 1:
-            up[i], state = True, 1
+            up[i], state, last = True, 1, i
         if td[i] and state != -1:
-            dn[i], state = True, -1
+            dn[i], state, last = True, -1, i
     return pd.Series(up, index=trig_up.index), pd.Series(dn, index=trig_up.index)
 
 
@@ -1431,7 +1569,9 @@ def analyze(df: pd.DataFrame, ticker: str,
         "OMNI Yön": _trend_arrow(d_omni, d_omni5),
         "Fusion": safe_last(omni["f_speed"]),
         "Synergy": safe_last(omni["s_speed"]),
-        "HUD /6": int(safe_last(omni["hud"], 0)),
+        "Boğa /6": int(safe_last(omni["hud"], 0)),
+        "Ayı /6": int(safe_last(omni["hud_bear"], 0)),
+        "Skor Net": int(safe_last(omni["hud_net"], 0)),
         "Efor /8": int(eff_score) if np.isfinite(eff_score) else 0,
         "MAGNITUDE": int(mag) if np.isfinite(mag) else 0,
         "ΔMAG": d_mag,
@@ -2952,7 +3092,8 @@ def build_holdings_table(
     out["Durum"] = [f"{VERDICTS[k].icon} {VERDICTS[k].label}" for k in durum_keys]
 
     for col in ["Sinyal", "Efor", "Fiyat", "WHALE", "ΔWHALE", "Whale Yön",
-                "PRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "HUD /6", "MAGNITUDE",
+                "PRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "Boğa /6", "Ayı /6",
+                "MAGNITUDE",
                 "DIRECTION", "ATR %", "RS Sıra", "Stop", "T1", "T2",
                 "Hacim ($M)", "Rejim", "Haftalık", "Hata"]:
         if col in df.columns:
@@ -3007,11 +3148,12 @@ def technical_note(d: dict[str, Any]) -> str:
     om = d.get("OMNI", np.nan)
     do = d.get("ΔOMNI", np.nan)
     oy = d.get("OMNI Yön", "")
-    hud = d.get("HUD /6")
+    boga, ayi = d.get("Boğa /6"), d.get("Ayı /6")
     if np.isfinite(om):
         mom = f"Momentum: OMNI {om:.0f} ({_fmt(do)}, {oy})"
-        if hud is not None:
-            mom += f", konsensüs {hud}/6"
+        if boga is not None and ayi is not None:
+            baskin = ("boğa" if boga > ayi else "ayı" if ayi > boga else "dengede")
+            mom += f", konsensüs boğa {boga}/6 · ayı {ayi}/6 ({baskin})"
         parts.append(mom + ".")
 
     # 4) Konfluans
@@ -3195,7 +3337,7 @@ def swing_score(d: dict[str, Any]) -> int:
     s += np.clip((d.get("PRO-RET", 0) + 50) / 100, 0, 1) * 8
     # Momentum konsensüsü
     s += np.clip(d.get("OMNI", 50), 0, 100) / 100 * 10
-    s += np.clip(d.get("HUD /6", 0), 0, 6) / 6 * 8
+    s += np.clip(d.get("Boğa /6", 0), 0, 6) / 6 * 8
     s += np.clip(d.get("Efor /8", 0), 0, 8) / 8 * 6
     # Göreli güç
     rs = d.get("RS Sıra", np.nan)
@@ -5509,7 +5651,7 @@ with tab_etf:
             or uni.MAIN_SECTORS.get(s, "—"))
         cols = ["Sembol", "Kapsam", "Sinyal", "Efor", "Fiyat", "1 Gün %",
                 "1 Hafta %", "WHALE", "ΔWHALE", "Whale Yön", "PRO-RET",
-                "ΔPRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "HUD /6",
+                "ΔPRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "Boğa /6", "Ayı /6",
                 "MAGNITUDE", "ΔMAG", "DIRECTION", "ΔDIR", "Hata"]
         cols = [c for c in cols if c in E.columns]
         st.session_state["rep_etf"] = E[cols]
