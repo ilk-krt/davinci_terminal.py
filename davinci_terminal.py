@@ -1199,6 +1199,16 @@ def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame
     mom = wma(raw_omni, p["omniSmooth"])
     omni_center = mom - 50.0
 
+    # KALİBRASYON KOPYASI — konfluans motoru için 5 bileşenli eski konsensüs.
+    # Konfluansın HAREKET/YÖN eşikleri (kfExpThr, kfEntryDir, "mom > 60 / < 45",
+    # "mom >= 55") 7.800 bar üzerinde BU formülle ölçülerek seçildi. Yukarıdaki
+    # 7 bileşenli ağırlıklı sürüm daha doğrudur ama dağılımı kaydırır; ölçülmüş
+    # eşikleri onunla kullanmak kalibrasyonu sessizce geçersiz kılar.
+    # Bu yüzden gösterim/skor `mom`, konfluans `mom5` kullanır.
+    # (TSI düzeltmesi ikisinde de var: kırpılan uçları geri kazandırır,
+    #  formülü değiştirmez.)
+    mom5 = wma((rsi_f + rsi_m + mfi_v + cci_n + tsi_n) / 5.0, p["omniSmooth"])
+
     # ---- Fusion / Synergy hız motorları ---------------------------------
     f_macd = ema(c, 12) - ema(c, 26)
     f_speed = _center_norm(f_macd, len100)
@@ -1287,7 +1297,8 @@ def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame
             + (s_speed < s_speed.shift(1)).astype(int)
             + (rv1 & (c < o)).astype(int))
 
-    out["mom"], out["f_speed"], out["f_sig"], out["f_hist"] = mom, f_speed, f_sig, f_hist
+    out["mom"], out["mom5"] = mom, mom5
+    out["f_speed"], out["f_sig"], out["f_hist"] = f_speed, f_sig, f_hist
     out["s_speed"], out["is_exhausted"] = s_speed, is_exhausted
     out["exh_up"], out["exh_dn"] = exh_up, exh_dn
     out["vsa_anom"], out["rvol"] = vsa_anom, rvol
@@ -1446,7 +1457,8 @@ def confluence(df: pd.DataFrame, core: pd.DataFrame, omni: pd.DataFrame,
     d1 = np.sign(omni["s_speed"].fillna(0))
     d2 = np.where(omni["s_speed"] > 25, 1, np.where(omni["s_speed"] < -25, -1, 0))
     d3 = np.sign(omni["f_hist"].fillna(0))
-    d4 = np.where(omni["mom"] > 60, 1, np.where(omni["mom"] < 45, -1, 0))
+    # mom5: eşiklerin ölçüldüğü 5 bileşenli konsensüs (bkz. apex_omni)
+    d4 = np.where(omni["mom5"] > 60, 1, np.where(omni["mom5"] < 45, -1, 0))
     d5 = np.where(c > kf_sma50, 1, np.where(c < kf_sma50, -1, 0))
     direction = (d1 + d2 + d3 + d4 + d5).astype(int)
 
@@ -1471,7 +1483,7 @@ def _effort_score(core: pd.DataFrame, omni: pd.DataFrame,
             + sah["smc_buy"].astype(int)
             + core["sweep_bar"].astype(int)
             + sah["ult_up_cross"].astype(int)
-            + (omni["mom"] >= 55).astype(int)
+            + (omni["mom5"] >= 55).astype(int)
             + (core["whale"] >= 60).astype(int)
             + omni["vsa_anom"].astype(int)
             + sah["eff_up"].astype(int)).clip(upper=8)
