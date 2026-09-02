@@ -1342,6 +1342,18 @@ def _effort_score(core: pd.DataFrame, omni: pd.DataFrame,
 # ==========================================================================
 # TEK SEMBOL ÖZETİ
 # ==========================================================================
+def _delta(series: pd.Series, back: int = 1) -> float:
+    """
+    Serinin `back` bar önceki değerine göre değişimi.
+    Tarayıcıda "WHALE 72" tek başına anlamsız — 72 ve YÜKSELİYOR mu, yoksa
+    85'ten düşerek mi 72'ye geldi, karar bunu bilmeye bağlı.
+    """
+    v = pd.Series(series).dropna()
+    if len(v) <= back:
+        return float("nan")
+    return float(v.iloc[-1] - v.iloc[-1 - back])
+
+
 def analyze(df: pd.DataFrame, ticker: str,
             bench_close: pd.Series | None = None,
             weekly_bull: bool | None = None,
@@ -1385,6 +1397,16 @@ def analyze(df: pd.DataFrame, ticker: str,
     mag = safe_last(conf["magnitude"])
     direction = safe_last(conf["direction"])
 
+    # Önceki bara ve önceki haftaya göre değişimler
+    d_whale = _delta(core["whale"])
+    d_whale5 = _delta(core["whale"], 5)
+    d_pro_ret = _delta(core["pro"] - core["ret_line"])
+    d_omni = _delta(omni["mom"])
+    d_omni5 = _delta(omni["mom"], 5)
+    d_mag = _delta(conf["magnitude"])
+    d_dir = _delta(conf["direction"])
+    d_wpwr = _delta(core["w_pwr"])
+
     row.ok = True
     row.data = {
         "Fiyat": price,
@@ -1392,19 +1414,29 @@ def analyze(df: pd.DataFrame, ticker: str,
         "ATR %": (atr14 / price * 100.0) if price else np.nan,
         "Hacim ($M)": dollar_vol_m,
         "WHALE": whale,
+        "ΔWHALE": d_whale,
+        "ΔWHALE 5B": d_whale5,
+        "Whale Yön": _trend_arrow(d_whale, d_whale5),
         "DAILY": safe_last(core["daily"]),
         "RETAIL": safe_last(core["retail"]),
         "PRO": pro,
         "PRO-RET": pro - ret_l,
+        "ΔPRO-RET": d_pro_ret,
         "Whale Power": safe_last(core["w_pwr"]),
+        "ΔWhale Power": d_wpwr,
         "RVOL": safe_last(core["rvol"]),
         "OMNI": safe_last(omni["mom"]),
+        "ΔOMNI": d_omni,
+        "ΔOMNI 5B": d_omni5,
+        "OMNI Yön": _trend_arrow(d_omni, d_omni5),
         "Fusion": safe_last(omni["f_speed"]),
         "Synergy": safe_last(omni["s_speed"]),
         "HUD /6": int(safe_last(omni["hud"], 0)),
         "Efor /8": int(eff_score) if np.isfinite(eff_score) else 0,
         "MAGNITUDE": int(mag) if np.isfinite(mag) else 0,
+        "ΔMAG": d_mag,
         "DIRECTION": int(direction) if np.isfinite(direction) else 0,
+        "ΔDIR": d_dir,
         "RS %": rs_mom,
         "RS Sıra": rs_rank,
         "T1": safe_last(core["t1"]),
@@ -1443,6 +1475,30 @@ def analyze(df: pd.DataFrame, ticker: str,
     row.data["Sinyal"] = headline_signal(row.data)
     row.data["Efor"] = effort_state(row.data, safe_last(c), safe_last(sah["eff_price"]))
     return row
+
+
+def _trend_arrow(d1: float, d5: float) -> str:
+    """
+    Bir barlık ve beş barlık değişimi tek okla özetler.
+
+      ⇈ hem dün hem hafta boyunca artıyor  (hızlanan güçlenme)
+      ↗ kısa vadede artıyor ama haftalık zayıf (yeni dönüş)
+      ↘ kısa vadede düşüyor ama haftalık güçlü (soluklanma)
+      ⇊ ikisi de düşüyor (hızlanan bozulma)
+    """
+    if not np.isfinite(d1) and not np.isfinite(d5):
+        return "—"
+    a = d1 if np.isfinite(d1) else 0.0
+    b = d5 if np.isfinite(d5) else 0.0
+    if a > 0.5 and b > 0.5:
+        return "⇈ güçleniyor"
+    if a > 0.5 >= b:
+        return "↗ dönüyor"
+    if a < -0.5 and b < -0.5:
+        return "⇊ bozuluyor"
+    if a < -0.5 <= b:
+        return "↘ soluklanıyor"
+    return "→ yatay"
 
 
 def headline_signal(d: dict[str, Any]) -> str:
@@ -1544,8 +1600,11 @@ _CSS = """
 <style>
 :root {
   --bg:#050506; --surface:#0d0d11; --surface-2:#131319;
-  --line:#1e1e26; --line-soft:#17171d; --edge:#2b2b36;
-  --ink:#ececf1; --ink-2:#a0a0ab; --ink-3:#6e6e7a;
+  --line:#24242e; --line-soft:#1b1b22; --edge:#3a3a48;
+  /* Kontrast: --ink-3 önceden #6e6e7a idi ve #050506 zemin üzerinde
+     yaklaşık 3.4:1 kalıyordu — bölüm başlıkları ve açıklamalar okunmuyordu.
+     Yeni değerler zemine karşı en az 7:1 (ink-2) ve 5.5:1 (ink-3). */
+  --ink:#f2f2f6; --ink-2:#c2c2cc; --ink-3:#9a9aa8;
   --accent:#00e5ff; --pos:#2fbe86; --neg:#f0736f;
 }
 .stApp { background: var(--bg); color: var(--ink); }
@@ -1572,11 +1631,11 @@ _CSS = """
 .kpi::before { content:""; position:absolute; inset:0 auto 0 0; width:3px;
   background:var(--accent); opacity:.85; }
 .kpi.pos::before { background:var(--pos); } .kpi.neg::before { background:var(--neg); }
-.kpi-label { font-size:.66rem; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); font-weight:600; margin-bottom:.5rem; }
+.kpi-label { font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink-2); font-weight:700; margin-bottom:.5rem; }
 .kpi-value { font-size:1.45rem; font-weight:700; letter-spacing:-.02em;
   line-height:1.2; color:var(--ink); }
-.kpi-sub { font-size:.76rem; color:var(--ink-3); margin-top:.38rem; }
+.kpi-sub { font-size:.78rem; color:var(--ink-2); margin-top:.4rem; }
 .kpi-value.pos,.kpi-sub.pos { color:var(--pos); }
 .kpi-value.neg,.kpi-sub.neg { color:var(--neg); }
 .badge { display:inline-block; font-size:.72rem; font-weight:600;
@@ -1585,16 +1644,20 @@ _CSS = """
 .badge.neg { background:rgba(240,115,111,.13); color:var(--neg); }
 
 /* Bölüm başlığı */
-.nx-section { font-size:.68rem; letter-spacing:.14em; text-transform:uppercase;
-  color:var(--ink-3); font-weight:600; margin:1.6rem 0 .7rem;
-  padding-bottom:.45rem; border-bottom:1px solid var(--line-soft); }
+.nx-section { font-size:.74rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-2); font-weight:700; margin:1.7rem 0 .75rem;
+  padding-bottom:.45rem; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:.5rem; }
+.nx-section::before { content:""; width:3px; height:13px; border-radius:2px;
+  background:var(--accent); display:inline-block; }
 
 /* Sekmeler */
 .stTabs [data-baseweb="tab-list"] { gap:.15rem;
   border-bottom:1px solid var(--line); flex-wrap:wrap; }
-.stTabs [data-baseweb="tab"] { height:42px; padding:0 .95rem;
-  background:transparent; color:var(--ink-3); font-size:.86rem;
-  font-weight:500; border-radius:8px 8px 0 0; }
+.stTabs [data-baseweb="tab"] { height:44px; padding:0 .95rem;
+  background:transparent; color:var(--ink-2); font-size:.88rem;
+  font-weight:600; border-radius:8px 8px 0 0; }
+.stTabs [data-baseweb="tab"]:hover { color:var(--ink)!important; }
 .stTabs [aria-selected="true"] { color:var(--ink)!important;
   background:var(--surface)!important; border-bottom:2px solid var(--accent)!important; }
 
@@ -1606,9 +1669,10 @@ _CSS = """
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
 [data-testid="stBaseButton-secondary"],
 [data-testid="stFileUploaderDropzone"] button {
-  background:var(--surface-2)!important; color:var(--ink)!important;
+  background:#1c1c25!important; color:var(--ink)!important;
   border:1px solid var(--edge)!important; border-radius:9px;
-  font-weight:600; font-size:.85rem; transition:all .12s ease; }
+  font-weight:600; font-size:.86rem; transition:all .12s ease;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset; }
 .stButton > button:hover, .stDownloadButton > button:hover,
 .stFormSubmitButton > button:hover {
   background:#1b1b23!important; border-color:var(--accent)!important;
@@ -1639,6 +1703,30 @@ div[data-testid="stExpander"] { border:1px solid var(--line);
 div[data-testid="stExpander"] summary { color:var(--ink)!important; }
 div[data-testid="stAlert"] { border-radius:11px; border:1px solid var(--line); }
 a, a:visited { color:var(--accent); }
+
+/* Streamlit'in soluk metinleri: caption, widget etiketi, yardım ikonu */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p,
+.stMarkdown small, small { color:var(--ink-2)!important; }
+[data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label,
+.stSlider label, .stRadio label p, .stCheckbox label p, .stToggle label p {
+  color:var(--ink)!important; font-weight:600; }
+[data-testid="stMarkdownContainer"] p { color:var(--ink); }
+svg[data-testid="stTooltipHoverTarget"] { fill:var(--ink-2)!important; }
+[data-testid="stMetricLabel"] { color:var(--ink-2)!important; }
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
+  color:var(--ink)!important; font-weight:600; }
+[data-testid="stElementToolbar"] button { color:var(--ink)!important; }
+
+/* Tablo başlıkları */
+[data-testid="stDataFrame"] th, [data-testid="stDataEditor"] th {
+  color:var(--ink)!important; font-weight:700!important; }
+
+/* Delta rozetleri */
+.delta { font-size:.72rem; font-weight:700; padding:.1rem .35rem;
+  border-radius:5px; margin-left:.3rem; white-space:nowrap; }
+.delta.up { background:rgba(47,190,134,.16); color:#4fd6a0; }
+.delta.dn { background:rgba(240,115,111,.16); color:#ff8f8b; }
+.delta.flat { background:rgba(255,255,255,.06); color:var(--ink-2); }
 hr { border-color:var(--line-soft); }
 </style>
 """
@@ -2119,7 +2207,7 @@ from typing import Any
 
 import requests
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 API = "https://api.github.com"
 DEFAULT_PATH = "apex_watchlist.json"
@@ -2196,7 +2284,7 @@ class Storage:
                 raw = base64.b64decode(payload.get("content", "")).decode("utf-8")
                 return LoadResult(json.loads(raw or "[]"), self._sha, "github")
             except Exception as exc:
-                log.error("GitHub okuma hatası: %s", exc)
+                _log.error("GitHub okuma hatası: %s", exc)
                 raise StorageError(f"GitHub'dan okunamadı: {exc}") from exc
 
         if os.path.exists(self.local_path):
@@ -2213,7 +2301,7 @@ class Storage:
             with open(self.local_path, "w", encoding="utf-8") as f:
                 f.write(body)
         except OSError as exc:
-            log.warning("Yerel kopya yazılamadı: %s", exc)
+            _log.warning("Yerel kopya yazılamadı: %s", exc)
 
         if not self.enabled:
             return "local"
@@ -2237,7 +2325,7 @@ class Storage:
                 return self._sha or "ok"
             if r.status_code == 409 and attempt == 0:
                 # Başka bir yerden commit gelmiş; sha'yı tazeleyip bir kez daha dene
-                log.info("GitHub 409 çakışması, sha tazeleniyor.")
+                _log.info("GitHub 409 çakışması, sha tazeleniyor.")
                 try:
                     self.load()
                 except StorageError:
@@ -2256,7 +2344,7 @@ def storage_from_secrets(secrets: Any, local_path: str = DEFAULT_PATH) -> Storag
         if secrets is not None and "github" in secrets:
             cfg = dict(secrets["github"])
     except Exception as exc:
-        log.info("secrets okunamadı: %s", exc)
+        _log.info("secrets okunamadı: %s", exc)
     return Storage(cfg, local_path=local_path)
 
 # ==========================================================================
@@ -2271,7 +2359,7 @@ from typing import Iterable
 
 import pandas as pd
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 # yfinance aralığı -> (geçmiş gün sayısı, yf interval)
 INTERVAL_PLAN: dict[str, tuple[int, str]] = {
@@ -2299,7 +2387,7 @@ def _extract(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
         else:
             df = raw.copy()
     except Exception as exc:
-        log.warning("Sütun ayıklama hatası (%s): %s", ticker, exc)
+        _log.warning("Sütun ayıklama hatası (%s): %s", ticker, exc)
         return pd.DataFrame()
 
     need = ["Open", "High", "Low", "Close", "Volume"]
@@ -2345,7 +2433,7 @@ def fetch(tickers: Iterable[str], interval: str = "1d",
                 if len(df) >= 30:
                     out[t] = resample_4h(df) if interval == "4h" else df
         except Exception as exc:
-            log.warning("Toplu çekim hatası (deneme %s): %s", attempt + 1, exc)
+            _log.warning("Toplu çekim hatası (deneme %s): %s", attempt + 1, exc)
             time.sleep(1.5 * (attempt + 1))
 
     # kalanları tek tek dene
@@ -2358,7 +2446,7 @@ def fetch(tickers: Iterable[str], interval: str = "1d",
                     df = hist[need].dropna(subset=["Close"])
                     out[t] = resample_4h(df) if interval == "4h" else df
         except Exception as exc:
-            log.info("Tekil çekim hatası (%s): %s", t, exc)
+            _log.info("Tekil çekim hatası (%s): %s", t, exc)
 
     failed = [t for t in tickers if t not in out]
     return out, failed
@@ -2422,7 +2510,7 @@ def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
             key = info.get("recommendationKey", "")
             rec["Analist"] = (f"{key} ({n})" if n else str(key or ""))
         except Exception as exc:
-            log.info("Bilanço verisi alınamadı (%s): %s", t, exc)
+            _log.info("Bilanço verisi alınamadı (%s): %s", t, exc)
         rows.append(rec)
 
     df = pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"])
@@ -2668,7 +2756,7 @@ from typing import Iterable
 
 import requests
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 FEEDS: dict[str, str] = {
     "Makro & Fed": "Fed OR FOMC OR inflation OR CPI OR rate cut stock market",
@@ -2706,7 +2794,7 @@ IMPACT_RULES: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
-def classify(title: str) -> str:
+def classify_impact(title: str) -> str:
     t = title.lower()
     for keys, impact in IMPACT_RULES:
         if any(k in t for k in keys):
@@ -2752,7 +2840,7 @@ def fetch_news(known_tickers: Iterable[str], topics: Iterable[str] | None = None
                 "Tarih": pub,
                 "Başlık": title,
                 "İlgili": ", ".join(hits[:6]) if hits else "Genel makro",
-                "Etki": classify(title),
+                "Etki": classify_impact(title),
                 "Link": link,
             })
 
@@ -2767,6 +2855,473 @@ def _parse_date(s: str) -> datetime:
         except Exception:
             continue
     return datetime.min
+
+# ==========================================================================
+# KAYNAK: apex/playbook.py
+# ==========================================================================
+
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class Driver:
+    """Bir rejim sürücüsü (gamma, opex, vix, jeopolitik…)."""
+    key: str
+    label: str
+    icon: str
+    nedir: str
+    tetikleyiciler: list[str]          # haber başlığında aranan ifadeler
+    veri_isareti: str                  # hangi göstergeden anlaşılır
+    lehte_etf: list[str] = field(default_factory=list)
+    lehte_hisse: list[str] = field(default_factory=list)
+    aleyhte_etf: list[str] = field(default_factory=list)
+    aleyhte_hisse: list[str] = field(default_factory=list)
+    islem_notu: str = ""
+
+
+DRIVERS: dict[str, Driver] = {}
+
+
+def _d(**kw) -> None:
+    DRIVERS[kw["key"]] = Driver(**kw)
+
+
+# ---------------------------------------------------------------- GAMMA
+_d(
+    key="gamma",
+    label="Gamma Squeeze / Melt-Up",
+    icon="🚀",
+    nedir=(
+        "Yoğun call opsiyon alımı sonrası piyasa yapıcılar (dealer) açığa "
+        "sattıkları call'ları hedge etmek için spot hisse almak ZORUNDA kalır. "
+        "Fiyat yükseldikçe hedge ihtiyacı büyür — kendi kendini besleyen yukarı "
+        "sarmal oluşur. Temele değil opsiyon mekaniğine dayandığı için vade "
+        "geçince aynı hızla sönebilir."
+    ),
+    tetikleyiciler=[
+        "rate cut", "dovish", "soft cpi", "cooler inflation", "short squeeze",
+        "record high", "melt up", "call volume", "retail buying", "meme stock",
+        "beats estimates", "raises guidance", "blowout quarter", "squeeze",
+    ],
+    veri_isareti="VIX 15 altında + SPY tam boğa dizilimi + kredi iştahı açık",
+    lehte_etf=["QQQ", "XLK", "SOXX", "SMH", "ARKF", "ARKX", "WGMI", "IBIT"],
+    lehte_hisse=["NVDA", "AMD", "PLTR", "TSLA", "COIN", "MARA", "RIOT", "SMCI",
+                 "IONQ", "RKLB"],
+    aleyhte_etf=["TLT", "XLP", "XLU"],
+    aleyhte_hisse=["KO", "PG", "JNJ"],
+    islem_notu=(
+        "Yüksek beta ve geniş ATR'li isimler en çok hareket edeni olur; ATR "
+        "kademeli stop bu grupta anlamlı çalışır. Ancak koruma ucuzken piyasa "
+        "şoka en açık haldedir — pozisyonu vade haftasına taşımayın."
+    ),
+)
+
+# ---------------------------------------------------------------- OPEX
+_d(
+    key="opex",
+    label="OPEX Pinning / Max Pain",
+    icon="🎯",
+    nedir=(
+        "Aylık (üçüncü cuma) ve üç aylık opsiyon vadelerine yaklaşırken market "
+        "maker'lar taşıdıkları pozisyonun primini (theta) sıfırlamak için "
+        "endeksi en yüksek açık pozisyonun bulunduğu Max Pain seviyesine "
+        "çekmeye çalışır. Fiyat dar bir bantta hapsolur, kırılımlar tuzağa "
+        "dönüşür. Üçlü cadı (mart/haziran/eylül/aralık) aylarında etki en güçlü."
+    ),
+    tetikleyiciler=[
+        "options expiration", "opex", "quad witching", "triple witching",
+        "max pain", "open interest", "gamma exposure", "0dte",
+    ],
+    veri_isareti="OPEX'e 3 gün veya daha az kalması (üçlü cadı ayrıca işaretlenir)",
+    lehte_etf=[],
+    lehte_hisse=[],
+    aleyhte_etf=["Tüm trend takip stratejileri"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Bu pencerede yeni kırılım pozisyonu AÇMAYIN. Sinyal doğru olsa bile "
+        "fiyat vade sonuna kadar geri çekilip stopu tetikler. Mevcut pozisyonda "
+        "stopu biraz genişletmek ya da kısmi kâr almak, yeni giriş yapmaktan "
+        "daha mantıklıdır. Vade cumasından sonraki pazartesi bant çözülür."
+    ),
+)
+
+# ---------------------------------------------------------------- VIX
+_d(
+    key="vix",
+    label="Oynaklık Şoku / VIX Sıçraması",
+    icon="⚡",
+    nedir=(
+        "VIX'in hızla yükselmesi ve özellikle VIX/VIX3M oranının 1'in üstüne "
+        "çıkması (vade yapısının tersine dönmesi) yakın vadeli korkunun uzun "
+        "vadeyi aştığını gösterir. Bu, kaldıraçlı fonların pozisyon küçültmeye "
+        "zorlandığı andır — satış satışı besler."
+    ),
+    tetikleyiciler=[
+        "vix", "volatility", "selloff", "plunge", "correction", "crash",
+        "margin call", "risk off", "flight to safety", "circuit breaker",
+    ],
+    veri_isareti="VIX > 25 veya VIX/VIX3M oranı > 1.00",
+    lehte_etf=["TLT", "GLD", "XLP", "XLU", "VIXY"],
+    lehte_hisse=["NEM", "GOLD", "KO", "PG", "WMT"],
+    aleyhte_etf=["ARKG", "ARKF", "XBI", "IWM", "WGMI", "SOXX"],
+    aleyhte_hisse=["PLTR", "COIN", "MARA", "IONQ", "RKLB", "SMCI"],
+    islem_notu=(
+        "Oynaklık yükselirken ATR de genişler; sabit yüzdelik stop kullanan "
+        "sistemler erken kesilir. Pozisyon boyutunu ATR ile ters orantılı "
+        "küçültmek stop mantığını korur. VIX tepe yaptıktan sonra düşerken "
+        "alım yapmak, tepe anında almaktan tarihsel olarak çok daha isabetli."
+    ),
+)
+
+# ---------------------------------------------------------------- JEOPOLİTİK
+_d(
+    key="geo",
+    label="Jeopolitik / Tedarik Zinciri Şoku",
+    icon="🌍",
+    nedir=(
+        "Boğaz krizleri, gümrük tarifeleri, ihracat kontrolleri, enerji nakil "
+        "hatlarına saldırı. Sermaye büyümeden kaçıp sert varlığa (altın, "
+        "petrol, savunma) ve hazineye sığınır. Etki simetrik değildir: aynı "
+        "olay savunma ve enerjiyi yukarı, tedarik zincirine bağlı üretimi "
+        "aşağı çeker."
+    ),
+    tetikleyiciler=[
+        "tariff", "sanction", "export control", "taiwan", "strait", "war",
+        "missile", "invasion", "opec", "pipeline", "embargo", "trade war",
+        "chip ban", "rare earth restriction", "port strike",
+    ],
+    veri_isareti="VIX vade yapısı tersine dönmüş + altın/bakır oranı yükseliyor",
+    lehte_etf=["XAR", "ITA", "UFO", "ARKX", "GDX", "XLE", "XOP", "OIH", "REMX",
+               "URA", "TLT"],
+    lehte_hisse=["LMT", "RTX", "NOC", "GD", "LHX", "KTOS", "AVAV", "MP", "XOM",
+                 "CVX", "NEM"],
+    aleyhte_etf=["SOXX", "SMH", "EUV", "XRT", "JETS", "KWEB", "IYT"],
+    aleyhte_hisse=["TSM", "ASML", "AAPL", "NVDA", "NKE", "TSLA", "BA", "DAL"],
+    islem_notu=(
+        "Çip tarafında ikili etki vardır: ihracat kısıtı TSM ve ASML'yi vurur "
+        "ama ABD içi üretim teşviki INTC ve GFS lehine çalışır. Nadir toprak "
+        "kısıtı REMX ve MP için doğrudan yukarı katalizördür. Haber anında "
+        "değil, ilk paniğin geri çekilmesinde konumlanmak daha iyi fiyat verir."
+    ),
+)
+
+# ---------------------------------------------------------------- LİKİDİTE
+_d(
+    key="liquidity",
+    label="Likidite Sıkışması (FED / Hazine)",
+    icon="🏦",
+    nedir=(
+        "İnatçı enflasyon, şahin FED, devasa tahvil ihracı veya Reverse Repo "
+        "havuzunun kuruması piyasadaki dolar miktarını azaltır. En yüksek F/K'lı "
+        "ve nakit akışı en uzak vadeli varlıklar önce satılır — çünkü iskonto "
+        "oranı yükseldikçe uzak nakit akışı en çok değer kaybeder."
+    ),
+    tetikleyiciler=[
+        "hawkish", "rate hike", "quantitative tightening", "qt", "hot cpi",
+        "sticky inflation", "reverse repo", "treasury issuance", "debt ceiling",
+        "yields surge", "dollar surges", "liquidity",
+    ],
+    veri_isareti="DXY yükseliyor + 10Y faiz yükseliyor + kredi iştahı zayıflıyor",
+    lehte_etf=["TLT", "XLP", "XLV", "XLU"],
+    lehte_hisse=["BRK-B", "JNJ", "PG", "KO", "MRK"],
+    aleyhte_etf=["ARKG", "ARKF", "XBI", "IGV", "CLOU", "WGMI", "IBIT", "IWM"],
+    aleyhte_hisse=["SNOW", "DDOG", "NET", "CRWD", "COIN", "MARA", "RIVN",
+                   "IONQ", "RGTI"],
+    islem_notu=(
+        "Bu rejimde 'ucuzladı' diye alım en pahalı hatadır; likidite çekilirken "
+        "çarpanlar aylarca sıkışabilir. Kâr eden, nakit üreten ve borcu düşük "
+        "şirketler görece korunur. Kripto ve kâr etmeyen teknoloji en uçtaki "
+        "kaldıraç olduğu için ilk ve en sert satılan taraftır."
+    ),
+)
+
+# ---------------------------------------------------------------- FOMC
+_d(
+    key="fomc",
+    label="FOMC / Veri Bekleyişi",
+    icon="🏛️",
+    nedir=(
+        "Toplantı öncesi hacim çekilir, oynaklık bastırılır; karar anında ise "
+        "tek barda haftalık ATR kadar hareket olur. Bu, stop mesafelerinin "
+        "normal ATR'ye göre YETERSİZ kaldığı nadir durumlardan biridir."
+    ),
+    tetikleyiciler=[
+        "fomc", "powell", "fed meeting", "dot plot", "jackson hole",
+        "cpi report", "pce", "jobs report", "nonfarm payrolls", "fed minutes",
+    ],
+    veri_isareti="FOMC'a 3 gün veya daha az kalması",
+    lehte_etf=[],
+    lehte_hisse=[],
+    aleyhte_etf=["Kaldıraçlı ve yüksek beta her şey"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Karar öncesi yeni pozisyon açmayın ya da normal boyutun yarısıyla "
+        "açın. Karar sonrası ilk 30 dakikadaki hareket sık sık ters döner; "
+        "kapanışı beklemek yanlış yönde girmekten korur."
+    ),
+)
+
+# ---------------------------------------------------------------- YZ CAPEX
+_d(
+    key="ai_capex",
+    label="YZ Sermaye Harcaması Döngüsü",
+    icon="🤖",
+    nedir=(
+        "Hyperscaler'ların veri merkezi yatırım bütçesi, bu döngünün ana "
+        "yakıtıdır. Bütçe artışı zinciri yukarıdan aşağı besler: çip → ağ → "
+        "güç dağıtımı → elektrik üretimi → soğutma ve gayrimenkul. Bütçe "
+        "kesintisi aynı zinciri ters yönde vurur."
+    ),
+    tetikleyiciler=[
+        "capex", "data center", "hyperscaler", "ai spending", "gpu order",
+        "cloud growth", "training cluster", "inference demand", "nuclear ppa",
+        "power purchase agreement",
+    ],
+    veri_isareti="Yarı iletken ve kamu hizmetleri temalarının birlikte güçlenmesi",
+    lehte_etf=["SOXX", "SMH", "EUV", "XLU", "URA", "PAVE", "SRVR", "AIQ"],
+    lehte_hisse=["NVDA", "AVGO", "TSM", "ASML", "MU", "VRT", "ETN", "CEG",
+                 "VST", "EQIX", "DLR", "MRVL", "CRDO"],
+    aleyhte_etf=[],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Zincirin ucundaki çarpan hisseleri (NVDA, AVGO, ETN, CEG, EQIX) "
+        "paranın hangi alt temaya gittiğinden bağımsız pay alır. Alt temalar "
+        "dönüşümlü modaya girer; çarpanlar döngü boyunca kalır."
+    ),
+)
+
+# ---------------------------------------------------------------- ROTASYON
+_d(
+    key="rotation",
+    label="Sektör Rotasyonu",
+    icon="🔄",
+    nedir=(
+        "Paranın piyasadan çıkmadan sektör değiştirmesi. Endeks yatay görünse "
+        "de altında büyük bir yer değiştirme olur; tema takibi bunu endeksten "
+        "önce gösterir."
+    ),
+    tetikleyiciler=[
+        "rotation", "value over growth", "small cap", "breadth", "laggard",
+        "sector leadership", "defensive",
+    ],
+    veri_isareti="Tema takibinde liderlerin yavaşlarken diplerin hızlanması",
+    lehte_etf=["XLV", "XLP", "XLE", "KRE", "IWM"],
+    lehte_hisse=[],
+    aleyhte_etf=["QQQ", "XLK"],
+    aleyhte_hisse=[],
+    islem_notu=(
+        "Rotasyon rejiminde 'dipten dönen' çeyrek (negatif getiri, pozitif "
+        "ivme) en yüksek getiriyi verir; 'yavaşlayan lider' çeyreğindeki "
+        "pozisyonlar ise kâr almanın zamanının geldiğini söyler."
+    ),
+)
+
+
+# --------------------------------------------------------------------------
+# Rejim -> sürücü eşlemesi
+# --------------------------------------------------------------------------
+REGIME_TO_DRIVERS: dict[str, list[str]] = {
+    "🩸 LİKİDİTE KRİZİ": ["liquidity", "vix"],
+    "🌍 JEOPOLİTİK / OLAY ŞOKU": ["geo", "vix"],
+    "🎯 OPEX PINNING": ["opex"],
+    "🚀 RİSK İŞTAHI / GAMMA": ["gamma", "ai_capex"],
+    "🏦 FOMC BEKLEYİŞİ": ["fomc", "liquidity"],
+    "💵 DOLAR SIKIŞMASI": ["liquidity"],
+    "🟢 RİSK AÇIK": ["gamma", "ai_capex", "rotation"],
+    "🟡 KARIŞIK — TREND ZAYIF": ["rotation", "vix"],
+    "🔴 RİSK KAPALI": ["liquidity", "vix", "rotation"],
+    "⚖️ GEÇİŞ / KARARSIZ": ["rotation", "opex"],
+}
+
+
+def drivers_for(regime: str) -> list[Driver]:
+    keys = REGIME_TO_DRIVERS.get(regime, ["rotation"])
+    return [DRIVERS[k] for k in keys if k in DRIVERS]
+
+
+_KW_CACHE: dict[str, re.Pattern] = {}
+
+
+def _kw_pattern(kw: str) -> re.Pattern:
+    """
+    Kelime sınırlı desen.
+
+    Düz alt dize araması "award" içindeki "war"ı jeopolitik sürücüsü sanıyordu.
+    \b sınırı bu tür yanlış eşleşmeleri engeller; çok kelimeli ifadelerde
+    aradaki boşluk esnek bırakılır.
+    """
+    if kw not in _KW_CACHE:
+        parts = [re.escape(w) for w in kw.split()]
+        _KW_CACHE[kw] = re.compile(r"\b" + r"\s+".join(parts) + r"\b")
+    return _KW_CACHE[kw]
+
+
+def match_drivers(title: str) -> list[str]:
+    """Bir haber başlığının hangi rejim sürücülerini beslediğini bulur."""
+    t = (title or "").lower()
+    return [key for key, d in DRIVERS.items()
+            if any(_kw_pattern(kw).search(t) for kw in d.tetikleyiciler)]
+
+
+def impacted(driver_keys: list[str]) -> dict[str, list[str]]:
+    """Bir veya birden çok sürücünün etkilediği ETF ve hisseler."""
+    lehte_e, lehte_h, aleyhte_e, aleyhte_h = [], [], [], []
+    for k in driver_keys:
+        d = DRIVERS.get(k)
+        if not d:
+            continue
+        for src, dst in ((d.lehte_etf, lehte_e), (d.lehte_hisse, lehte_h),
+                         (d.aleyhte_etf, aleyhte_e), (d.aleyhte_hisse, aleyhte_h)):
+            for x in src:
+                if x not in dst:
+                    dst.append(x)
+    return {"lehte_etf": lehte_e, "lehte_hisse": lehte_h,
+            "aleyhte_etf": aleyhte_e, "aleyhte_hisse": aleyhte_h}
+
+# ==========================================================================
+# KAYNAK: apex/themes.py
+# ==========================================================================
+
+
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+
+@dataclass
+class Quadrant:
+    key: str
+    label: str
+    icon: str
+    renk: str
+    aciklama: str
+    aksiyon: str
+
+
+QUADRANTS: dict[str, Quadrant] = {
+    "lider_hizlanan": Quadrant(
+        "lider_hizlanan", "Hızlanan lider", "🚀", "#2fbe86",
+        "Getiri pozitif VE ivme pozitif. Tema kazandırıyor ve kazandırma hızı "
+        "artıyor — para bu temaya yeni giriyor.",
+        "Ana avlanma sahası. Swing adaylarını önce burada arayın; trend takip "
+        "sistemleri en yüksek isabeti bu çeyrekte verir."),
+    "lider_yavaslayan": Quadrant(
+        "lider_yavaslayan", "Yavaşlayan lider", "🌤️", "#c98500",
+        "Getiri pozitif AMA ivme negatif. Tema hâlâ kazandırıyor, ancak önceki "
+        "döneme göre daha yavaş — giriş azalıyor.",
+        "Yeni pozisyon için geç kalınmış olabilir. Mevcut pozisyonlarda kısmi "
+        "kâr alma ve stop yukarı çekme zamanı."),
+    "dipten_donen": Quadrant(
+        "dipten_donen", "Dipten dönen", "🌱", "#3987e5",
+        "Getiri negatif AMA ivme pozitif. Tema hâlâ ekside, fakat düşüş hızı "
+        "kesiliyor — taban oluşumu buradan başlar.",
+        "En yüksek getiri potansiyeli burada, en yüksek yanılma payı da. "
+        "Rejim kapısı açıkken ve hisse bazında likidite süpürmesi/toplama "
+        "sinyali varken anlamlı."),
+    "hizlanan_dusus": Quadrant(
+        "hizlanan_dusus", "Hızlanan düşüş", "🩸", "#e66767",
+        "Getiri negatif VE ivme negatif. Tema kaybettiriyor ve kaybettirme "
+        "hızı artıyor — çıkış devam ediyor.",
+        "Dip arayışı erken. Bu temadaki long sinyalleri rejim kapısı kapalıyken "
+        "gelen sinyaller gibi ele alınmalı: izle, alma."),
+}
+
+PERIOD_LABELS: dict[str, str] = {
+    "Bugün": "son 1 işlem günü",
+    "1H": "son 5 işlem günü",
+    "1A": "son 21 işlem günü",
+    "3A": "son 63 işlem günü",
+    "YBB": "yılbaşından bugüne",
+}
+
+PERIOD_PREV: dict[str, str] = {
+    "Bugün": "ondan önceki gün",
+    "1H": "ondan önceki 5 gün",
+    "1A": "ondan önceki 21 gün",
+    "3A": "ondan önceki 63 gün",
+    "YBB": "geçen yılın aynı dönemi",
+}
+
+
+def classify_quadrant(getiri: float, ivme: float, esik: float = 0.0) -> str:
+    """Getiri/ivme ikilisini çeyreğe yerleştirir."""
+    if not np.isfinite(getiri) or not np.isfinite(ivme):
+        return "hizlanan_dusus" if getiri < 0 else "lider_yavaslayan"
+    if getiri >= esik and ivme >= 0:
+        return "lider_hizlanan"
+    if getiri >= esik and ivme < 0:
+        return "lider_yavaslayan"
+    if getiri < esik and ivme >= 0:
+        return "dipten_donen"
+    return "hizlanan_dusus"
+
+
+def build_table(perf: pd.DataFrame, period: str) -> pd.DataFrame:
+    """
+    Tema performans tablosuna GETİRİ, İVME ve ÇEYREK sütunlarını ekler.
+    `perf`: theme_performance() çıktısı (Bugün/1H/… ve Prev_* sütunları).
+    """
+    if perf.empty or period not in perf.columns:
+        return pd.DataFrame()
+
+    prev_col = f"Prev_{period}"
+    out = pd.DataFrame(index=perf.index)
+    out["Getiri %"] = perf[period]
+    out["Önceki %"] = perf[prev_col] if prev_col in perf.columns else np.nan
+    out["İvme"] = out["Getiri %"] - out["Önceki %"]
+    out["Çeyrek"] = [
+        QUADRANTS[classify_quadrant(g, i)].icon + " " + QUADRANTS[classify_quadrant(g, i)].label
+        for g, i in zip(out["Getiri %"], out["İvme"])
+    ]
+    out["_q"] = [classify_quadrant(g, i) for g, i in zip(out["Getiri %"], out["İvme"])]
+    out["Semboller"] = perf["Semboller"] if "Semboller" in perf.columns else ""
+    return out.sort_values("Getiri %", ascending=False)
+
+
+def summary(table: pd.DataFrame) -> dict[str, Any]:
+    """Çeyrek bazında özet: hangi temalar nerede."""
+    if table.empty:
+        return {}
+    out: dict[str, Any] = {}
+    for key, q in QUADRANTS.items():
+        sel = table[table["_q"] == key]
+        if sel.empty:
+            continue
+        out[key] = {
+            "quadrant": q,
+            "temalar": list(sel.index),
+            "n": len(sel),
+            "ort_getiri": float(sel["Getiri %"].mean()),
+            "ort_ivme": float(sel["İvme"].mean()),
+        }
+    return out
+
+
+def worked_example(table: pd.DataFrame, period: str) -> str:
+    """
+    Gerçek veriden somut bir örnek cümle üretir — açıklama soyut kalmasın.
+    En büyük ivme farkına sahip temayı seçer.
+    """
+    if table.empty or table["İvme"].isna().all():
+        return ""
+    row = table.loc[table["İvme"].abs().idxmax()]
+    tema = row.name
+    g, o, i = row["Getiri %"], row["Önceki %"], row["İvme"]
+    if not np.isfinite(o):
+        return ""
+    yon = "hızlanıyor" if i > 0 else "yavaşlıyor"
+    q = QUADRANTS[row["_q"]]
+    return (
+        f"**Örnek — {tema}:** {PERIOD_LABELS.get(period, period)} getirisi "
+        f"**%{g:+.2f}**, {PERIOD_PREV.get(period, 'önceki dönem')} getirisi "
+        f"**%{o:+.2f}** idi. İvme = {g:+.2f} − ({o:+.2f}) = **{i:+.2f}** → tema "
+        f"{yon}. Çeyrek: {q.icon} **{q.label}**. {q.aksiyon}"
+    )
 
 # ==========================================================================
 # KAYNAK: app.py
@@ -2785,7 +3340,7 @@ class _Namespace:
             raise AttributeError(name) from exc
 
 
-dta = eng = mac = nws = scr = uni = _Namespace()
+dta = eng = mac = nws = pb = scr = thm = uni = _Namespace()
 
 
 
@@ -3144,6 +3699,48 @@ with tab_macro:
             with st.expander(title):
                 st.write(body)
 
+    # ---------------- REJİM OYUN KİTABI ----------------
+    section("Bu rejimde ne çalışır, ne çalışmaz")
+    aktif = pb.drivers_for(M.regime)
+    st.caption("Aşağıdaki kartlar, tespit edilen rejimi besleyen sürücüleri ve "
+               "her birinin tarihsel olarak hangi tarafı vurduğunu gösterir. "
+               "Rejim haberden değil ölçülen göstergelerden belirlenir; haberler "
+               "sadece 'neden' sorusunu cevaplar.")
+
+    for d in aktif:
+        with st.expander(f"{d.icon} {d.label}", expanded=True):
+            st.markdown(d.nedir)
+            st.caption(f"**Veriden nasıl anlaşılır:** {d.veri_isareti}")
+
+            lc, rc = st.columns(2)
+            if d.lehte_etf or d.lehte_hisse:
+                with lc:
+                    st.markdown("**🟢 Lehte çalışan**")
+                    if d.lehte_etf:
+                        st.markdown("ETF: " + " ".join(f"`{x}`" for x in d.lehte_etf))
+                    if d.lehte_hisse:
+                        st.markdown("Hisse: " + " ".join(f"`{x}`" for x in d.lehte_hisse))
+            if d.aleyhte_etf or d.aleyhte_hisse:
+                with rc:
+                    st.markdown("**🔴 Aleyhte çalışan**")
+                    if d.aleyhte_etf:
+                        st.markdown("ETF: " + " ".join(f"`{x}`" for x in d.aleyhte_etf))
+                    if d.aleyhte_hisse:
+                        st.markdown("Hisse: " + " ".join(f"`{x}`" for x in d.aleyhte_hisse))
+            if d.islem_notu:
+                st.info(f"**İşlem notu:** {d.islem_notu}")
+
+    with st.expander("Diğer rejim sürücüleri (referans)"):
+        for key, d in pb.DRIVERS.items():
+            if d in aktif:
+                continue
+            st.markdown(f"**{d.icon} {d.label}** — {d.nedir}")
+            if d.lehte_hisse:
+                st.caption("Lehte: " + ", ".join(d.lehte_hisse[:8])
+                           + (" · Aleyhte: " + ", ".join(d.aleyhte_hisse[:8])
+                              if d.aleyhte_hisse else ""))
+            st.markdown("---")
+
     section("Canlı haber akışı")
     nc1, nc2 = st.columns([4, 1])
     topics = nc1.multiselect("Konular", list(nws.FEEDS), default=list(nws.FEEDS),
@@ -3156,11 +3753,50 @@ with tab_macro:
     for e in nerr:
         st.caption(f"⚠️ {e}")
     if items:
-        st.dataframe(pd.DataFrame(items), width="stretch", hide_index=True,
-                     column_config={
-                         "Link": st.column_config.LinkColumn("Link", width="small"),
-                         "Başlık": st.column_config.TextColumn(width="large"),
-                     })
+        # Her haberi rejim sürücüsüne ve etkilediği sembollere bağla
+        enriched = []
+        driver_counts: dict[str, int] = {}
+        for it in items:
+            keys = pb.match_drivers(it["Başlık"])
+            for k in keys:
+                driver_counts[k] = driver_counts.get(k, 0) + 1
+            imp = pb.impacted(keys)
+            enriched.append({
+                **it,
+                "Rejim Sürücüsü": " ".join(
+                    f"{pb.DRIVERS[k].icon}{pb.DRIVERS[k].label.split(' /')[0]}"
+                    for k in keys) or "—",
+                "🟢 Lehte": ", ".join((imp["lehte_etf"] + imp["lehte_hisse"])[:6]),
+                "🔴 Aleyhte": ", ".join((imp["aleyhte_etf"] + imp["aleyhte_hisse"])[:6]),
+            })
+
+        if driver_counts:
+            st.markdown("**Haber akışında şu an baskın olan sürücüler**")
+            dc = st.columns(min(4, len(driver_counts)))
+            for col, (k, n) in zip(dc, sorted(driver_counts.items(),
+                                              key=lambda x: -x[1])):
+                d = pb.DRIVERS[k]
+                col.markdown(kpi(f"{d.icon} {d.label.split(' /')[0]}",
+                                 f"{n} haber",
+                                 "bu rejimi besliyor" if d in aktif
+                                 else "rejimle eşleşmiyor",
+                                 "pos" if d in aktif else ""),
+                             unsafe_allow_html=True)
+            st.caption("Haber sayısı bir rejimi KANITLAMAZ; ölçülen göstergelerle "
+                       "aynı yönü gösteriyorsa teyit, göstermiyorsa erken uyarı "
+                       "olarak okuyun.")
+
+        st.dataframe(
+            pd.DataFrame(enriched)[["Konu", "Tarih", "Başlık", "Rejim Sürücüsü",
+                                    "İlgili", "🟢 Lehte", "🔴 Aleyhte", "Link"]],
+            width="stretch", hide_index=True,
+            column_config={
+                "Link": st.column_config.LinkColumn("Link", width="small"),
+                "Başlık": st.column_config.TextColumn(width="large"),
+                "Rejim Sürücüsü": st.column_config.TextColumn(width="medium"),
+                "🟢 Lehte": st.column_config.TextColumn(width="medium"),
+                "🔴 Aleyhte": st.column_config.TextColumn(width="medium"),
+            })
 
 
 # ==========================================================================
@@ -3174,9 +3810,28 @@ with tab_theme:
         bump("nonce_theme")
         st.rerun()
 
-    st.caption("Parantez içindeki değer, ÖNCEKİ eşdeğer periyoda göre ivme "
-               "değişimidir: 🔺 hızlanıyor, 🔻 yavaşlıyor. Yani yükselen bir tema "
-               "aynı anda yavaşlıyor olabilir.")
+    with st.expander("📐 Getiri ve İvme ne demek? (bir kez okuyun)", expanded=False):
+        st.markdown(f"""
+Her tema için **iki ayrı sayı** var ve bunlar farklı şeyler söyler:
+
+| | Tanım | Örnek (**{period}** seçiliyken) |
+|---|---|---|
+| **Getiri %** | Seçilen dönemin yüzde değişimi | {thm.PERIOD_LABELS.get(period, period)} içindeki % değişim |
+| **İvme** | Bu dönemin getirisi **eksi** bir önceki eşdeğer dönemin getirisi | (bu dönem) − ({thm.PERIOD_PREV.get(period, "önceki dönem")}) |
+
+İvme pozitifse tema **hızlanıyor**, negatifse **yavaşlıyor**.
+
+Neden ikisi de gerekli: bir tema %18 kazandırmış olabilir, ama önceki dönem
+%39 kazandırdıysa ivme **−21**'dir — para hâlâ giriyor, fakat giriş hızı
+yarıya inmiş; liderlik el değiştirmek üzere olabilir. Tersine −%4 getirili
+bir tema önceki dönem −%15 yaptıysa ivmesi **+11**'dir ve dipten dönüş tam
+buradan başlar.
+
+Bu iki eksen dört çeyrek üretir; asıl karar çeyrekten çıkar:
+""")
+        for q in thm.QUADRANTS.values():
+            st.markdown(f"- {q.icon} **{q.label}** — {q.aciklama}  \n"
+                        f"  _Ne yapmalı:_ {q.aksiyon}")
 
     with st.spinner("Tema performansı hesaplanıyor…"):
         T = theme_performance(st.session_state.nonce_theme)
@@ -3184,6 +3839,61 @@ with tab_theme:
     if T.empty:
         st.warning("Tema verisi çekilemedi.", icon="⚠️")
     else:
+        TQ = thm.build_table(T, period)
+        ornek = thm.worked_example(TQ, period)
+        if ornek:
+            st.info(ornek)
+
+        section("Momentum × İvme haritası")
+        st.caption("Yatay eksen: dönem getirisi. Dikey eksen: ivme (önceki "
+                   "eşdeğer döneme göre hızlanma). Sağ üst çeyrek avlanma "
+                   "sahası, sol üst çeyrek dipten dönüş adayları. Kalabalık "
+                   "olmasın diye sadece merkeze en uzak 16 tema etiketlenir; "
+                   "diğerlerinin adı için noktanın üzerine gelin.")
+        # Etiket kalabalığını önlemek için sadece merkeze en uzak temalar
+        # yazılır; kalanlar noktayla kalır ve üzerine gelince okunur.
+        _mesafe = (TQ["Getiri %"].fillna(0) ** 2 + TQ["İvme"].fillna(0) ** 2) ** 0.5
+        _etiketli = set(_mesafe.nlargest(16).index)
+
+        qfig = go.Figure()
+        for key, q in thm.QUADRANTS.items():
+            sel = TQ[TQ["_q"] == key]
+            if sel.empty:
+                continue
+            qfig.add_trace(go.Scatter(
+                x=sel["Getiri %"], y=sel["İvme"], mode="markers+text",
+                name=f"{q.icon} {q.label}",
+                text=[t if t in _etiketli else "" for t in sel.index],
+                customdata=list(sel.index),
+                textposition="top center", textfont=dict(size=11, color="#d5d5de"),
+                marker=dict(size=13, color=q.renk, line=dict(color="#050506",
+                                                             width=1.5)),
+                hovertemplate=("<b>%{customdata}</b><br>Getiri %{x:.2f}%"
+                               "<br>İvme %{y:+.2f}<extra></extra>")))
+        qfig.add_hline(y=0, line=dict(color="#3a3a48", width=1))
+        qfig.add_vline(x=0, line=dict(color="#3a3a48", width=1))
+        qfig.update_layout(
+            height=560, legend=dict(orientation="h", y=-0.14),
+            xaxis=dict(title="Dönem getirisi %", gridcolor="#1b1b22",
+                       zeroline=False),
+            yaxis=dict(title="İvme (hızlanma)", gridcolor="#1b1b22",
+                       zeroline=False),
+            **CHART_LAYOUT)
+        st.plotly_chart(qfig, width="stretch")
+
+        özet = thm.summary(TQ)
+        if özet:
+            cols = st.columns(len(özet))
+            for col, (key, info) in zip(cols, özet.items()):
+                q = info["quadrant"]
+                col.markdown(kpi(f"{q.icon} {q.label}", f"{info['n']} tema",
+                                 f"ort. getiri %{info['ort_getiri']:+.1f} · "
+                                 f"ort. ivme {info['ort_ivme']:+.1f}",
+                                 "pos" if key == "lider_hizlanan"
+                                 else "neg" if key == "hizlanan_dusus" else ""),
+                            unsafe_allow_html=True)
+
+        section("Sıralı performans")
         srt = T.sort_values(period, ascending=True)
         labels, texts, colors = [], [], []
         for tema, row in srt.iterrows():
@@ -3219,12 +3929,15 @@ with tab_theme:
                                      "filename": f"TemaTakibi_{period}",
                                      "height": 1000, "width": 1400}})
 
-        with st.expander("Tema tablosu (tüm periyotlar)"):
-            show = T.drop(columns=[c for c in T.columns if c.startswith("Prev_")])
+        with st.expander("Tema tablosu — getiri, ivme ve çeyrek"):
+            show = TQ.drop(columns=["_q"])
             st.dataframe(show, width="stretch",
-                         column_config={c: st.column_config.NumberColumn(
-                             format="%+.2f%%")
-                             for c in show.columns if c != "Semboller"})
+                         column_config={
+                             "Getiri %": st.column_config.NumberColumn(format="%+.2f%%"),
+                             "Önceki %": st.column_config.NumberColumn(format="%+.2f%%"),
+                             "İvme": st.column_config.NumberColumn(format="%+.2f"),
+                             "Semboller": st.column_config.TextColumn(width="medium"),
+                         })
 
     # --- Swing yorumu ---
     section("Swing işlem karakteri — canlı tarama")
@@ -3286,8 +3999,9 @@ with tab_etf:
             lambda s: uni.ETF.get(s, {}).get("name")
             or uni.MAIN_SECTORS.get(s, "—"))
         cols = ["Sembol", "Kapsam", "Sinyal", "Efor", "Fiyat", "1 Gün %",
-                "1 Hafta %", "WHALE", "PRO-RET", "OMNI", "HUD /6",
-                "MAGNITUDE", "DIRECTION", "Hata"]
+                "1 Hafta %", "WHALE", "ΔWHALE", "Whale Yön", "PRO-RET",
+                "ΔPRO-RET", "OMNI", "ΔOMNI", "OMNI Yön", "HUD /6",
+                "MAGNITUDE", "ΔMAG", "DIRECTION", "ΔDIR", "Hata"]
         cols = [c for c in cols if c in E.columns]
         st.dataframe(
             E[cols].style.map(signal_style, subset=["Sinyal"]),
@@ -3298,10 +4012,25 @@ with tab_etf:
                 "1 Hafta %": st.column_config.NumberColumn(format="%+.2f%%"),
                 "WHALE": st.column_config.ProgressColumn(
                     format="%.0f", min_value=0, max_value=100),
+                "ΔWHALE": st.column_config.NumberColumn(
+                    format="%+.1f", help="Bir önceki bara göre WHALE değişimi"),
+                "Whale Yön": st.column_config.TextColumn(
+                    width="small",
+                    help="1 barlık ve 5 barlık değişimin birleşimi"),
                 "PRO-RET": st.column_config.NumberColumn(format="%+.1f"),
+                "ΔPRO-RET": st.column_config.NumberColumn(format="%+.1f"),
                 "OMNI": st.column_config.NumberColumn(format="%.0f"),
+                "ΔOMNI": st.column_config.NumberColumn(format="%+.1f"),
+                "OMNI Yön": st.column_config.TextColumn(width="small"),
+                "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
+                "ΔDIR": st.column_config.NumberColumn(format="%+.0f"),
                 "Kapsam": st.column_config.TextColumn(width="medium"),
             })
+        st.caption("**Δ sütunları** bir önceki bara göre değişimi gösterir; "
+                   "**Yön** sütunu 1 barlık ve 5 barlık değişimi birleştirir: "
+                   "⇈ güçleniyor · ↗ dönüyor · → yatay · ↘ soluklanıyor · "
+                   "⇊ bozuluyor. WHALE 72 tek başına anlamsızdır — 60'tan mı "
+                   "yükseldi yoksa 85'ten mi düştü, karar buna bağlıdır.")
 
     # --- ETF içeriği ---
     section("ETF içeriği ve rolleri")
@@ -3382,15 +4111,31 @@ with tab_week:
     W = scan_gate("weekly", universe, "1wk", "Haftalık momentumu tara")
     if not W.empty:
         cols = [c for c in ["Sembol", "Sinyal", "Efor", "Fiyat", "1 Hafta %",
-                            "WHALE", "PRO-RET", "MAGNITUDE", "DIRECTION",
-                            "OMNI", "Hata"] if c in W.columns]
+                            "WHALE", "ΔWHALE", "ΔWHALE 5B", "Whale Yön",
+                            "PRO-RET", "ΔPRO-RET", "MAGNITUDE", "ΔMAG",
+                            "DIRECTION", "ΔDIR", "OMNI", "ΔOMNI", "OMNI Yön",
+                            "Hata"] if c in W.columns]
         st.dataframe(W[cols].style.map(signal_style, subset=["Sinyal"]),
                      width="stretch", hide_index=True,
                      column_config={
                          "Fiyat": st.column_config.NumberColumn(format="$%.2f"),
                          "1 Hafta %": st.column_config.NumberColumn(format="%+.2f%%"),
                          "WHALE": st.column_config.ProgressColumn(
-                             format="%.0f", min_value=0, max_value=100)})
+                             format="%.0f", min_value=0, max_value=100),
+                         "ΔWHALE": st.column_config.NumberColumn(format="%+.1f"),
+                         "ΔWHALE 5B": st.column_config.NumberColumn(
+                             format="%+.1f",
+                             help="5 bar önceki değere göre değişim"),
+                         "Whale Yön": st.column_config.TextColumn(width="small"),
+                         "ΔPRO-RET": st.column_config.NumberColumn(format="%+.1f"),
+                         "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
+                         "ΔDIR": st.column_config.NumberColumn(format="%+.0f"),
+                         "ΔOMNI": st.column_config.NumberColumn(format="%+.1f"),
+                         "OMNI Yön": st.column_config.TextColumn(width="small")})
+        st.caption("Haftalık barlarda Δ, bir hafta önceki değere göre "
+                   "değişimdir; Δ5B ise beş hafta öncesine göre. Kurumsal "
+                   "toplama (WHALE) yükselirken fiyatın yatay kalması, "
+                   "scriptlerdeki 'stealth accumulation' durumudur.")
 
 
 # ==========================================================================
@@ -3470,7 +4215,8 @@ with tab_omni:
                 section("Tavsiye edilen adaylar")
                 show_cols = [c for c in
                              ["Sembol", "ETF", "Skor", "Sinyal", "Karakter", "Fiyat",
-                              "ATR %", "Hacim ($M)", "WHALE", "OMNI", "MAGNITUDE",
+                              "ATR %", "Hacim ($M)", "WHALE", "ΔWHALE",
+                              "Whale Yön", "OMNI", "ΔOMNI", "MAGNITUDE", "ΔMAG",
                               "DIRECTION", "RS Sıra", "Stop", "T1", "T2", "R (T2)",
                               "Risk %", "Bilanço Gün"] if c in uygun.columns]
                 st.dataframe(
@@ -3488,6 +4234,10 @@ with tab_omni:
                         "R (T2)": st.column_config.NumberColumn(format="%.2fR"),
                         "Hacim ($M)": st.column_config.NumberColumn(format="%.0f"),
                         "RS Sıra": st.column_config.NumberColumn(format="%.0f"),
+                        "ΔWHALE": st.column_config.NumberColumn(format="%+.1f"),
+                        "ΔOMNI": st.column_config.NumberColumn(format="%+.1f"),
+                        "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
+                        "Whale Yön": st.column_config.TextColumn(width="small"),
                     })
                 st.caption("**Stop** = iz süren ATR zırhı (low − 2×ATR, sadece yukarı "
                            "kayar, girişten %20 aşağıda sert taban). **T1/T2** = "
