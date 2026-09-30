@@ -2862,67 +2862,136 @@ def fetch(tickers: Iterable[str], interval: str = "1d",
     return out, failed
 
 
-def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
-    """
-    Bilanço tarihleri ve analist hedef fiyatları.
-    yfinance sürümleri arasında `calendar` biçimi değiştiği için üç olasılık
-    da ele alınıyor (sözlük, DataFrame, index'te alan).
-    """
+def _one_fundamental(t: str, today: dt.date) -> dict:
+    import numpy as np
     import yfinance as yf
 
-    rows: list[dict] = []
-    today = dt.date.today()
+    rec = {"Hisse": t, "Bilanço": "—", "Kalan Gün": None,
+           "Fiyat": None, "Hedef": None, "Potansiyel %": None,
+           "Analist": "", "_sort": 99999,
+           "Sektör": "", "Endüstri": "", "Açıklama": "",
+           "_ttm_sps": np.nan, "_fwd_sps": np.nan, "Büyüme %": np.nan,
+           "Satış Tahmin Kaynağı": "", "Piyasa Değ. ($B)": np.nan,
+           "İleri F/K": np.nan, "EV/Satış": np.nan, "İleri HBK": np.nan,
+           "52H Konum %": np.nan}
 
-    for t in sorted({x.strip().upper() for x in tickers if x and x.strip()}):
-        rec = {"Hisse": t, "Bilanço": "—", "Kalan Gün": None,
-               "Fiyat": None, "Hedef": None, "Potansiyel %": None,
-               "Analist": "", "_sort": 99999}
+    def num(x):
         try:
-            tk = yf.Ticker(t)
-            info = {}
-            try:
-                info = tk.info or {}
-            except Exception:
-                pass
+            v = float(x)
+            return v if np.isfinite(v) else np.nan
+        except (TypeError, ValueError):
+            return np.nan
 
-            first_date = None
-            try:
-                cal = tk.calendar
-                if isinstance(cal, dict):
-                    d = cal.get("Earnings Date")
-                    first_date = d[0] if isinstance(d, (list, tuple)) and d else d
-                elif hasattr(cal, "empty") and not cal.empty:
-                    if "Earnings Date" in getattr(cal, "columns", []):
-                        first_date = cal["Earnings Date"].iloc[0]
-                    elif "Earnings Date" in getattr(cal, "index", []):
-                        first_date = cal.loc["Earnings Date"].iloc[0]
-            except Exception:
-                pass
+    try:
+        tk = yf.Ticker(t)
+        info = {}
+        try:
+            info = tk.info or {}
+        except Exception:
+            pass
 
-            if first_date is not None:
-                ed = (first_date.date() if hasattr(first_date, "date")
-                      else pd.to_datetime(first_date).date())
-                delta = (ed - today).days
-                rec["Bilanço"] = ed.strftime("%d.%m.%Y")
-                if delta >= 0:
-                    rec["Kalan Gün"] = delta
-                    rec["_sort"] = delta
-                else:
-                    rec["_sort"] = 90000 - delta   # geçmişler en sona
+        # ---------- bilanço tarihi (eski mantık aynen) ----------
+        first_date = None
+        try:
+            cal = tk.calendar
+            if isinstance(cal, dict):
+                d = cal.get("Earnings Date")
+                first_date = d[0] if isinstance(d, (list, tuple)) and d else d
+            elif hasattr(cal, "empty") and not cal.empty:
+                if "Earnings Date" in getattr(cal, "columns", []):
+                    first_date = cal["Earnings Date"].iloc[0]
+                elif "Earnings Date" in getattr(cal, "index", []):
+                    first_date = cal.loc["Earnings Date"].iloc[0]
+        except Exception:
+            pass
+        if first_date is not None:
+            ed = (first_date.date() if hasattr(first_date, "date")
+                  else pd.to_datetime(first_date).date())
+            delta = (ed - today).days
+            rec["Bilanço"] = ed.strftime("%d.%m.%Y")
+            if delta >= 0:
+                rec["Kalan Gün"] = delta
+                rec["_sort"] = delta
+            else:
+                rec["_sort"] = 90000 - delta
 
-            price = info.get("currentPrice") or info.get("previousClose")
-            target = info.get("targetMeanPrice") or info.get("targetMedianPrice")
-            rec["Fiyat"] = float(price) if isinstance(price, (int, float)) else None
-            rec["Hedef"] = float(target) if isinstance(target, (int, float)) else None
-            if rec["Fiyat"] and rec["Hedef"]:
-                rec["Potansiyel %"] = (rec["Hedef"] / rec["Fiyat"] - 1) * 100
-            n = info.get("numberOfAnalystOpinions")
-            key = info.get("recommendationKey", "")
-            rec["Analist"] = (f"{key} ({n})" if n else str(key or ""))
-        except Exception as exc:
-            _log.info("Bilanço verisi alınamadı (%s): %s", t, exc)
-        rows.append(rec)
+        price = info.get("currentPrice") or info.get("previousClose")
+        target = info.get("targetMeanPrice") or info.get("targetMedianPrice")
+        rec["Fiyat"] = float(price) if isinstance(price, (int, float)) else None
+        rec["Hedef"] = float(target) if isinstance(target, (int, float)) else None
+        if rec["Fiyat"] and rec["Hedef"]:
+            rec["Potansiyel %"] = (rec["Hedef"] / rec["Fiyat"] - 1) * 100
+        n = info.get("numberOfAnalystOpinions")
+        key = info.get("recommendationKey", "")
+        rec["Analist"] = (f"{key} ({n})" if n else str(key or ""))
 
+        # ---------- P/S adil değer için ham veri ----------
+        rec["Sektör"] = info.get("sector", "") or ""
+        rec["Endüstri"] = info.get("industry", "") or ""
+        summ = (info.get("longBusinessSummary") or "").strip()
+        rec["Açıklama"] = (summ.split(". ")[0][:220] + ".") if summ else ""
+
+        shares = num(info.get("sharesOutstanding"))
+        ttm_rev = num(info.get("totalRevenue"))
+        rps = num(info.get("revenuePerShare"))
+        ttm_sps = rps if np.isfinite(rps) and rps > 0 else (
+            ttm_rev / shares if shares and np.isfinite(ttm_rev) else np.nan)
+        rec["_ttm_sps"] = ttm_sps
+
+        fwd_rev, est_growth, kaynak = np.nan, np.nan, ""
+        try:
+            re_ = tk.revenue_estimate
+            if re_ is not None and not re_.empty and "avg" in re_.columns:
+                for idx, lab in (("+1y", "gelecek mali yıl"),
+                                 ("0y", "bu mali yıl")):
+                    if idx in re_.index and np.isfinite(num(re_.loc[idx, "avg"])):
+                        fwd_rev, kaynak = num(re_.loc[idx, "avg"]), lab
+                        if "growth" in re_.columns:
+                            est_growth = num(re_.loc[idx, "growth"]) * 100
+                        break
+        except Exception:
+            pass
+
+        growth = num(info.get("revenueGrowth")) * 100
+        if not np.isfinite(growth):
+            growth = est_growth
+        if np.isfinite(fwd_rev) and shares:
+            rec["_fwd_sps"] = fwd_rev / shares
+        elif np.isfinite(ttm_sps) and np.isfinite(growth):
+            rec["_fwd_sps"] = ttm_sps * (1 + growth / 100)
+            kaynak = "TTM × (1+büyüme) tahmini"
+        if not np.isfinite(growth) and np.isfinite(rec["_fwd_sps"]) \
+                and np.isfinite(ttm_sps) and ttm_sps > 0:
+            growth = (rec["_fwd_sps"] / ttm_sps - 1) * 100
+        rec["Büyüme %"] = growth
+        rec["Satış Tahmin Kaynağı"] = kaynak
+
+        mc = num(info.get("marketCap"))
+        rec["Piyasa Değ. ($B)"] = mc / 1e9 if np.isfinite(mc) else np.nan
+        rec["İleri F/K"] = num(info.get("forwardPE"))
+        rec["EV/Satış"] = num(info.get("enterpriseToRevenue"))
+        rec["İleri HBK"] = num(info.get("forwardEps"))
+        hi, lo = num(info.get("fiftyTwoWeekHigh")), num(info.get("fiftyTwoWeekLow"))
+        if rec["Fiyat"] and np.isfinite(hi) and np.isfinite(lo) and hi > lo:
+            rec["52H Konum %"] = (rec["Fiyat"] - lo) / (hi - lo) * 100
+    except Exception as exc:
+        _log.info("Bilanço/temel veri alınamadı (%s): %s", t, exc)
+    return rec
+
+
+def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
+    """
+    Bilanço tarihleri, analist hedefleri ve P/S adil değer için ham temel veri.
+    Adil değer sütunları app tarafında valuation.add_fair_values() ile eklenir.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    today = dt.date.today()
+    syms = sorted({x.strip().upper() for x in tickers if x and x.strip()})
+    if not syms:
+        return pd.DataFrame()
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        rows = list(ex.map(lambda s: _one_fundamental(s, today), syms))
     df = pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"])
     return df.reset_index(drop=True)
 
@@ -4809,6 +4878,422 @@ def report_filename(prefix: str = "aether_apex") -> str:
     return f"{prefix}_{dt.datetime.now():%Y%m%d_%H%M}.pdf"
 
 # ==========================================================================
+# KAYNAK: apex/valuation.py
+# ==========================================================================
+"""
+apex/valuation.py — Satış çarpanına dayalı adil değer (P/S Fair Value)
+
+Mantık ("Trader's glance" kartındaki yöntem):
+
+  1. Sektör/endüstri için "normal" ileri P/S çarpanı seçilir
+     (ör. yazılım ≈ 10x gelecek yıl satışı).
+  2. Adil orta = çarpan × gelecek yıl satış / hisse
+     Adil bant  = orta × (1 ± bant)   (varsayılan ±%12)
+  3. PSG = (fiyat / TTM satış-hisse) / büyüme%   — büyümeye göre P/S
+     Pahalı eşiği = PSG'nin `psg_max` olduğu fiyat
+     = psg_max × büyüme% × TTM satış/hisse       (varsayılan 0.60)
+  4. Durum:
+       fiyat < bant altı                → 🟢 UCUZ
+       bant altı ≤ fiyat ≤ pahalı eşiği → 🟡 ADİL (bant üstündeyse
+                                           "büyüme destekli" notu)
+       fiyat > pahalı eşiği             → 🔴 PAHALI
+
+Not: Pahalı eşiği kartta açıkça yazmıyor; RBRK kartındaki rakamlardan
+(fiyat 113.28, P/S 15x, PSG 0.39, pahalı 175.17) geri hesaplanınca
+PSG ≈ 0.60'a denk geliyor. Arayüzden değiştirilebilir.
+
+Veri katmanı (data.py) yalnızca ham alanları çeker; hesap burada yapılır.
+Böylece çarpan tablosu arayüzde düzenlendiğinde yeniden veri çekilmez.
+"""
+
+
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+# --------------------------------------------------------------------------
+# Varsayılan ileri P/S çarpanları — BAŞLANGIÇ DEĞERLERİDİR, arayüzden düzenlenir.
+# None = satış çarpanı bu iş modelinde anlamsız (banka, sigorta, petrol, GYO):
+# bu şirketlerde P/S adil değeri hesaplanmaz.
+# Eşleşme endüstri adında anahtar kelime aramasıyla yapılır (yfinance
+# `industry` alanı); ilk eşleşen kazanır, bu yüzden özelden genele sıralı.
+# --------------------------------------------------------------------------
+INDUSTRY_PS: dict[str, float | None] = {
+    "Software": 10.0,
+    "Semiconductor Equipment": 7.0,
+    "Semiconductors": 8.0,
+    "Internet Content": 6.0,
+    "Information Technology Services": 3.0,
+    "Communication Equipment": 3.5,
+    "Computer Hardware": 2.5,
+    "Electronic Components": 3.5,
+    "Scientific & Technical Instruments": 4.0,
+    "Biotechnology": 6.0,
+    "Drug Manufacturers": 4.0,
+    "Medical Devices": 5.0,
+    "Medical Instruments": 5.0,
+    "Diagnostics": 4.0,
+    "Health Information": 5.0,
+    "Aerospace & Defense": 2.5,
+    "Utilities": 3.0,
+    "Uranium": 8.0,
+    "Solar": 3.0,
+    "Electrical Equipment": 3.0,
+    "Specialty Industrial Machinery": 3.0,
+    "Engineering & Construction": 1.5,
+    "Auto Manufacturers": 1.5,
+    "Internet Retail": 2.5,
+    "Copper": 2.5,
+    "Gold": 4.0,
+    "Other Industrial Metals": 2.5,
+    "Banks": None,
+    "Insurance": None,
+    "Capital Markets": None,
+    "Asset Management": None,
+    "Oil & Gas": None,
+    "REIT": None,
+    "Real Estate": None,
+}
+
+# Endüstri eşleşmezse sektöre düşülür
+SECTOR_PS: dict[str, float | None] = {
+    "Technology": 6.0,
+    "Communication Services": 3.0,
+    "Healthcare": 4.0,
+    "Industrials": 2.0,
+    "Consumer Cyclical": 1.5,
+    "Consumer Defensive": 1.5,
+    "Basic Materials": 2.0,
+    "Utilities": 3.0,
+    "Energy": None,
+    "Financial Services": None,
+    "Real Estate": None,
+}
+
+DEFAULT_BAND = 0.12      # adil bant ±%12
+DEFAULT_PSG_MAX = 0.60   # bu PSG'nin üstü "pahalı"
+
+
+def pick_multiple(industry: str, sector: str,
+                  ind_map: dict[str, float | None] | None = None,
+                  sec_map: dict[str, float | None] | None = None
+                  ) -> tuple[float | None, str]:
+    """Endüstri → sektör sırasıyla çarpanı bulur. Döner: (çarpan, kaynak)."""
+    ind_map = INDUSTRY_PS if ind_map is None else ind_map
+    sec_map = SECTOR_PS if sec_map is None else sec_map
+    ind = (industry or "").lower()
+    for key, mult in ind_map.items():
+        if key.lower() in ind:
+            return mult, key
+    if sector in sec_map:
+        return sec_map[sector], f"{sector} (sektör)"
+    return None, "eşleşme yok"
+
+
+def _f(x: Any) -> float:
+    try:
+        v = float(x)
+        return v if np.isfinite(v) else np.nan
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def compute_fair_value(rec: dict[str, Any],
+                       ind_map: dict[str, float | None] | None = None,
+                       sec_map: dict[str, float | None] | None = None,
+                       band: float = DEFAULT_BAND,
+                       psg_max: float = DEFAULT_PSG_MAX) -> dict[str, Any]:
+    """
+    `rec`: data.fetch_fundamentals() satırı (Fiyat, TTM SPS, İleri SPS,
+    Büyüme %, Endüstri, Sektör). Döner: adil değer alanları.
+    """
+    price = _f(rec.get("Fiyat"))
+    ttm_sps = _f(rec.get("_ttm_sps"))
+    fwd_sps = _f(rec.get("_fwd_sps"))
+    g_pct = _f(rec.get("Büyüme %"))
+    mult, kaynak = pick_multiple(rec.get("Endüstri", ""), rec.get("Sektör", ""),
+                                 ind_map, sec_map)
+
+    out: dict[str, Any] = {
+        "Çarpan": mult, "Çarpan Kaynağı": kaynak,
+        "P/S": price / ttm_sps if ttm_sps and np.isfinite(price) else np.nan,
+        "İleri P/S": price / fwd_sps if fwd_sps and np.isfinite(price) else np.nan,
+        "PSG": np.nan, "Adil Alt": np.nan, "Adil Orta": np.nan,
+        "Adil Üst": np.nan, "Pahalı >": np.nan, "Adile Uzaklık %": np.nan,
+        "P/S Durum": "➖ Hesaplanamadı",
+    }
+
+    if mult is None:
+        out["P/S Durum"] = "➖ P/S uygun değil"
+        return out
+    if not (np.isfinite(price) and np.isfinite(fwd_sps) and fwd_sps > 0):
+        out["P/S Durum"] = "➖ Satış tahmini yok"
+        return out
+
+    mid = mult * fwd_sps
+    lo, hi = mid * (1 - band), mid * (1 + band)
+    out.update({"Adil Alt": lo, "Adil Orta": mid, "Adil Üst": hi,
+                "Adile Uzaklık %": (price / mid - 1) * 100})
+
+    expensive = np.nan
+    if np.isfinite(g_pct) and g_pct > 0 and np.isfinite(ttm_sps) and ttm_sps > 0:
+        out["PSG"] = (price / ttm_sps) / g_pct
+        expensive = psg_max * g_pct * ttm_sps
+    # Büyüme yoksa/negatifse PSG tanımsız: pahalı eşiği bandın üstüne 2 bant
+    if not np.isfinite(expensive):
+        expensive = mid * (1 + 3 * band)
+    # Pahalı eşiği adil bandın altına düşemez (düşük büyümede anlamsızlaşır)
+    expensive = max(expensive, hi)
+    out["Pahalı >"] = expensive
+
+    if price < lo:
+        out["P/S Durum"] = "🟢 UCUZ"
+    elif price > expensive:
+        out["P/S Durum"] = "🔴 PAHALI"
+    elif price > hi:
+        out["P/S Durum"] = "🟡 ADİL (bant üstü, büyüme destekli)"
+    else:
+        out["P/S Durum"] = "🟡 ADİL"
+    return out
+
+
+def add_fair_values(df: pd.DataFrame, **kw) -> pd.DataFrame:
+    """Temel veri tablosunun her satırına adil değer sütunlarını ekler."""
+    if df is None or df.empty:
+        return df
+    fv = pd.DataFrame([compute_fair_value(r, **kw)
+                       for r in df.to_dict("records")], index=df.index)
+    return pd.concat([df, fv], axis=1)
+
+
+def glance_text(r: dict[str, Any]) -> str:
+    """Tek hisse için 'Trader's glance' kartının Türkçe karşılığı (markdown)."""
+    def m(x, spec=".2f", pre="$"):
+        return f"{pre}{x:{spec}}" if np.isfinite(_f(x)) else "—"
+
+    durum = r.get("P/S Durum", "➖")
+    lines = [f"**Hızlı bakış — `{r.get('Hisse', '')}` {m(r.get('Fiyat'))}**", "",
+             f"{durum} — satışlarına göre."]
+    if r.get("Açıklama"):
+        lines += ["", r["Açıklama"]]
+    ps, fps = _f(r.get("P/S")), _f(r.get("İleri P/S"))
+    if np.isfinite(ps):
+        lines += ["", f"Şu an {ps:.1f}x satış"
+                  + (f", gelecek yılın {fps:.1f}x katı ile işlem görüyor."
+                     if np.isfinite(fps) else " ile işlem görüyor.")]
+    mult = r.get("Çarpan")
+    if mult:
+        lines += [f"**{r.get('Çarpan Kaynağı', '')}** için normal çarpan ≈ {mult:g}x."]
+        lines += [f"Adil aralık **{m(r.get('Adil Alt'))} – {m(r.get('Adil Üst'))}** "
+                  f"({mult:g}x gelecek yıl satışı, ±bant).",
+                  f"Pahalı eşiği: **{m(r.get('Pahalı >'))}** üstü."]
+    ek = []
+    if np.isfinite(_f(r.get("Piyasa Değ. ($B)"))):
+        ek.append(f"PD ${_f(r['Piyasa Değ. ($B)']):.1f}B")
+    if np.isfinite(_f(r.get("İleri F/K"))):
+        ek.append(f"İleri F/K {_f(r['İleri F/K']):.1f}x")
+    if np.isfinite(_f(r.get("EV/Satış"))):
+        ek.append(f"EV/Satış {_f(r['EV/Satış']):.1f}x")
+    if np.isfinite(_f(r.get("PSG"))):
+        ek.append(f"PSG {_f(r['PSG']):.2f}")
+    if np.isfinite(_f(r.get("Büyüme %"))):
+        ek.append(f"Büyüme %{_f(r['Büyüme %']):.0f}")
+    if np.isfinite(_f(r.get("52H Konum %"))):
+        ek.append(f"52H %{_f(r['52H Konum %']):.0f}")
+    if np.isfinite(_f(r.get("Hedef"))):
+        ek.append(f"Analist hedefi {m(r.get('Hedef'))}")
+    if ek:
+        lines += ["", " · ".join(ek)]
+    return "  \n".join(lines)
+
+# ==========================================================================
+# KAYNAK: apex/shortvol.py
+# ==========================================================================
+"""
+apex/shortvol.py — FINRA günlük short hacmi (Reg SHO) ve haftalık değişim
+
+Kaynak: FINRA'nın ücretsiz yayımladığı konsolide günlük dosya
+  https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt
+  Biçim: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
+  Her iş günü ABD saatiyle ~18:00'den sonra yayımlanır.
+
+ÖNEMLİ — okuma şekli:
+  * Bu "short HACMİ"dir, "short INTEREST" (açık pozisyon) değildir.
+    Piyasa yapıcıların alıcıya hisse sağlamak için yaptığı gün içi açığa
+    satışlar da buraya girer; bu yüzden çoğu hissede oran zaten %35–55
+    arasındadır. Anlamlı olan SEVİYE değil, hissenin KENDİ ortalamasına
+    göre DEĞİŞİMDİR.
+  * Hacim yalnızca FINRA'ya raporlanan (TRF/ADF) işlemleri kapsar,
+    borsa içi (lit) işlemleri tamamen kapsamaz. "TotalVolume" bu yüzden
+    yfinance'teki toplam hacimden düşüktür — oran kendi içinde tutarlıdır.
+  * OTC hisseler (FANUY, YASKY vb.) ve kripto CNMS dosyasında yoktur.
+"""
+
+
+import datetime as dt
+import io
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from typing import Iterable
+
+import numpy as np
+import pandas as pd
+import requests
+
+_log = logging.getLogger(__name__)
+
+FINRA_URL = "https://cdn.finra.org/equity/regsho/daily/CNMSshvol{d}.txt"
+WINDOW = 5          # "bu hafta" = son 5 işlem günü
+Z_LEN = 20          # z-skoru için taban pencere
+ESIK_PP = 3.0       # anlamlı değişim eşiği (yüzde puan)
+
+
+def _us_today() -> dt.date:
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:                                   # pragma: no cover
+        return dt.date.today()
+
+
+def _weekdays_back(n_days: int, end: dt.date | None = None) -> list[dt.date]:
+    end = end or _us_today()
+    out, d = [], end
+    while len(out) < n_days:
+        if d.weekday() < 5:
+            out.append(d)
+        d -= dt.timedelta(days=1)
+    return out
+
+
+def _fetch_day(d: dt.date, timeout: int = 15) -> pd.DataFrame | None:
+    url = FINRA_URL.format(d=d.strftime("%Y%m%d"))
+    try:
+        r = requests.get(url, timeout=timeout,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200 or not r.content:
+            return None                      # tatil ya da henüz yayımlanmamış
+        df = pd.read_csv(io.BytesIO(r.content), sep="|",
+                         dtype={"Symbol": str})
+        df = df[pd.to_numeric(df["Date"], errors="coerce").notna()]  # alt satır
+        df["Date"] = pd.to_datetime(df["Date"].astype(int).astype(str),
+                                    format="%Y%m%d")
+        return df[["Date", "Symbol", "ShortVolume", "TotalVolume"]]
+    except Exception as exc:
+        _log.info("FINRA %s alınamadı: %s", d, exc)
+        return None
+
+
+def fetch_short_volume(trading_days: int = 30) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Son `trading_days` iş gününün FINRA dosyalarını paralel çeker.
+    Döner: (uzun tablo: Date, Symbol, ShortVolume, TotalVolume; uyarılar)
+    Tatiller ve henüz yayımlanmamış bugünün dosyası sessizce atlanır.
+    """
+    days = _weekdays_back(trading_days + 4)  # tatil payı
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        frames = list(ex.map(_fetch_day, days))
+    ok = [f for f in frames if f is not None and not f.empty]
+    warns: list[str] = []
+    if not ok:
+        warns.append("FINRA short hacim dosyalarına ulaşılamadı.")
+        return pd.DataFrame(columns=["Date", "Symbol", "ShortVolume",
+                                     "TotalVolume"]), warns
+    df = pd.concat(ok, ignore_index=True)
+    last = df["Date"].max()
+    if (pd.Timestamp(_us_today()) - last).days > 4:
+        warns.append(f"En son FINRA verisi {last:%d.%m.%Y} tarihli.")
+    return df, warns
+
+
+def to_finra_symbol(t: str) -> str:
+    """yfinance → FINRA: BRK-B → BRK.B"""
+    return t.replace("-", ".").upper()
+
+
+def _arrow(d_pp: float) -> str:
+    if not np.isfinite(d_pp):
+        return "—"
+    if d_pp >= ESIK_PP:
+        return "⬆️ artıyor"
+    if d_pp <= -ESIK_PP:
+        return "⬇️ azalıyor"
+    return "→ yatay"
+
+
+def interpret(d_pp: float, price_chg: float, z: float) -> str:
+    """Short hacim değişimi + fiyat yönü → tek cümlelik okuma."""
+    if not np.isfinite(d_pp):
+        return "Veri yok"
+    up, dn = d_pp >= ESIK_PP, d_pp <= -ESIK_PP
+    p_up = np.isfinite(price_chg) and price_chg > 0
+    p_dn = np.isfinite(price_chg) and price_chg < 0
+    uc = " (aşırı uç)" if np.isfinite(z) and abs(z) >= 2 else ""
+    if up and p_dn:
+        return "🔴 Short baskısı artıyor, fiyat düşüyor" + uc
+    if up and p_up:
+        return "🟠 Yükselişe karşı short artıyor — ya dağıtım ya squeeze yakıtı" + uc
+    if dn and p_up:
+        return "🟢 Short çekiliyor, fiyat yükseliyor — kapama desteği" + uc
+    if dn and p_dn:
+        return "🟡 Short azalıyor ama fiyat düşüyor — satış uzun taraftan" + uc
+    if up:
+        return "🟠 Short hacmi artıyor" + uc
+    if dn:
+        return "🟢 Short hacmi azalıyor" + uc
+    return "⚪ Belirgin değişim yok"
+
+
+def short_table(raw: pd.DataFrame, tickers: Iterable[str],
+                price_chg: dict[str, float] | None = None,
+                spark_n: int = 15) -> pd.DataFrame:
+    """
+    Her sembol için: son 5 gün short oranı, önceki 5 gün, fark (pp),
+    short hacmindeki % değişim, 20 günlük z-skoru, seyir listesi, yorum.
+    """
+    price_chg = price_chg or {}
+    tickers = list(dict.fromkeys(t.upper() for t in tickers))
+    cols = ["Sembol", "SV% 5G", "SV% Önceki 5G", "ΔSV pp", "Short Hacim Δ%",
+            "SV% Z", "SV Yön", "SV Seyri", "Short Yorum", "SV Son Gün"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols)
+
+    fmap = {to_finra_symbol(t): t for t in tickers}
+    sub = raw[raw["Symbol"].isin(fmap)].copy()
+    sub = (sub.groupby(["Symbol", "Date"], as_index=False)
+              [["ShortVolume", "TotalVolume"]].sum())
+    sub["ratio"] = sub["ShortVolume"] / sub["TotalVolume"].replace(0, np.nan) * 100
+
+    rows = []
+    for fsym, g in sub.groupby("Symbol"):
+        g = g.sort_values("Date")
+        t = fmap[fsym]
+        last5, prev5 = g.tail(WINDOW), g.iloc[-2 * WINDOW:-WINDOW]
+        # hacim ağırlıklı oran (günlük oranların ortalaması yerine)
+        r5 = last5["ShortVolume"].sum() / max(last5["TotalVolume"].sum(), 1) * 100
+        rp = (prev5["ShortVolume"].sum() / max(prev5["TotalVolume"].sum(), 1) * 100
+              if len(prev5) else np.nan)
+        sv5, svp = last5["ShortVolume"].sum(), prev5["ShortVolume"].sum()
+        base = g["ratio"].iloc[:-1].tail(Z_LEN)
+        z = ((g["ratio"].iloc[-1] - base.mean()) / base.std(ddof=0)
+             if len(base) >= 10 and base.std(ddof=0) > 0 else np.nan)
+        d_pp = r5 - rp if np.isfinite(rp) else np.nan
+        rows.append({
+            "Sembol": t,
+            "SV% 5G": r5,
+            "SV% Önceki 5G": rp,
+            "ΔSV pp": d_pp,
+            "Short Hacim Δ%": (sv5 / svp - 1) * 100 if svp else np.nan,
+            "SV% Z": z,
+            "SV Yön": _arrow(d_pp),
+            "SV Seyri": [round(float(x), 1) for x in g["ratio"].tail(spark_n)],
+            "Short Yorum": interpret(d_pp, price_chg.get(t, np.nan), z),
+            "SV Son Gün": g["Date"].iloc[-1].strftime("%d.%m"),
+        })
+    return pd.DataFrame(rows, columns=cols)
+
+# ==========================================================================
 # KAYNAK: app.py
 # ==========================================================================
 
@@ -4825,7 +5310,7 @@ class _Namespace:
             raise AttributeError(name) from exc
 
 
-dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = _Namespace()
+dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = fvm = svm = _Namespace()
 
 
 
@@ -4995,13 +5480,19 @@ def load_earnings(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     return dta.fetch_earnings_calendar(tickers)
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_short_volume(nonce: str):
+    """FINRA günlük short hacmi — son ~30 iş günü. Günde bir güncellenir."""
+    return svm.fetch_short_volume(30)
+
+
 # ==========================================================================
 # DURUM
 # ==========================================================================
 def _init_state() -> None:
     defaults = {
         "nonce_macro": "0", "nonce_scan": "0", "nonce_theme": "0",
-        "nonce_news": "0", "nonce_earn": "0",
+        "nonce_news": "0", "nonce_earn": "0", "nonce_short": "0",
         "manual_scenario": None,
     }
     for k, v in defaults.items():
@@ -5020,6 +5511,9 @@ def _init_state() -> None:
             "future_themes": saved.get("future_themes")
             or {k: dict(v) for k, v in uni.DEFAULT_FUTURE_THEMES.items()},
             "earnings": saved.get("earnings") or list(uni.DEFAULT_EARNINGS),
+            # P/S adil değer çarpan tablosu (kaydedilmişse)
+            **({"ps_multiples": saved["ps_multiples"]}
+               if isinstance(saved.get("ps_multiples"), dict) else {}),
         }
 
 
@@ -5947,36 +6441,135 @@ with tab_val:
 with tab_week:
     if st.button("🔄 Haftalık veriyi yenile", key="wk"):
         bump("nonce_scan")
+        bump("nonce_short")
         st.rerun()
     universe = uni.all_stocks()
     W = scan_gate("weekly", universe, "1wk", "Haftalık momentumu tara")
     if not W.empty:
-        cols = [c for c in ["Sembol", "Sinyal", "Efor", "Fiyat", "1 Hafta %",
-                            "WHALE", "ΔWHALE", "ΔWHALE 5B", "Whale Yön",
+        W = W.copy()
+        # Haftalık barlarda motorun "1 Gün %" sütunu = 1 bar = 1 HAFTA,
+        # "1 Hafta %" sütunu = 5 bar = 5 HAFTA. Etiketler buna göre düzeltildi.
+        W = W.rename(columns={"1 Gün %": "Haftalık %", "1 Hafta %": "5 Hafta %"})
+
+        # ---------- FINRA short hacmi ----------
+        with st.spinner("FINRA short hacim dosyaları çekiliyor…"):
+            SVRAW, sv_warn = load_short_volume(st.session_state.nonce_short)
+        for w_ in sv_warn:
+            st.caption(f"⚠️ {w_}")
+        pchg = dict(zip(W["Sembol"],
+                        pd.to_numeric(W.get("Haftalık %"), errors="coerce")))
+        SVT = svm.short_table(SVRAW, W["Sembol"].tolist(), pchg)
+        W = W.merge(SVT, on="Sembol", how="left")
+        # eşleşmeyen satırlarda NaN kalırsa çizgi grafik sütunu hata verir
+        W["SV Seyri"] = W["SV Seyri"].apply(
+            lambda x: x if isinstance(x, list) else None)
+        W["SV Yön"] = W["SV Yön"].fillna("—")
+        W["Short Yorum"] = W["Short Yorum"].fillna("Veri yok (OTC/kripto)")
+
+        sv_filter = st.radio(
+            "Short hacim filtresi",
+            ["Tümü", "⬆️ Short artanlar", "⬇️ Short azalanlar",
+             "Aşırı uç (|Z| ≥ 2)"],
+            horizontal=True, key="sv_filter")
+        view = W
+        if sv_filter.startswith("⬆️"):
+            view = W[W["ΔSV pp"] >= svm.ESIK_PP].sort_values("ΔSV pp",
+                                                             ascending=False)
+        elif sv_filter.startswith("⬇️"):
+            view = W[W["ΔSV pp"] <= -svm.ESIK_PP].sort_values("ΔSV pp")
+        elif sv_filter.startswith("Aşırı"):
+            view = W[W["SV% Z"].abs() >= 2].sort_values("SV% Z",
+                                                         ascending=False)
+
+        cols = [c for c in ["Sembol", "Sinyal", "Efor", "Fiyat", "Haftalık %",
+                            "5 Hafta %", "WHALE", "ΔWHALE", "ΔWHALE 5B",
+                            "Whale Yön", "SV% 5G", "ΔSV pp", "Short Hacim Δ%",
+                            "SV% Z", "SV Yön", "SV Seyri", "Short Yorum",
                             "PRO-RET", "ΔPRO-RET", "MAGNITUDE", "ΔMAG",
                             "DIRECTION", "ΔDIR", "OMNI", "ΔOMNI", "OMNI Yön",
-                            "Hata"] if c in W.columns]
-        st.dataframe(W[cols].style.map(signal_style, subset=["Sinyal"]),
-                     width="stretch", hide_index=True,
-                     column_config={
-                         "Fiyat": st.column_config.NumberColumn(format="$%.2f"),
-                         "1 Hafta %": st.column_config.NumberColumn(format="%+.2f%%"),
-                         "WHALE": st.column_config.ProgressColumn(
-                             format="%.0f", min_value=0, max_value=100),
-                         "ΔWHALE": st.column_config.NumberColumn(format="%+.1f"),
-                         "ΔWHALE 5B": st.column_config.NumberColumn(
-                             format="%+.1f",
-                             help="5 bar önceki değere göre değişim"),
-                         "Whale Yön": st.column_config.TextColumn(width="small"),
-                         "ΔPRO-RET": st.column_config.NumberColumn(format="%+.1f"),
-                         "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
-                         "ΔDIR": st.column_config.NumberColumn(format="%+.0f"),
-                         "ΔOMNI": st.column_config.NumberColumn(format="%+.1f"),
-                         "OMNI Yön": st.column_config.TextColumn(width="small")})
+                            "SV Son Gün", "Hata"] if c in view.columns]
+        st.dataframe(
+            view[cols].style.map(signal_style, subset=["Sinyal"]),
+            width="stretch", hide_index=True,
+            column_config={
+                "Fiyat": st.column_config.NumberColumn(format="$%.2f"),
+                "Haftalık %": st.column_config.NumberColumn(
+                    format="%+.2f%%", help="Son haftalık barın değişimi"),
+                "5 Hafta %": st.column_config.NumberColumn(format="%+.2f%%"),
+                "WHALE": st.column_config.ProgressColumn(
+                    format="%.0f", min_value=0, max_value=100),
+                "ΔWHALE": st.column_config.NumberColumn(format="%+.1f"),
+                "ΔWHALE 5B": st.column_config.NumberColumn(
+                    format="%+.1f", help="5 bar önceki değere göre değişim"),
+                "Whale Yön": st.column_config.TextColumn(width="small"),
+                "SV% 5G": st.column_config.NumberColumn(
+                    format="%.1f%%",
+                    help="Son 5 işlem gününde short hacmin toplam hacme oranı "
+                         "(hacim ağırlıklı)"),
+                "ΔSV pp": st.column_config.NumberColumn(
+                    format="%+.1f",
+                    help="Son 5 gün oranı − önceki 5 gün oranı (yüzde puan)"),
+                "Short Hacim Δ%": st.column_config.NumberColumn(
+                    format="%+.0f%%",
+                    help="Short hisse adedinin önceki 5 güne göre değişimi"),
+                "SV% Z": st.column_config.NumberColumn(
+                    format="%+.1f",
+                    help="Son günün oranı, hissenin kendi 20 günlük "
+                         "ortalamasından kaç σ uzakta"),
+                "SV Yön": st.column_config.TextColumn(width="small"),
+                "SV Seyri": st.column_config.LineChartColumn(
+                    "SV% Seyri", y_min=0, y_max=100, width="small",
+                    help="Son 15 işlem günü günlük short hacim oranı"),
+                "Short Yorum": st.column_config.TextColumn(width="large"),
+                "ΔPRO-RET": st.column_config.NumberColumn(format="%+.1f"),
+                "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
+                "ΔDIR": st.column_config.NumberColumn(format="%+.0f"),
+                "ΔOMNI": st.column_config.NumberColumn(format="%+.1f"),
+                "OMNI Yön": st.column_config.TextColumn(width="small")})
         st.caption("Haftalık barlarda Δ, bir hafta önceki değere göre "
                    "değişimdir; Δ5B ise beş hafta öncesine göre. Kurumsal "
                    "toplama (WHALE) yükselirken fiyatın yatay kalması, "
                    "scriptlerdeki 'stealth accumulation' durumudur.")
+
+        # ---------- en büyük değişimler ----------
+        section("Short hacminde en büyük haftalık değişimler")
+        sv_ok = W.dropna(subset=["ΔSV pp"])
+        if sv_ok.empty:
+            st.info("Short hacim verisi eşleşmedi.")
+        else:
+            mini = ["Sembol", "SV% 5G", "ΔSV pp", "Haftalık %", "WHALE",
+                    "Short Yorum"]
+            mini = [c for c in mini if c in sv_ok.columns]
+            mcfg = {"SV% 5G": st.column_config.NumberColumn(format="%.1f%%"),
+                    "ΔSV pp": st.column_config.NumberColumn(format="%+.1f"),
+                    "Haftalık %": st.column_config.NumberColumn(format="%+.2f%%"),
+                    "WHALE": st.column_config.NumberColumn(format="%.0f")}
+            a, b = st.columns(2)
+            a.markdown("**⬆️ Short en çok artan 10**")
+            a.dataframe(sv_ok.nlargest(10, "ΔSV pp")[mini], width="stretch",
+                        hide_index=True, column_config=mcfg)
+            b.markdown("**⬇️ Short en çok azalan 10**")
+            b.dataframe(sv_ok.nsmallest(10, "ΔSV pp")[mini], width="stretch",
+                        hide_index=True, column_config=mcfg)
+
+        with st.expander("Short hacmi nasıl okunur?"):
+            st.markdown(f"""
+- **Kaynak:** FINRA Reg SHO günlük dosyası (ücretsiz, her iş günü ABD
+  akşamı yayımlanır). Son veri: **{SVT['SV Son Gün'].dropna().max()
+  if not SVT.empty else '—'}**.
+- **Short HACMİ ≠ short INTEREST.** Piyasa yapıcıların alıcıya hisse
+  sağlamak için yaptığı gün içi açığa satışlar da buraya girer; çoğu
+  hissede oran zaten %35–55'tir. Bu yüzden **seviyeye değil değişime**
+  bakın: ΔSV pp (son 5 gün − önceki 5 gün) ve Z (hissenin kendi 20
+  günlük ortalamasından sapma).
+- Anlamlı değişim eşiği **±{svm.ESIK_PP:.0f} puan**; |Z| ≥ 2 aşırı uç.
+- **Okuma matrisi:** short ↑ + fiyat ↓ = baskı · short ↑ + fiyat ↑ =
+  dağıtım ya da squeeze yakıtı (WHALE'e bakın: WHALE yükseliyorsa squeeze
+  tarafı) · short ↓ + fiyat ↑ = kapama desteği · short ↓ + fiyat ↓ =
+  satış uzun pozisyonlardan geliyor.
+- OTC semboller (FANUY, YASKY…) ve kripto FINRA konsolide dosyasında
+  olmadığı için boş kalır.
+""")
 
 
 # ==========================================================================
@@ -6228,10 +6821,74 @@ with tab_earn:
         bump("nonce_earn")
         st.rerun()
 
-    with st.spinner("Bilanço tarihleri ve analist hedefleri çekiliyor…"):
+    with st.spinner("Bilanço tarihleri, analist hedefleri ve satış verisi çekiliyor…"):
         EARN = load_earnings(tuple(lst), st.session_state.nonce_earn)
 
     if not EARN.empty:
+        # ---------- P/S adil değer ayarları ----------
+        wlst = st.session_state.watchlist
+        saved_mult = wlst.get("ps_multiples")
+        ind_map = ({k: (None if v is None else float(v))
+                    for k, v in saved_mult.items()}
+                   if isinstance(saved_mult, dict) and saved_mult
+                   else dict(fvm.INDUSTRY_PS))
+
+        with st.expander("⚙️ P/S adil değer ayarları (çarpan tablosu, bant, "
+                         "pahalı eşiği)"):
+            st.markdown(
+                "**Yöntem:** Adil orta = *endüstri çarpanı × gelecek yıl "
+                "satış/hisse*; adil bant = orta ± bant. **PSG** = (fiyat / "
+                "TTM satış-hisse) ÷ büyüme %. **Pahalı eşiği**, PSG'nin "
+                "aşağıdaki değere ulaştığı fiyattır. Bant üstünde ama pahalı "
+                "eşiğinin altındaysa hisse *büyüme destekli adil* sayılır.")
+            p1, p2 = st.columns(2)
+            band = p1.slider("Adil bant ±%", 5, 30,
+                             int(fvm.DEFAULT_BAND * 100), 1) / 100
+            psg_max = p2.slider("Pahalı eşiği (PSG)", 0.30, 1.50,
+                                fvm.DEFAULT_PSG_MAX, 0.05)
+            st.caption("Çarpan tablosu endüstri adında anahtar kelime "
+                       "arar; ilk eşleşen kazanır. Boş bırakılan çarpan = "
+                       "P/S bu iş modelinde anlamsız (banka, sigorta, petrol, "
+                       "GYO). Eşleşmeyen endüstri sektör varsayılanına düşer.")
+            med = st.data_editor(
+                pd.DataFrame({"Endüstri anahtarı": list(ind_map),
+                              "İleri P/S çarpanı": list(ind_map.values())}),
+                num_rows="dynamic", hide_index=True, width="stretch",
+                key="ps_mult_editor",
+                column_config={"İleri P/S çarpanı": st.column_config.NumberColumn(
+                    min_value=0.1, max_value=60.0, step=0.5, format="%.1fx")})
+            ind_map = {str(r["Endüstri anahtarı"]).strip():
+                       (None if pd.isna(r["İleri P/S çarpanı"])
+                        else float(r["İleri P/S çarpanı"]))
+                       for _, r in med.iterrows()
+                       if str(r["Endüstri anahtarı"]).strip()
+                       and str(r["Endüstri anahtarı"]) != "nan"}
+            s1, s2 = st.columns(2)
+            if s1.button("💾 Çarpanları kaydet", width="stretch"):
+                wlst["ps_multiples"] = ind_map
+                if save_watchlist():
+                    st.success("Çarpan tablosu kaydedildi.")
+            if s2.button("↩️ Varsayılana dön", width="stretch"):
+                wlst.pop("ps_multiples", None)
+                save_watchlist()
+                st.rerun()
+
+        EARN = fvm.add_fair_values(EARN, ind_map=ind_map, band=band,
+                                   psg_max=psg_max)
+
+        # İki kaynağın (analist hedefi + P/S orta) aynı yönü gösterip
+        # göstermediği — tek başına hiçbiri değerleme modeli değildir.
+        def _uyum(r):
+            p, h, m = r.get("Fiyat"), r.get("Hedef"), r.get("Adil Orta")
+            if not p or pd.isna(h) or pd.isna(m):
+                return "—"
+            if h > p and m > p:
+                return "🟢 İkisi de yukarı"
+            if h < p and m < p:
+                return "🔴 İkisi de aşağı"
+            return "🟡 Ayrışıyor"
+        EARN["Kaynak Uyumu"] = [_uyum(r) for r in EARN.to_dict("records")]
+
         def style_days(v):
             if v is None or (isinstance(v, float) and not np.isfinite(v)):
                 return ""
@@ -6249,20 +6906,76 @@ with tab_earn:
             return ("color:#2fbe86;font-weight:700" if v > 0
                     else "color:#f0736f;font-weight:700")
 
+        def style_ps(v):
+            if not isinstance(v, str):
+                return ""
+            if v.startswith("🟢"):
+                return "background-color:#0d3b2a;color:#4fd6a0;font-weight:700"
+            if v.startswith("🔴"):
+                return "background-color:#4a0d12;color:#ff8f8b;font-weight:700"
+            if v.startswith("🟡"):
+                return "background-color:#3a3205;color:#ffd54f;font-weight:700"
+            return "color:#8a8a95"
+
+        # Uzaklık: fiyat adil ortanın üstündeyse kırmızı, altındaysa yeşil
+        def style_dist(v):
+            if v is None or (isinstance(v, float) and not np.isfinite(v)):
+                return ""
+            return ("color:#f0736f;font-weight:700" if v > 0
+                    else "color:#2fbe86;font-weight:700")
+
+        ecols = [c for c in [
+            "Hisse", "Bilanço", "Kalan Gün", "Fiyat", "P/S Durum", "Adil Alt",
+            "Adil Orta", "Adil Üst", "Pahalı >", "Adile Uzaklık %", "Hedef",
+            "Potansiyel %", "Kaynak Uyumu", "P/S", "İleri P/S", "PSG",
+            "Büyüme %", "Çarpan", "Çarpan Kaynağı", "EV/Satış", "İleri F/K",
+            "Piyasa Değ. ($B)", "52H Konum %", "Analist"] if c in EARN.columns]
         st.dataframe(
-            EARN.style.map(style_days, subset=["Kalan Gün"])
-                      .map(style_pot, subset=["Potansiyel %"]),
+            EARN[ecols].style.map(style_days, subset=["Kalan Gün"])
+                             .map(style_pot, subset=["Potansiyel %"])
+                             .map(style_ps, subset=["P/S Durum"])
+                             .map(style_dist, subset=["Adile Uzaklık %"]),
             width="stretch", hide_index=True,
             column_config={
                 "Fiyat": st.column_config.NumberColumn(format="$%.2f"),
-                "Hedef": st.column_config.NumberColumn(format="$%.2f"),
+                "Hedef": st.column_config.NumberColumn(
+                    format="$%.2f", help="Analist ortalama hedef fiyatı"),
                 "Potansiyel %": st.column_config.NumberColumn(format="%+.1f%%"),
                 "Kalan Gün": st.column_config.NumberColumn(format="%d"),
+                "P/S Durum": st.column_config.TextColumn(width="medium"),
+                "Adil Alt": st.column_config.NumberColumn(format="$%.2f"),
+                "Adil Orta": st.column_config.NumberColumn(format="$%.2f"),
+                "Adil Üst": st.column_config.NumberColumn(format="$%.2f"),
+                "Pahalı >": st.column_config.NumberColumn(format="$%.2f"),
+                "Adile Uzaklık %": st.column_config.NumberColumn(
+                    format="%+.1f%%", help="Fiyatın adil ortaya göre konumu"),
+                "P/S": st.column_config.NumberColumn(format="%.1fx"),
+                "İleri P/S": st.column_config.NumberColumn(format="%.1fx"),
+                "PSG": st.column_config.NumberColumn(format="%.2f"),
+                "Büyüme %": st.column_config.NumberColumn(format="%.0f%%"),
+                "Çarpan": st.column_config.NumberColumn(format="%.1fx"),
+                "EV/Satış": st.column_config.NumberColumn(format="%.1fx"),
+                "İleri F/K": st.column_config.NumberColumn(format="%.1fx"),
+                "Piyasa Değ. ($B)": st.column_config.NumberColumn(format="%.1f"),
+                "52H Konum %": st.column_config.ProgressColumn(
+                    format="%.0f%%", min_value=0, max_value=100),
             })
         st.caption("Kırmızı satırlar bilanço tamponu içindedir — swing "
-                   "taramasında bu hisseler otomatik elenir. **Hedef**, analist "
-                   "ortalama fiyat beklentisidir; bir değerleme modeli değil, "
-                   "duyarlılık göstergesidir.")
+                   "taramasında bu hisseler otomatik elenir. **Hedef** analist "
+                   "ortalamasıdır; **P/S adil değer** ise satış çarpanından "
+                   "türetilen ikinci, bağımsız bir referanstır. İkisi de "
+                   "değerleme modeli değil, bağlam göstergesidir — "
+                   "**Kaynak Uyumu** ikisinin aynı yönü gösterip "
+                   "göstermediğini özetler.")
+
+        section("Hızlı bakış")
+        pick = st.selectbox("Hisse", EARN["Hisse"].tolist(), key="glance_pick")
+        if pick:
+            r = EARN[EARN["Hisse"] == pick].iloc[0].to_dict()
+            st.markdown(fvm.glance_text(r))
+            if r.get("Satış Tahmin Kaynağı"):
+                st.caption(f"Satış tahmini: {r['Satış Tahmin Kaynağı']} · "
+                           f"endüstri: {r.get('Endüstri') or '—'}")
 
 
 # ==========================================================================
