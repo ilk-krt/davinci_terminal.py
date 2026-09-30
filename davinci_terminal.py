@@ -5368,8 +5368,8 @@ def fetch_short_interest(tickers: Iterable[str]) -> pd.DataFrame:
 
 
 def to_finra_symbol(t: str) -> str:
-    """yfinance → FINRA: BRK-B → BRK.B"""
-    return t.replace("-", ".").upper()
+    """yfinance → FINRA: BRK-B → BRK/B (FINRA sınıf ayracı olarak '/' kullanır)"""
+    return t.replace("-", "/").replace(".", "/").upper()
 
 
 def _arrow(d_pp: float) -> str:
