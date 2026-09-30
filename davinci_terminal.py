@@ -5012,6 +5012,8 @@ SECTOR_PS: dict[str, float | None] = {
 
 DEFAULT_BAND = 0.12      # adil bant ±%12
 DEFAULT_PSG_MAX = 0.60   # bu PSG'nin üstü "pahalı"
+DEFAULT_EXP_CAP = 1.80   # pahalı eşiği en fazla adil ortanın bu katı
+                         # (RBRK kartında 175.17 / 98.33 ≈ 1.78)
 
 
 def pick_multiple(industry: str, sector: str,
@@ -5042,7 +5044,8 @@ def compute_fair_value(rec: dict[str, Any],
                        ind_map: dict[str, float | None] | None = None,
                        sec_map: dict[str, float | None] | None = None,
                        band: float = DEFAULT_BAND,
-                       psg_max: float = DEFAULT_PSG_MAX) -> dict[str, Any]:
+                       psg_max: float = DEFAULT_PSG_MAX,
+                       exp_cap: float = DEFAULT_EXP_CAP) -> dict[str, Any]:
     """
     `rec`: data.fetch_fundamentals() satırı (Fiyat, TTM SPS, İleri SPS,
     Büyüme %, Endüstri, Sektör). Döner: adil değer alanları.
@@ -5079,11 +5082,13 @@ def compute_fair_value(rec: dict[str, Any],
     if np.isfinite(g_pct) and g_pct > 0 and np.isfinite(ttm_sps) and ttm_sps > 0:
         out["PSG"] = (price / ttm_sps) / g_pct
         expensive = psg_max * g_pct * ttm_sps
-    # Büyüme yoksa/negatifse PSG tanımsız: pahalı eşiği bandın üstüne 2 bant
+    # Büyüme yoksa/negatifse PSG tanımsız: bandın üstüne 2 bant daha
     if not np.isfinite(expensive):
         expensive = mid * (1 + 3 * band)
-    # Pahalı eşiği adil bandın altına düşemez (düşük büyümede anlamsızlaşır)
-    expensive = max(expensive, hi)
+    # PSG eşiği büyümeyle orantılıdır ama sektör çarpanını bilmez: düşük
+    # çarpanlı sektörde ya da küçük tabandan %100+ büyümede uçar. Bu yüzden
+    # alttan adil banda, üstten adil ortanın `exp_cap` katına sıkıştırılır.
+    expensive = min(max(expensive, hi), mid * max(exp_cap, 1 + band))
     out["Pahalı >"] = expensive
 
     if price < lo:
@@ -5247,30 +5252,82 @@ def _fetch_day(d: dt.date, timeout: int = 20) -> tuple[pd.DataFrame | None, str]
     return None, last or "bilinmeyen hata"
 
 
+def _repo_file() -> "Path | None":
+    """GitHub Actions'ın repoya yazdığı FINRA dosyası (data/finra_short.csv.gz)."""
+    from pathlib import Path
+    for base in (Path(__file__).resolve().parent, Path.cwd()):
+        p = base / "data" / "finra_short.csv.gz"
+        if p.exists():
+            return p
+    return None
+
+
+def _read_repo_file() -> pd.DataFrame | None:
+    p = _repo_file()
+    if p is None:
+        return None
+    try:
+        df = pd.read_csv(p, dtype={"Symbol": str})
+        df["Date"] = pd.to_datetime(df["Date"].astype("int64").astype(str),
+                                    format="%Y%m%d")
+        for c in ("ShortVolume", "TotalVolume"):
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        return df[["Date", "Symbol", "ShortVolume", "TotalVolume"]]
+    except Exception as exc:
+        _log.info("Repo FINRA dosyası okunamadı: %s", exc)
+        return None
+
+
 def fetch_short_volume(trading_days: int = 30
                        ) -> tuple[pd.DataFrame, list[str], dict[str, str]]:
     """
-    Son `trading_days` iş gününün FINRA dosyalarını çeker.
+    Önce repodaki data/finra_short.csv.gz (GitHub Actions her akşam günceller),
+    sonra yalnızca o dosyada olmayan son günler FINRA'dan doğrudan denenir.
     Döner: (uzun tablo, uyarılar, {tarih: tanı}).
     """
     days = _weekdays_back(trading_days + 4)  # tatil payı
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        res = list(ex.map(_fetch_day, days))
-    diag = {d.strftime("%d.%m.%Y"): msg for d, (_, msg) in zip(days, res)}
-    ok = [f for f, _ in res if f is not None and not f.empty]
+    repo = _read_repo_file()
+    diag: dict[str, str] = {}
+    frames: list[pd.DataFrame] = []
+    have: set = set()
+    if repo is not None and not repo.empty:
+        frames.append(repo)
+        have = {d.date() for d in repo["Date"].unique()}
+        for d in sorted(have, reverse=True):
+            diag[d.strftime("%d.%m.%Y")] = "ok (repo dosyası)"
+        # repodaki son günden sonrası doğrudan denenir
+        last = max(have)
+        days = [d for d in days if d > last]
+
+    if days:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            res = list(ex.map(_fetch_day, days))
+        for d, (f, msg) in zip(days, res):
+            diag[d.strftime("%d.%m.%Y")] = msg
+            if f is not None and not f.empty:
+                frames.append(f)
+    diag = dict(sorted(diag.items(),
+                       key=lambda kv: dt.datetime.strptime(kv[0], "%d.%m.%Y"),
+                       reverse=True))
+
     warns: list[str] = []
-    if not ok:
+    frames = [f for f in frames if f is not None and not f.empty]
+    if not frames:
         kodlar = sorted({m for m in diag.values() if not m.startswith("HTTP 404")})
-        warns.append("FINRA short hacim dosyalarına ulaşılamadı"
-                     + (f" ({', '.join(kodlar)})" if kodlar else "") + ".")
+        warns.append("FINRA short hacim verisine ulaşılamadı"
+                     + (f" ({', '.join(kodlar)})" if kodlar else "")
+                     + ". Repoda data/finra_short.csv.gz yok — GitHub Actions "
+                       "iş akışını bir kez çalıştırın.")
         return (pd.DataFrame(columns=["Date", "Symbol", "ShortVolume",
                                       "TotalVolume"]), warns, diag)
-    df = pd.concat(ok, ignore_index=True)
+    df = (pd.concat(frames, ignore_index=True)
+            .drop_duplicates(["Date", "Symbol"], keep="last"))
     last = df["Date"].max()
     if (pd.Timestamp(_us_today()) - last).days > 4:
         warns.append(f"En son FINRA verisi {last:%d.%m.%Y} tarihli.")
-    if len(ok) < 2 * WINDOW:
-        warns.append(f"Yalnızca {len(ok)} günlük FINRA verisi alınabildi; "
+    n_days = df["Date"].nunique()
+    if n_days < 2 * WINDOW:
+        warns.append(f"Yalnızca {n_days} günlük FINRA verisi var; "
                      "haftalık karşılaştırma eksik kalabilir.")
     return df, warns, diag
 
@@ -6592,6 +6649,7 @@ with tab_week:
         W = W.rename(columns={"1 Gün %": "Haftalık %", "1 Hafta %": "5 Hafta %"})
 
         # ---------- FINRA short hacmi ----------
+        section("📉 Short verisi")
         with st.spinner("FINRA short hacim dosyaları çekiliyor…"):
             SVRAW, sv_warn, sv_diag = load_short_volume(
                 st.session_state.nonce_short)
@@ -6605,12 +6663,26 @@ with tab_week:
             with st.spinner("Short interest (yfinance) çekiliyor…"):
                 SI = load_short_interest(tuple(W["Sembol"].tolist()),
                                          st.session_state.nonce_short)
-        for w_ in sv_warn:
-            st.caption(f"⚠️ {w_} Yukarıdaki anahtarla yfinance short "
-                       "interest sütunlarını (SI) açabilirsiniz.")
+        n_ok = sum(1 for m in sv_diag.values() if m.startswith("ok"))
+        n_repo = sum(1 for m in sv_diag.values() if "repo" in m)
+        codes = sorted({m for m in sv_diag.values()
+                        if not m.startswith("ok") and not m.startswith("HTTP 404")})
         pchg = dict(zip(W["Sembol"],
                         pd.to_numeric(W.get("Haftalık %"), errors="coerce")))
         SVT = svm.short_table(SVRAW, W["Sembol"].tolist(), pchg)
+        n_match = int(SVT["ΔSV pp"].notna().sum()) if not SVT.empty else 0
+        n_si = (int(SI["SI Δ% (ay)"].notna().sum())
+                if "SI Δ% (ay)" in SI.columns else 0)
+        durum = (f"**FINRA günlük short hacmi:** "
+                 + (f"✅ {n_ok} gün ({n_repo} gün repodan), {n_match}/{len(W)} sembol eşleşti"
+                    if n_ok else f"❌ alınamadı ({', '.join(codes) or 'yanıt yok'})")
+                 + "  \n**yfinance short interest:** "
+                 + (f"✅ {n_si}/{len(W)} sembol" if si_on and n_si
+                    else "⏳ açık ama veri gelmedi — birkaç dk sonra yenileyin"
+                    if si_on else "kapalı — yukarıdaki anahtarla açın"))
+        (st.success if (n_match or n_si) else st.warning)(durum)
+        for w_ in sv_warn:
+            st.caption(f"⚠️ {w_}")
         W = W.merge(SVT, on="Sembol", how="left")
         # eşleşmeyen satırlarda NaN kalırsa çizgi grafik sütunu hata verir
         W["SV Seyri"] = W["SV Seyri"].apply(
@@ -7041,13 +7113,19 @@ with tab_earn:
                 "**Yöntem:** Adil orta = *endüstri çarpanı × gelecek yıl "
                 "satış/hisse*; adil bant = orta ± bant. **PSG** = (fiyat / "
                 "TTM satış-hisse) ÷ büyüme %. **Pahalı eşiği**, PSG'nin "
-                "aşağıdaki değere ulaştığı fiyattır. Bant üstünde ama pahalı "
+                "aşağıdaki değere ulaştığı fiyattır; ancak adil ortanın "
+                "belirlenen katını geçemez. Bant üstünde ama pahalı "
                 "eşiğinin altındaysa hisse *büyüme destekli adil* sayılır.")
-            p1, p2 = st.columns(2)
+            p1, p2, p3 = st.columns(3)
             band = p1.slider("Adil bant ±%", 5, 30,
                              int(fvm.DEFAULT_BAND * 100), 1) / 100
             psg_max = p2.slider("Pahalı eşiği (PSG)", 0.30, 1.50,
                                 fvm.DEFAULT_PSG_MAX, 0.05)
+            exp_cap = p3.slider(
+                "Pahalı eşiği üst sınırı (× adil orta)", 1.2, 3.0,
+                fvm.DEFAULT_EXP_CAP, 0.1,
+                help="Büyüme ne kadar yüksek olursa olsun pahalı eşiği adil "
+                     "ortanın bu katını geçmez.")
             st.caption("Çarpan tablosu endüstri adında anahtar kelime "
                        "arar; ilk eşleşen kazanır. Boş bırakılan çarpan = "
                        "P/S bu iş modelinde anlamsız (banka, sigorta, petrol, "
@@ -7076,7 +7154,7 @@ with tab_earn:
                 st.rerun()
 
         EARN = fvm.add_fair_values(EARN, ind_map=ind_map, band=band,
-                                   psg_max=psg_max)
+                                   psg_max=psg_max, exp_cap=exp_cap)
 
         # İki kaynağın (analist hedefi + P/S orta) aynı yönü gösterip
         # göstermediği — tek başına hiçbiri değerleme modeli değildir.
@@ -7148,7 +7226,11 @@ with tab_earn:
                 "Adil Alt": st.column_config.NumberColumn(format="$%.2f"),
                 "Adil Orta": st.column_config.NumberColumn(format="$%.2f"),
                 "Adil Üst": st.column_config.NumberColumn(format="$%.2f"),
-                "Pahalı >": st.column_config.NumberColumn(format="$%.2f"),
+                "Pahalı >": st.column_config.NumberColumn(
+                    format="$%.2f",
+                    help="Bu fiyatın üstü satışlara göre pahalı. Büyüme "
+                         "yüksekse esner, en fazla adil ortanın 1.8 katı "
+                         "(ayarlardan değişir)."),
                 "Adile Uzaklık %": st.column_config.NumberColumn(
                     format="%+.1f%%", help="Fiyatın adil ortaya göre konumu"),
                 "P/S": st.column_config.NumberColumn(format="%.1fx"),
