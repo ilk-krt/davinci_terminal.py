@@ -2862,6 +2862,49 @@ def fetch(tickers: Iterable[str], interval: str = "1d",
     return out, failed
 
 
+# --------------------------------------------------------------------------
+# yfinance `info` — ortak, hız sınırına dayanıklı çağrı
+# Yahoo, bulut sunucularından gelen yoğun isteklere geçici blok (HTTP 429 /
+# "Too Many Requests") uygular. Bu yüzden: aynı anda en fazla 2 istek,
+# blokta artan beklemeyle yeniden deneme ve 6 saatlik bellek içi önbellek
+# (bilanço sekmesi ile short interest aynı veriyi paylaşır).
+# --------------------------------------------------------------------------
+import threading
+
+_INFO_CACHE: dict[str, tuple[float, dict]] = {}
+_INFO_SEM = threading.Semaphore(2)
+_INFO_TTL = 6 * 3600
+
+
+def _info_ok(info: dict) -> bool:
+    return bool(info) and any(info.get(k) for k in (
+        "currentPrice", "regularMarketPrice", "previousClose", "quoteType"))
+
+
+def yf_info(t: str) -> dict:
+    import yfinance as yf
+
+    now = time.time()
+    hit = _INFO_CACHE.get(t)
+    if hit and now - hit[0] < _INFO_TTL:
+        return hit[1]
+    info: dict = {}
+    for attempt in range(4):
+        err = None
+        with _INFO_SEM:
+            try:
+                info = yf.Ticker(t).info or {}
+            except Exception as exc:
+                err, info = exc, {}
+        if _info_ok(info):
+            _INFO_CACHE[t] = (now, info)
+            return info
+        txt = f"{type(err).__name__} {err}" if err else ""
+        limited = "Rate" in txt or "Too Many" in txt or "429" in txt
+        time.sleep((3 * (attempt + 1)) if limited else 0.4)
+    return info
+
+
 def _one_fundamental(t: str, today: dt.date) -> dict:
     import numpy as np
     import yfinance as yf
@@ -2884,11 +2927,7 @@ def _one_fundamental(t: str, today: dt.date) -> dict:
 
     try:
         tk = yf.Ticker(t)
-        info = {}
-        try:
-            info = tk.info or {}
-        except Exception:
-            pass
+        info = yf_info(t)
 
         # ---------- bilanço tarihi (eski mantık aynen) ----------
         first_date = None
@@ -2990,7 +3029,7 @@ def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
     syms = sorted({x.strip().upper() for x in tickers if x and x.strip()})
     if not syms:
         return pd.DataFrame()
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=2) as ex:
         rows = list(ex.map(lambda s: _one_fundamental(s, today), syms))
     df = pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"])
     return df.reset_index(drop=True)
@@ -5238,8 +5277,6 @@ def fetch_short_volume(trading_days: int = 30
 
 def _one_short_interest(t: str) -> dict:
     """yfinance üzerinden borsa short INTEREST verisi (ayda iki kez güncellenir)."""
-    import yfinance as yf
-
     def num(x):
         try:
             v = float(x)
@@ -5250,7 +5287,7 @@ def _one_short_interest(t: str) -> dict:
     rec = {"Sembol": t, "SI Float %": np.nan, "SI Δ% (ay)": np.nan,
            "Gün Kapama": np.nan, "SI Tarihi": ""}
     try:
-        info = yf.Ticker(t).info or {}
+        info = yf_info(t)
         cur, prev = num(info.get("sharesShort")), num(info.get("sharesShortPriorMonth"))
         pf = num(info.get("shortPercentOfFloat"))
         rec["SI Float %"] = pf * 100 if np.isfinite(pf) else np.nan
@@ -5269,7 +5306,7 @@ def fetch_short_interest(tickers: Iterable[str]) -> pd.DataFrame:
     syms = list(dict.fromkeys(t.upper() for t in tickers if t))
     if not syms:
         return pd.DataFrame(columns=["Sembol"])
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=2) as ex:
         return pd.DataFrame(list(ex.map(_one_short_interest, syms)))
 
 
@@ -5542,8 +5579,23 @@ def load_news(topics: tuple[str, ...], nonce: str):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_earnings(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+def _load_earnings_cached(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     return dta.fetch_earnings_calendar(tickers)
+
+
+def _earn_ok_ratio(df: pd.DataFrame) -> float:
+    if df is None or df.empty or "Fiyat" not in df.columns:
+        return 0.0
+    return float(pd.to_numeric(df["Fiyat"], errors="coerce").notna().mean())
+
+
+def load_earnings(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+    """Yahoo geçici olarak engellediyse (satırların yarısından fazlası boş)
+    sonuç önbellekte tutulmaz — bir sonraki çalıştırmada yeniden denenir."""
+    df = _load_earnings_cached(tickers, nonce)
+    if tickers and _earn_ok_ratio(df) < 0.5:
+        _load_earnings_cached.clear()
+    return df
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -5561,9 +5613,17 @@ def load_short_volume(nonce: str):
 
 
 @st.cache_data(ttl=12 * 3600, show_spinner=False)
+def _load_short_interest_cached(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+    return svm.fetch_short_interest(tickers)
+
+
 def load_short_interest(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     """yfinance short interest (ayda iki kez güncellenen borsa verisi)."""
-    return svm.fetch_short_interest(tickers)
+    df = _load_short_interest_cached(tickers, nonce)
+    if df.empty or df.drop(columns=["Sembol", "SI Tarihi"],
+                           errors="ignore").notna().to_numpy().mean() < 0.2:
+        _load_short_interest_cached.clear()
+    return df
 
 
 # ==========================================================================
@@ -6535,12 +6595,19 @@ with tab_week:
         with st.spinner("FINRA short hacim dosyaları çekiliyor…"):
             SVRAW, sv_warn, sv_diag = load_short_volume(
                 st.session_state.nonce_short)
-        with st.spinner("Short interest (yfinance) çekiliyor…"):
-            SI = load_short_interest(tuple(W["Sembol"].tolist()),
-                                     st.session_state.nonce_short)
+        # Short interest her sembol için ayrı Yahoo isteği demek; yüzlerce
+        # sembolde Yahoo geçici blok uygulayabildiği için isteğe bağlı.
+        si_on = st.toggle(
+            "Short interest (yfinance) sütunlarını ekle — yavaş, ilk "
+            "çekimde 1–3 dk", key="si_on")
+        SI = pd.DataFrame(columns=["Sembol"])
+        if si_on:
+            with st.spinner("Short interest (yfinance) çekiliyor…"):
+                SI = load_short_interest(tuple(W["Sembol"].tolist()),
+                                         st.session_state.nonce_short)
         for w_ in sv_warn:
-            st.caption(f"⚠️ {w_} Aşağıdaki tabloda yfinance short interest "
-                       "sütunları (SI) yine de gösterilir.")
+            st.caption(f"⚠️ {w_} Yukarıdaki anahtarla yfinance short "
+                       "interest sütunlarını (SI) açabilirsiniz.")
         pchg = dict(zip(W["Sembol"],
                         pd.to_numeric(W.get("Haftalık %"), errors="coerce")))
         SVT = svm.short_table(SVRAW, W["Sembol"].tolist(), pchg)
@@ -6953,6 +7020,11 @@ with tab_earn:
 
     with st.spinner("Bilanço tarihleri, analist hedefleri ve satış verisi çekiliyor…"):
         EARN = load_earnings(tuple(lst), st.session_state.nonce_earn)
+    if lst and _earn_ok_ratio(EARN) < 0.5:
+        st.warning("Yahoo Finance şu an istekleri sınırlıyor (bulut "
+                   "sunucularında sık olur); verilerin çoğu boş geldi. Birkaç "
+                   "dakika bekleyip **🔄 Bilanço takvimini tara** düğmesine "
+                   "basın — boş sonuç önbelleğe alınmaz.")
 
     if not EARN.empty:
         # ---------- P/S adil değer ayarları ----------
