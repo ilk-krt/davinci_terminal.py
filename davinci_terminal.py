@@ -5134,6 +5134,7 @@ Kaynak: FINRA'nın ücretsiz yayımladığı konsolide günlük dosya
 import datetime as dt
 import io
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Iterable
 
@@ -5167,44 +5168,109 @@ def _weekdays_back(n_days: int, end: dt.date | None = None) -> list[dt.date]:
     return out
 
 
-def _fetch_day(d: dt.date, timeout: int = 15) -> pd.DataFrame | None:
+_FINRA_HEADERS = {
+    # Akamai CDN, kısa/robot görünümlü isteklere 403 dönebiliyor —
+    # tam bir tarayıcı başlığı gönderiyoruz.
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/126.0 Safari/537.36"),
+    "Accept": "text/plain,text/html,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data",
+}
+
+
+def _fetch_day(d: dt.date, timeout: int = 20) -> tuple[pd.DataFrame | None, str]:
+    """Döner: (tablo ya da None, tanı metni: 'ok', 'HTTP 404', hata adı…)."""
     url = FINRA_URL.format(d=d.strftime("%Y%m%d"))
-    try:
-        r = requests.get(url, timeout=timeout,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200 or not r.content:
-            return None                      # tatil ya da henüz yayımlanmamış
-        df = pd.read_csv(io.BytesIO(r.content), sep="|",
-                         dtype={"Symbol": str})
-        df = df[pd.to_numeric(df["Date"], errors="coerce").notna()]  # alt satır
-        df["Date"] = pd.to_datetime(df["Date"].astype(int).astype(str),
-                                    format="%Y%m%d")
-        return df[["Date", "Symbol", "ShortVolume", "TotalVolume"]]
-    except Exception as exc:
-        _log.info("FINRA %s alınamadı: %s", d, exc)
-        return None
+    last = ""
+    for attempt in range(3):
+        try:
+            r = requests.get(url, timeout=timeout, headers=_FINRA_HEADERS)
+            if r.status_code == 404:
+                return None, "HTTP 404 (tatil / henüz yok)"
+            if r.status_code != 200 or not r.content:
+                last = f"HTTP {r.status_code}"
+                time.sleep(1.0 + attempt)
+                continue
+            df = pd.read_csv(io.BytesIO(r.content), sep="|",
+                             dtype={"Symbol": str})
+            df["Date"] = pd.to_numeric(df["Date"], errors="coerce")
+            df = df[df["Date"].notna()].copy()           # alt bilgi satırı
+            df["Date"] = pd.to_datetime(df["Date"].astype("int64").astype(str),
+                                        format="%Y%m%d")
+            for c in ("ShortVolume", "TotalVolume"):
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+            return df[["Date", "Symbol", "ShortVolume", "TotalVolume"]], "ok"
+        except Exception as exc:
+            last = type(exc).__name__
+            time.sleep(1.0 + attempt)
+    return None, last or "bilinmeyen hata"
 
 
-def fetch_short_volume(trading_days: int = 30) -> tuple[pd.DataFrame, list[str]]:
+def fetch_short_volume(trading_days: int = 30
+                       ) -> tuple[pd.DataFrame, list[str], dict[str, str]]:
     """
-    Son `trading_days` iş gününün FINRA dosyalarını paralel çeker.
-    Döner: (uzun tablo: Date, Symbol, ShortVolume, TotalVolume; uyarılar)
-    Tatiller ve henüz yayımlanmamış bugünün dosyası sessizce atlanır.
+    Son `trading_days` iş gününün FINRA dosyalarını çeker.
+    Döner: (uzun tablo, uyarılar, {tarih: tanı}).
     """
     days = _weekdays_back(trading_days + 4)  # tatil payı
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        frames = list(ex.map(_fetch_day, days))
-    ok = [f for f in frames if f is not None and not f.empty]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        res = list(ex.map(_fetch_day, days))
+    diag = {d.strftime("%d.%m.%Y"): msg for d, (_, msg) in zip(days, res)}
+    ok = [f for f, _ in res if f is not None and not f.empty]
     warns: list[str] = []
     if not ok:
-        warns.append("FINRA short hacim dosyalarına ulaşılamadı.")
-        return pd.DataFrame(columns=["Date", "Symbol", "ShortVolume",
-                                     "TotalVolume"]), warns
+        kodlar = sorted({m for m in diag.values() if not m.startswith("HTTP 404")})
+        warns.append("FINRA short hacim dosyalarına ulaşılamadı"
+                     + (f" ({', '.join(kodlar)})" if kodlar else "") + ".")
+        return (pd.DataFrame(columns=["Date", "Symbol", "ShortVolume",
+                                      "TotalVolume"]), warns, diag)
     df = pd.concat(ok, ignore_index=True)
     last = df["Date"].max()
     if (pd.Timestamp(_us_today()) - last).days > 4:
         warns.append(f"En son FINRA verisi {last:%d.%m.%Y} tarihli.")
-    return df, warns
+    if len(ok) < 2 * WINDOW:
+        warns.append(f"Yalnızca {len(ok)} günlük FINRA verisi alınabildi; "
+                     "haftalık karşılaştırma eksik kalabilir.")
+    return df, warns, diag
+
+
+def _one_short_interest(t: str) -> dict:
+    """yfinance üzerinden borsa short INTEREST verisi (ayda iki kez güncellenir)."""
+    import yfinance as yf
+
+    def num(x):
+        try:
+            v = float(x)
+            return v if np.isfinite(v) else np.nan
+        except (TypeError, ValueError):
+            return np.nan
+
+    rec = {"Sembol": t, "SI Float %": np.nan, "SI Δ% (ay)": np.nan,
+           "Gün Kapama": np.nan, "SI Tarihi": ""}
+    try:
+        info = yf.Ticker(t).info or {}
+        cur, prev = num(info.get("sharesShort")), num(info.get("sharesShortPriorMonth"))
+        pf = num(info.get("shortPercentOfFloat"))
+        rec["SI Float %"] = pf * 100 if np.isfinite(pf) else np.nan
+        if np.isfinite(cur) and np.isfinite(prev) and prev > 0:
+            rec["SI Δ% (ay)"] = (cur / prev - 1) * 100
+        rec["Gün Kapama"] = num(info.get("shortRatio"))
+        ts = info.get("dateShortInterest")
+        if isinstance(ts, (int, float)) and ts > 0:
+            rec["SI Tarihi"] = dt.datetime.fromtimestamp(ts, dt.timezone.utc).strftime("%d.%m")
+    except Exception as exc:
+        _log.info("Short interest alınamadı (%s): %s", t, exc)
+    return rec
+
+
+def fetch_short_interest(tickers: Iterable[str]) -> pd.DataFrame:
+    syms = list(dict.fromkeys(t.upper() for t in tickers if t))
+    if not syms:
+        return pd.DataFrame(columns=["Sembol"])
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        return pd.DataFrame(list(ex.map(_one_short_interest, syms)))
 
 
 def to_finra_symbol(t: str) -> str:
@@ -5481,9 +5547,23 @@ def load_earnings(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def load_short_volume(nonce: str):
-    """FINRA günlük short hacmi — son ~30 iş günü. Günde bir güncellenir."""
+def _load_short_volume_cached(nonce: str):
     return svm.fetch_short_volume(30)
+
+
+def load_short_volume(nonce: str):
+    """FINRA günlük short hacmi. Başarısız sonuç önbellekte tutulmaz —
+    bir sonraki çalıştırmada yeniden denenir."""
+    df, warns, diag = _load_short_volume_cached(nonce)
+    if df.empty:
+        _load_short_volume_cached.clear()
+    return df, warns, diag
+
+
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def load_short_interest(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+    """yfinance short interest (ayda iki kez güncellenen borsa verisi)."""
+    return svm.fetch_short_interest(tickers)
 
 
 # ==========================================================================
@@ -6453,9 +6533,14 @@ with tab_week:
 
         # ---------- FINRA short hacmi ----------
         with st.spinner("FINRA short hacim dosyaları çekiliyor…"):
-            SVRAW, sv_warn = load_short_volume(st.session_state.nonce_short)
+            SVRAW, sv_warn, sv_diag = load_short_volume(
+                st.session_state.nonce_short)
+        with st.spinner("Short interest (yfinance) çekiliyor…"):
+            SI = load_short_interest(tuple(W["Sembol"].tolist()),
+                                     st.session_state.nonce_short)
         for w_ in sv_warn:
-            st.caption(f"⚠️ {w_}")
+            st.caption(f"⚠️ {w_} Aşağıdaki tabloda yfinance short interest "
+                       "sütunları (SI) yine de gösterilir.")
         pchg = dict(zip(W["Sembol"],
                         pd.to_numeric(W.get("Haftalık %"), errors="coerce")))
         SVT = svm.short_table(SVRAW, W["Sembol"].tolist(), pchg)
@@ -6464,19 +6549,40 @@ with tab_week:
         W["SV Seyri"] = W["SV Seyri"].apply(
             lambda x: x if isinstance(x, list) else None)
         W["SV Yön"] = W["SV Yön"].fillna("—")
+        if not SI.empty:
+            W = W.merge(SI, on="Sembol", how="left")
+
+        # FINRA günlük verisi yoksa yorum, aylık short interest değişiminden
+        def _si_yorum(r):
+            d, p = r.get("SI Δ% (ay)"), r.get("Haftalık %")
+            if pd.isna(d):
+                return "Veri yok (OTC/kripto)"
+            yon = ("🟠 Short interest artıyor" if d >= 10
+                   else "🟢 Short interest azalıyor" if d <= -10
+                   else "⚪ Short interest yatay")
+            return f"{yon} ({d:+.0f}% / ay)"
+        miss = W["Short Yorum"].isna()
+        if "SI Δ% (ay)" in W.columns and miss.any():
+            W.loc[miss, "Short Yorum"] = [_si_yorum(r) for r in
+                                          W[miss].to_dict("records")]
         W["Short Yorum"] = W["Short Yorum"].fillna("Veri yok (OTC/kripto)")
 
         sv_filter = st.radio(
-            "Short hacim filtresi",
+            "Short filtresi",
             ["Tümü", "⬆️ Short artanlar", "⬇️ Short azalanlar",
              "Aşırı uç (|Z| ≥ 2)"],
             horizontal=True, key="sv_filter")
+        # FINRA günlük verisi varsa ΔSV pp, yoksa aylık SI değişimi kullanılır
+        have_sv = W["ΔSV pp"].notna().any()
+        fkey, fthr = (("ΔSV pp", svm.ESIK_PP) if have_sv
+                      else ("SI Δ% (ay)", 10.0))
+        if fkey not in W.columns:
+            W[fkey] = np.nan
         view = W
         if sv_filter.startswith("⬆️"):
-            view = W[W["ΔSV pp"] >= svm.ESIK_PP].sort_values("ΔSV pp",
-                                                             ascending=False)
+            view = W[W[fkey] >= fthr].sort_values(fkey, ascending=False)
         elif sv_filter.startswith("⬇️"):
-            view = W[W["ΔSV pp"] <= -svm.ESIK_PP].sort_values("ΔSV pp")
+            view = W[W[fkey] <= -fthr].sort_values(fkey)
         elif sv_filter.startswith("Aşırı"):
             view = W[W["SV% Z"].abs() >= 2].sort_values("SV% Z",
                                                          ascending=False)
@@ -6484,7 +6590,8 @@ with tab_week:
         cols = [c for c in ["Sembol", "Sinyal", "Efor", "Fiyat", "Haftalık %",
                             "5 Hafta %", "WHALE", "ΔWHALE", "ΔWHALE 5B",
                             "Whale Yön", "SV% 5G", "ΔSV pp", "Short Hacim Δ%",
-                            "SV% Z", "SV Yön", "SV Seyri", "Short Yorum",
+                            "SV% Z", "SV Yön", "SV Seyri", "SI Float %",
+                            "SI Δ% (ay)", "Gün Kapama", "Short Yorum",
                             "PRO-RET", "ΔPRO-RET", "MAGNITUDE", "ΔMAG",
                             "DIRECTION", "ΔDIR", "OMNI", "ΔOMNI", "OMNI Yön",
                             "SV Son Gün", "Hata"] if c in view.columns]
@@ -6520,6 +6627,16 @@ with tab_week:
                 "SV Seyri": st.column_config.LineChartColumn(
                     "SV% Seyri", y_min=0, y_max=100, width="small",
                     help="Son 15 işlem günü günlük short hacim oranı"),
+                "SI Float %": st.column_config.NumberColumn(
+                    format="%.1f%%",
+                    help="Açık short pozisyonun halka açık hisseye oranı "
+                         "(borsa verisi, ayda iki kez güncellenir)"),
+                "SI Δ% (ay)": st.column_config.NumberColumn(
+                    format="%+.0f%%",
+                    help="Açık short pozisyonun bir önceki aya göre değişimi"),
+                "Gün Kapama": st.column_config.NumberColumn(
+                    format="%.1f",
+                    help="Short'ların ortalama hacimle kaç günde kapanabileceği"),
                 "Short Yorum": st.column_config.TextColumn(width="large"),
                 "ΔPRO-RET": st.column_config.NumberColumn(format="%+.1f"),
                 "ΔMAG": st.column_config.NumberColumn(format="%+.0f"),
@@ -6533,23 +6650,28 @@ with tab_week:
 
         # ---------- en büyük değişimler ----------
         section("Short hacminde en büyük haftalık değişimler")
-        sv_ok = W.dropna(subset=["ΔSV pp"])
+        sv_ok = W.dropna(subset=[fkey])
         if sv_ok.empty:
-            st.info("Short hacim verisi eşleşmedi.")
+            st.info("Short verisi eşleşmedi.")
         else:
-            mini = ["Sembol", "SV% 5G", "ΔSV pp", "Haftalık %", "WHALE",
-                    "Short Yorum"]
+            mini = (["Sembol", "SV% 5G", "ΔSV pp", "Haftalık %", "WHALE",
+                     "Short Yorum"] if have_sv else
+                    ["Sembol", "SI Float %", "SI Δ% (ay)", "Gün Kapama",
+                     "Haftalık %", "WHALE", "Short Yorum"])
             mini = [c for c in mini if c in sv_ok.columns]
             mcfg = {"SV% 5G": st.column_config.NumberColumn(format="%.1f%%"),
                     "ΔSV pp": st.column_config.NumberColumn(format="%+.1f"),
                     "Haftalık %": st.column_config.NumberColumn(format="%+.2f%%"),
-                    "WHALE": st.column_config.NumberColumn(format="%.0f")}
+                    "WHALE": st.column_config.NumberColumn(format="%.0f"),
+                    "SI Float %": st.column_config.NumberColumn(format="%.1f%%"),
+                    "SI Δ% (ay)": st.column_config.NumberColumn(format="%+.0f%%"),
+                    "Gün Kapama": st.column_config.NumberColumn(format="%.1f")}
             a, b = st.columns(2)
             a.markdown("**⬆️ Short en çok artan 10**")
-            a.dataframe(sv_ok.nlargest(10, "ΔSV pp")[mini], width="stretch",
+            a.dataframe(sv_ok.nlargest(10, fkey)[mini], width="stretch",
                         hide_index=True, column_config=mcfg)
             b.markdown("**⬇️ Short en çok azalan 10**")
-            b.dataframe(sv_ok.nsmallest(10, "ΔSV pp")[mini], width="stretch",
+            b.dataframe(sv_ok.nsmallest(10, fkey)[mini], width="stretch",
                         hide_index=True, column_config=mcfg)
 
         with st.expander("Short hacmi nasıl okunur?"):
@@ -6569,7 +6691,15 @@ with tab_week:
   satış uzun pozisyonlardan geliyor.
 - OTC semboller (FANUY, YASKY…) ve kripto FINRA konsolide dosyasında
   olmadığı için boş kalır.
+- **SI sütunları** (yfinance): borsanın ayda iki kez yayımladığı *açık*
+  short pozisyon. Daha yavaş ama daha anlamlıdır: SI Float % %10'un,
+  Gün Kapama 5'in üstündeyse squeeze potansiyeli yüksektir. FINRA
+  verisi çekilemezse filtreler ve listeler SI Δ% (ay) ile çalışır.
 """)
+            st.markdown("**FINRA bağlantı tanısı** (gün → sonuç)")
+            st.dataframe(pd.DataFrame({"Gün": list(sv_diag),
+                                       "Sonuç": list(sv_diag.values())}),
+                         hide_index=True, width="stretch", height=220)
 
 
 # ==========================================================================
