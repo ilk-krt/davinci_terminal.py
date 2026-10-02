@@ -1880,6 +1880,60 @@ svg[data-testid="stTooltipHoverTarget"] { fill:var(--ink-2)!important; }
 .delta.dn { background:rgba(240,115,111,.16); color:#ff8f8b; }
 .delta.flat { background:rgba(255,255,255,.06); color:var(--ink-2); }
 hr { border-color:var(--line-soft); }
+
+/* ---- Açık tema emniyeti: Streamlit açık temaya düşse bile okunur kalsın ---- */
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+  background:var(--bg)!important; color:var(--ink)!important; }
+[data-testid="stHeader"], header[data-testid="stHeader"] {
+  background:var(--bg)!important; }
+[data-testid="stHeader"] *, [data-testid="stToolbar"] * { color:var(--ink-2)!important; }
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp li,
+.stApp label, .stApp strong, .stApp b, .stApp td, .stApp th,
+[data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] * {
+  color:inherit; }
+[data-testid="stMarkdownContainer"] { color:var(--ink); }
+/* metin girişleri */
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+.stDateInput input, input[type="text"], input[type="number"], textarea {
+  color:var(--ink)!important; -webkit-text-fill-color:var(--ink)!important;
+  caret-color:var(--accent)!important; background:var(--surface)!important; }
+input::placeholder, textarea::placeholder { color:var(--ink-3)!important;
+  -webkit-text-fill-color:var(--ink-3)!important; }
+.stNumberInput button { background:var(--surface-2)!important;
+  color:var(--ink)!important; border-color:var(--line)!important; }
+/* seçim kutuları ve açılır menüler */
+[data-baseweb="select"] > div { background:var(--surface)!important;
+  border-color:var(--line)!important; }
+[data-baseweb="select"] *, [data-baseweb="select"] input {
+  color:var(--ink)!important; -webkit-text-fill-color:var(--ink)!important; }
+[data-baseweb="select"] svg { fill:var(--ink-2)!important; }
+[data-baseweb="popover"], [data-baseweb="popover"] > div,
+[data-baseweb="menu"], [data-baseweb="popover"] ul,
+div[role="listbox"], ul[role="listbox"] {
+  background:var(--surface-2)!important; color:var(--ink)!important; }
+li[role="option"], [data-baseweb="menu"] li { background:var(--surface-2)!important;
+  color:var(--ink)!important; }
+li[role="option"]:hover, li[role="option"][aria-selected="true"] {
+  background:#1f2a33!important; color:var(--accent)!important; }
+li[role="option"] * { color:inherit!important; }
+/* radyo, onay kutusu, anahtar yazıları */
+.stRadio label, .stRadio label *, .stCheckbox label *, .stToggle label *,
+div[role="radiogroup"] label * { color:var(--ink)!important; }
+/* uyarı kutuları */
+[data-testid="stAlert"] p, [data-testid="stAlert"] li,
+[data-testid="stAlert"] span { color:var(--ink)!important; }
+/* açıklama baloncukları */
+[data-baseweb="tooltip"], [data-baseweb="tooltip"] * {
+  background:var(--surface-2)!important; color:var(--ink)!important; }
+/* kod ve satır içi kod */
+code { color:var(--accent)!important; background:rgba(0,229,255,.08)!important; }
+/* kaydırıcı */
+.stSlider [data-baseweb="slider"] div { color:var(--ink)!important; }
+[data-testid="stTickBar"] *, [data-testid="stSliderThumbValue"] {
+  color:var(--ink-2)!important; }
+/* dosya yükleme alanı */
+[data-testid="stFileUploaderDropzone"] { background:var(--surface)!important;
+  color:var(--ink)!important; }
 </style>
 """
 
@@ -6660,6 +6714,59 @@ import streamlit as st
 
 
 logging.basicConfig(level=logging.INFO)
+
+# --------------------------------------------------------------------------
+# KOYU TEMA — her koşulda
+# Uygulama koyu zemine göre tasarlandı. Streamlit temayı yalnızca
+# `.streamlit/config.toml` dosyasından okur; dosya yoksa ya da yanlış yerdeyse
+# açık temaya düşer ve Streamlit'in kendi yazıları (giriş kutuları, menüler,
+# tablolar, grafik açıklamaları) siyah kalır → siyah zeminde görünmez.
+# 1) Tema seçenekleri burada da koyuya sabitlenir.
+# 2) Grafikler Streamlit temasından bağımsız, koyu Plotly şablonuyla çizilir.
+# 3) CSS (inject_theme) widget yazılarını açık renge zorlar.
+# --------------------------------------------------------------------------
+_theme_changed = False
+try:
+    from streamlit import config as _st_config
+    for _k, _v in {"theme.base": "dark", "theme.primaryColor": "#00e5ff",
+                   "theme.backgroundColor": "#050506",
+                   "theme.secondaryBackgroundColor": "#0d0d11",
+                   "theme.textColor": "#ececf1"}.items():
+        if _st_config.get_option(_k) != _v:
+            _st_config.set_option(_k, _v)
+            _theme_changed = True
+except Exception as _exc:                       # pragma: no cover
+    logging.info("Tema seçeneği ayarlanamadı: %s", _exc)
+# Tema, sayfa çalışmaya başlarken tarayıcıya gönderilir; bu çalıştırmada
+# yeni ayarlandıysa bir kez yeniden çalıştırınca tablolar da koyu açılır.
+if _theme_changed and not st.session_state.get("_theme_rerun"):
+    st.session_state["_theme_rerun"] = True
+    st.rerun()
+
+import plotly.io as pio
+
+_apex_tpl = go.layout.Template(pio.templates["plotly_dark"])
+_apex_tpl.layout.paper_bgcolor = "rgba(0,0,0,0)"
+_apex_tpl.layout.plot_bgcolor = "rgba(0,0,0,0)"
+_apex_tpl.layout.font = dict(color="#c2c2cc")
+_apex_tpl.layout.legend = dict(font=dict(color="#c2c2cc"))
+for _ax in ("xaxis", "yaxis"):
+    _apex_tpl.layout[_ax].gridcolor = "#1f1f28"
+    _apex_tpl.layout[_ax].zerolinecolor = "#2b2b36"
+    _apex_tpl.layout[_ax].linecolor = "#2b2b36"
+pio.templates["apex"] = _apex_tpl
+pio.templates.default = "apex"
+
+_st_plotly_chart = st.plotly_chart
+
+
+def _plotly_chart(fig, *args, **kwargs):
+    """Streamlit'in açık temasının grafik renklerini ezmesini engeller."""
+    kwargs.setdefault("theme", None)
+    return _st_plotly_chart(fig, *args, **kwargs)
+
+
+st.plotly_chart = _plotly_chart
 
 st.set_page_config(layout="wide", page_title="AETHER APEX", page_icon="🏛️",
                    initial_sidebar_state="collapsed")
