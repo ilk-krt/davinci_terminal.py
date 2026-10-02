@@ -18,12 +18,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pandas requests
-      - run: python tools/finra_update.py
+      - run: pip install pandas numpy requests yfinance
+      - name: FINRA short hacmi
+        run: python tools/finra_update.py
+        continue-on-error: true
+      - name: Kripto endeksleri ve Fed likiditesi (Karar Hunisi)
+        run: python tools/macro_update.py
+        continue-on-error: true
       - name: Değişiklik varsa kaydet
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add data/finra_short.csv.gz
-          git diff --cached --quiet || git commit -m "FINRA short hacim verisi güncellendi"
+          git add data/
+          git diff --cached --quiet || git commit -m "Veri güncellendi (FINRA, kripto, likidite)"
           git push
