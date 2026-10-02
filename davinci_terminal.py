@@ -2774,6 +2774,7 @@ _log = logging.getLogger(__name__)
 # yfinance aralığı -> (geçmiş gün sayısı, yf interval)
 INTERVAL_PLAN: dict[str, tuple[int, str]] = {
     "1d": (420, "1d"),
+    "1d_long": (5800, "1d"),   # Karar Hunisi: çeyreklik oran grafikleri
     "1wk": (1500, "1wk"),
     "4h": (170, "1h"),      # 1h çekip 4h'e yeniden örnekliyoruz
     "1h": (60, "1h"),
@@ -4919,31 +4920,29 @@ def report_filename(prefix: str = "aether_apex") -> str:
 # ==========================================================================
 # KAYNAK: apex/valuation.py
 # ==========================================================================
-"""
-apex/valuation.py — Satış çarpanına dayalı adil değer (P/S Fair Value)
-
-Mantık ("Trader's glance" kartındaki yöntem):
-
-  1. Sektör/endüstri için "normal" ileri P/S çarpanı seçilir
-     (ör. yazılım ≈ 10x gelecek yıl satışı).
-  2. Adil orta = çarpan × gelecek yıl satış / hisse
-     Adil bant  = orta × (1 ± bant)   (varsayılan ±%12)
-  3. PSG = (fiyat / TTM satış-hisse) / büyüme%   — büyümeye göre P/S
-     Pahalı eşiği = PSG'nin `psg_max` olduğu fiyat
-     = psg_max × büyüme% × TTM satış/hisse       (varsayılan 0.60)
-  4. Durum:
-       fiyat < bant altı                → 🟢 UCUZ
-       bant altı ≤ fiyat ≤ pahalı eşiği → 🟡 ADİL (bant üstündeyse
-                                           "büyüme destekli" notu)
-       fiyat > pahalı eşiği             → 🔴 PAHALI
-
-Not: Pahalı eşiği kartta açıkça yazmıyor; RBRK kartındaki rakamlardan
-(fiyat 113.28, P/S 15x, PSG 0.39, pahalı 175.17) geri hesaplanınca
-PSG ≈ 0.60'a denk geliyor. Arayüzden değiştirilebilir.
-
-Veri katmanı (data.py) yalnızca ham alanları çeker; hesap burada yapılır.
-Böylece çarpan tablosu arayüzde düzenlendiğinde yeniden veri çekilmez.
-"""
+# apex/valuation.py — Satış çarpanına dayalı adil değer (P/S Fair Value)
+#
+# Mantık ("Trader's glance" kartındaki yöntem):
+#
+#   1. Sektör/endüstri için "normal" ileri P/S çarpanı seçilir
+#      (ör. yazılım ≈ 10x gelecek yıl satışı).
+#   2. Adil orta = çarpan × gelecek yıl satış / hisse
+#      Adil bant  = orta × (1 ± bant)   (varsayılan ±%12)
+#   3. PSG = (fiyat / TTM satış-hisse) / büyüme%   — büyümeye göre P/S
+#      Pahalı eşiği = PSG'nin `psg_max` olduğu fiyat
+#      = psg_max × büyüme% × TTM satış/hisse       (varsayılan 0.60)
+#   4. Durum:
+#        fiyat < bant altı                → 🟢 UCUZ
+#        bant altı ≤ fiyat ≤ pahalı eşiği → 🟡 ADİL (bant üstündeyse
+#                                            "büyüme destekli" notu)
+#        fiyat > pahalı eşiği             → 🔴 PAHALI
+#
+# Not: Pahalı eşiği kartta açıkça yazmıyor; RBRK kartındaki rakamlardan
+# (fiyat 113.28, P/S 15x, PSG 0.39, pahalı 175.17) geri hesaplanınca
+# PSG ≈ 0.60'a denk geliyor. Arayüzden değiştirilebilir.
+#
+# Veri katmanı (data.py) yalnızca ham alanları çeker; hesap burada yapılır.
+# Böylece çarpan tablosu arayüzde düzenlendiğinde yeniden veri çekilmez.
 
 
 from typing import Any
@@ -5154,25 +5153,23 @@ def glance_text(r: dict[str, Any]) -> str:
 # ==========================================================================
 # KAYNAK: apex/shortvol.py
 # ==========================================================================
-"""
-apex/shortvol.py — FINRA günlük short hacmi (Reg SHO) ve haftalık değişim
-
-Kaynak: FINRA'nın ücretsiz yayımladığı konsolide günlük dosya
-  https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt
-  Biçim: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
-  Her iş günü ABD saatiyle ~18:00'den sonra yayımlanır.
-
-ÖNEMLİ — okuma şekli:
-  * Bu "short HACMİ"dir, "short INTEREST" (açık pozisyon) değildir.
-    Piyasa yapıcıların alıcıya hisse sağlamak için yaptığı gün içi açığa
-    satışlar da buraya girer; bu yüzden çoğu hissede oran zaten %35–55
-    arasındadır. Anlamlı olan SEVİYE değil, hissenin KENDİ ortalamasına
-    göre DEĞİŞİMDİR.
-  * Hacim yalnızca FINRA'ya raporlanan (TRF/ADF) işlemleri kapsar,
-    borsa içi (lit) işlemleri tamamen kapsamaz. "TotalVolume" bu yüzden
-    yfinance'teki toplam hacimden düşüktür — oran kendi içinde tutarlıdır.
-  * OTC hisseler (FANUY, YASKY vb.) ve kripto CNMS dosyasında yoktur.
-"""
+# apex/shortvol.py — FINRA günlük short hacmi (Reg SHO) ve haftalık değişim
+#
+# Kaynak: FINRA'nın ücretsiz yayımladığı konsolide günlük dosya
+#   https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt
+#   Biçim: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
+#   Her iş günü ABD saatiyle ~18:00'den sonra yayımlanır.
+#
+# ÖNEMLİ — okuma şekli:
+#   * Bu "short HACMİ"dir, "short INTEREST" (açık pozisyon) değildir.
+#     Piyasa yapıcıların alıcıya hisse sağlamak için yaptığı gün içi açığa
+#     satışlar da buraya girer; bu yüzden çoğu hissede oran zaten %35–55
+#     arasındadır. Anlamlı olan SEVİYE değil, hissenin KENDİ ortalamasına
+#     göre DEĞİŞİMDİR.
+#   * Hacim yalnızca FINRA'ya raporlanan (TRF/ADF) işlemleri kapsar,
+#     borsa içi (lit) işlemleri tamamen kapsamaz. "TotalVolume" bu yüzden
+#     yfinance'teki toplam hacimden düşüktür — oran kendi içinde tutarlıdır.
+#   * OTC hisseler (FANUY, YASKY vb.) ve kripto CNMS dosyasında yoktur.
 
 
 import datetime as dt
@@ -5454,6 +5451,835 @@ def short_table(raw: pd.DataFrame, tickers: Iterable[str],
     return pd.DataFrame(rows, columns=cols)
 
 # ==========================================================================
+# KAYNAK: apex/funnel.py
+# ==========================================================================
+# apex/funnel.py — KARAR HUNİSİ
+#
+# Yatırım kararını dört soruya böler; her adım bir öncekinin cevabına dayanır:
+#
+#   1) Risk açık mı?            → piyasanın genel risk iştahı (6 sütun)
+#   2) Para nereye akıyor?      → endeks / varlık sınıfı / kripto rotasyonu
+#   3) Hangi tema ivmeleniyor?  → tema ve ETF'lerde ERKEN akış tespiti (RRG)
+#   4) Bu temada hangi hisse?   → lider / geride kalan / alım adayı ayrımı
+#
+# Fiyat verisi yfinance'ten; kripto endeksleri (TOTAL, TOTAL3, BTC.D,
+# OTHERS/BTC) ve Fed net likiditesi repodaki data/*.csv dosyalarından
+# (GitHub Actions her iş günü günceller — tools/macro_update.py).
+
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+# --------------------------------------------------------------------------
+# Semboller
+# --------------------------------------------------------------------------
+ROTATION_TICKERS: list[str] = [
+    "SPY", "QQQ", "IWM", "RSP", "SMH", "ARKK", "XLY", "XLP", "EEM", "TLT",
+    "HYG", "GC=F", "SI=F", "HG=F", "BZ=F", "DX-Y.NYB", "^GSPC", "^IXIC",
+    "BTC-USD", "ETH-USD",
+]
+
+NAMES: dict[str, str] = {
+    "SPY": "S&P 500", "QQQ": "Nasdaq 100", "IWM": "Russell 2000 (küçük ölçek)",
+    "RSP": "Eşit ağırlıklı S&P", "SMH": "Yarı iletkenler",
+    "ARKK": "Spekülatif büyüme (ARKK)", "XLY": "İhtiyari tüketim",
+    "XLP": "Temel tüketim", "EEM": "Gelişen piyasalar", "TLT": "Uzun vadeli tahvil",
+    "HYG": "Yüksek getirili tahvil", "GC=F": "Altın", "SI=F": "Gümüş",
+    "HG=F": "Bakır", "BZ=F": "Brent petrol", "DX-Y.NYB": "Dolar endeksi",
+    "^GSPC": "S&P 500 endeksi", "^IXIC": "Nasdaq Bileşik", "BTC-USD": "Bitcoin",
+    "ETH-USD": "Ethereum", "TOTAL": "Toplam kripto", "TOTAL3": "Altcoinler (TOTAL3)",
+    "OTHERS": "Küçük altcoinler (OTHERS)", "BTC.D": "BTC hakimiyeti",
+    "NET_LIQ": "Fed net likiditesi",
+}
+
+
+# --------------------------------------------------------------------------
+# Rotasyon çiftleri — "pay / payda" yükseliyorsa para paydadan paya akıyor
+#   risk: +1 → yükselişi risk iştahı demek, −1 → risk kaçışı demek
+# --------------------------------------------------------------------------
+PAIRS: list[dict[str, Any]] = [
+    # Hisse içi rotasyon
+    dict(key="QQQ/SPY", num="QQQ", den="SPY", grup="Hisse içi", risk=+1,
+         ad="Nasdaq 100 / S&P 500",
+         not_="Yükseliyorsa büyüme ve teknoloji liderleri piyasayı sürüklüyor. "
+              "Çeyreklik grafikte kırılım, liderliğin süreceğine ve risk "
+              "iştahına işaret eder."),
+    dict(key="^IXIC/^GSPC", num="^IXIC", den="^GSPC", grup="Hisse içi", risk=+1,
+         ad="Nasdaq Bileşik / S&P 500",
+         not_="QQQ/SPY'den farkı, Nasdaq'taki küçük ve orta boy büyüme "
+              "şirketlerini de kapsaması. İkisi birlikte yükseliyorsa iştah "
+              "devlerle sınırlı değil."),
+    dict(key="SMH/SPY", num="SMH", den="SPY", grup="Hisse içi", risk=+1,
+         ad="Yarı iletken / S&P 500",
+         not_="Yarı iletkenler döngünün öncü sektörü. Liderlik ediyorsa "
+              "yapay zekâ ve donanım temaları güçlü."),
+    dict(key="ARKK/QQQ", num="ARKK", den="QQQ", grup="Hisse içi", risk=+1,
+         ad="Spekülatif büyüme / Nasdaq 100",
+         not_="Kârsız, yüksek riskli büyüme şirketlerine iştah. Riskin en "
+              "uç noktası — burası ısınıyorsa piyasa cesur."),
+    dict(key="IWM/SPY", num="IWM", den="SPY", grup="Hisse içi", risk=+1,
+         ad="Küçük ölçek / S&P 500",
+         not_="Faiz indirimi ve ekonomik genişleme beklentisinde yükselir. "
+              "Yükselişin tabana yayıldığını gösterir."),
+    dict(key="RSP/SPY", num="RSP", den="SPY", grup="Hisse içi", risk=+1,
+         ad="Eşit ağırlık / S&P 500 (genişlik)",
+         not_="Düşüyorsa endeksi birkaç dev hisse taşıyor — sağlıksız "
+              "yükseliş. Yükseliyorsa katılım geniş."),
+    dict(key="XLY/XLP", num="XLY", den="XLP", grup="Hisse içi", risk=+1,
+         ad="İhtiyari / Temel tüketim",
+         not_="Tüketicinin keyfi harcaması mı, zorunlu harcaması mı öne "
+              "çıkıyor? Klasik ofans/defans göstergesi."),
+    dict(key="EEM/SPY", num="EEM", den="SPY", grup="Hisse içi", risk=+1,
+         ad="Gelişen piyasalar / ABD",
+         not_="Zayıf dolar ve küresel risk iştahında gelişen piyasalara "
+              "para akar."),
+    # Varlık sınıfları
+    dict(key="SPY/TLT", num="SPY", den="TLT", grup="Varlık sınıfları", risk=+1,
+         ad="Hisse / Tahvil",
+         not_="Para tahvilden hisseye mi geçiyor? En temel risk-on/off "
+              "göstergesi."),
+    dict(key="HYG/TLT", num="HYG", den="TLT", grup="Varlık sınıfları", risk=+1,
+         ad="Riskli tahvil / Hazine",
+         not_="Kredi piyasası hisseden önce uyarır. Yükseliyorsa borç "
+              "verenler risk almaya istekli."),
+    dict(key="GC=F/SPY", num="GC=F", den="SPY", grup="Varlık sınıfları", risk=-1,
+         ad="Altın / S&P 500",
+         not_="Yükseliyorsa para hisseden güvenli limana kaçıyor ya da "
+              "enflasyon/para basımı korkusu var."),
+    dict(key="SI=F/GC=F", num="SI=F", den="GC=F", grup="Varlık sınıfları", risk=+1,
+         ad="Gümüş / Altın",
+         not_="Gümüş hem değerli hem sanayi metali. Altını geçiyorsa metal "
+              "rallisi spekülatif/büyüme ayağına geçmiş demektir."),
+    dict(key="HG=F/GC=F", num="HG=F", den="GC=F", grup="Varlık sınıfları", risk=+1,
+         ad="Bakır / Altın",
+         not_="Dr. Bakır: büyüme beklentisi. Yükseliyorsa ekonomi "
+              "hızlanıyor; düşüyorsa resesyon korkusu."),
+    dict(key="BZ=F", num="BZ=F", den=None, grup="Varlık sınıfları", risk=0,
+         ad="Brent petrol",
+         not_="Sert yükseliş enflasyon ve jeopolitik risk demek (hisseler "
+              "için olumsuz); ılımlı yükseliş talep canlılığı."),
+    dict(key="DX-Y.NYB", num="DX-Y.NYB", den=None, grup="Varlık sınıfları", risk=-1,
+         ad="Dolar endeksi (DXY)",
+         not_="Güçlü dolar küresel likiditeyi emer: riskli varlıklar, emtia, "
+              "gelişen piyasalar ve kripto baskılanır."),
+    # Kripto
+    dict(key="BTC-USD", num="BTC-USD", den=None, grup="Kripto", risk=+1,
+         ad="Bitcoin",
+         not_="Kripto iştahının ana göstergesi ve küresel likiditeye en "
+              "duyarlı varlık."),
+    dict(key="TOTAL", num="TOTAL", den=None, grup="Kripto", risk=+1,
+         ad="Toplam kripto piyasa değeri (TOTAL)",
+         not_="Kripto piyasasına net para girişi."),
+    dict(key="BTC.D", num="BTC.D", den=None, grup="Kripto", risk=-1,
+         ad="BTC hakimiyeti (BTC.D)",
+         not_="Yükseliyorsa kripto içinde para altcoinlerden BTC'ye "
+              "kaçıyor (temkin). Düşüyorsa altcoinlere akıyor."),
+    dict(key="ETH/BTC", num="ETH/BTC", den=None, grup="Kripto", risk=+1,
+         ad="ETH / BTC",
+         not_="Altcoin sezonunun ilk basamağı genellikle ETH'nin BTC'yi "
+              "geçmesidir."),
+    dict(key="TOTAL3", num="TOTAL3", den=None, grup="Kripto", risk=+1,
+         ad="Altcoinler (TOTAL3: BTC ve ETH hariç)",
+         not_="BTC ve ETH dışındaki tüm piyasaya para girişi."),
+    dict(key="OTHERS/BTC", num="OTHERS/BTC", den=None, grup="Kripto", risk=+1,
+         ad="Küçük altcoinler / BTC (OTHERS/BTC)",
+         not_="Kripto riskinin en uç noktası. Yükselişi tam bir altcoin "
+              "sezonu ve aşırı iştah anlamına gelir."),
+    # Likidite
+    dict(key="NET_LIQ", num="NET_LIQ", den=None, grup="Likidite", risk=+1,
+         ad="Fed net likiditesi (bilanço − TGA − ters repo)",
+         not_="Piyasadaki 'para musluğu'. Artıyorsa sistem para basıyor "
+              "demektir; hisse ve kripto tarihsel olarak bunu takip eder."),
+    dict(key="M2SL", num="M2SL", den=None, grup="Likidite", risk=+1,
+         ad="M2 para arzı",
+         not_="Ekonomideki toplam para miktarı. Yıllık büyümesi hızlanıyorsa "
+              "varlık fiyatları desteklenir (aylık veri, gecikmeli)."),
+]
+PAIR = {p["key"]: p for p in PAIRS}
+
+# Bir yatırımcının "benim hissem hangi segmentte?" sorusuna cevap
+SEGMENTS: dict[str, dict[str, Any]] = {
+    "Nasdaq / büyüme & teknoloji": dict(
+        pairs=["QQQ/SPY", "^IXIC/^GSPC", "SMH/SPY", "ARKK/QQQ"],
+        aciklama="Nasdaq'ta işlem gören büyüme, yazılım, yarı iletken ve "
+                 "yapay zekâ hisseleri."),
+    "S&P 500 / geniş piyasa": dict(
+        pairs=["RSP/SPY", "SPY/TLT", "XLY/XLP"],
+        aciklama="Büyük, kârlı şirketler; sanayi, finans, sağlık, tüketim."),
+    "Küçük ölçek (Russell 2000)": dict(
+        pairs=["IWM/SPY", "RSP/SPY", "HYG/TLT"],
+        aciklama="Faize ve ekonomik döngüye en duyarlı küçük şirketler."),
+    "Gelişen piyasalar": dict(
+        pairs=["EEM/SPY", "DX-Y.NYB"],
+        aciklama="Çin, Hindistan, Brezilya vb. — dolardan ters etkilenir."),
+    "Altın, gümüş ve madenciler": dict(
+        pairs=["GC=F/SPY", "SI=F/GC=F", "DX-Y.NYB"],
+        aciklama="Değerli metaller ve madenci hisseleri."),
+    "Enerji ve emtia": dict(
+        pairs=["BZ=F", "HG=F/GC=F", "DX-Y.NYB"],
+        aciklama="Petrol, gaz, bakır, sanayi metalleri ve üreticileri."),
+    "Kripto ve kripto hisseleri": dict(
+        pairs=["BTC-USD", "TOTAL", "BTC.D", "OTHERS/BTC", "NET_LIQ"],
+        aciklama="BTC, altcoinler, madenciler (MARA, RIOT…), borsalar."),
+    "Tahvil / defansif": dict(
+        pairs=["SPY/TLT", "HYG/TLT"],
+        aciklama="Hazine tahvilleri, temettü ve defansif sektörler. "
+                 "Burada göstergeler TERS okunur: hisse/tahvil düşüyorsa "
+                 "tahvil lehine."),
+}
+# Segment yönü: tahvil/defansif ve altın, risk iştahının tersinden beslenir
+SEGMENT_INVERT = {"Tahvil / defansif"}
+SEGMENT_ABS = {"Altın, gümüş ve madenciler": {"GC=F/SPY": +1},
+               "Enerji ve emtia": {"BZ=F": +1}}
+
+
+# --------------------------------------------------------------------------
+# Repo veri dosyaları (GitHub Actions)
+# --------------------------------------------------------------------------
+def _data_path(name: str) -> Path | None:
+    for base in (Path(__file__).resolve().parent, Path.cwd()):
+        p = base / "data" / name
+        if p.exists():
+            return p
+    return None
+
+
+def read_crypto_caps() -> pd.DataFrame:
+    p = _data_path("crypto_caps.csv")
+    if p is None:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(p, index_col=0, parse_dates=True).sort_index()
+    except Exception:
+        return pd.DataFrame()
+
+
+def read_liquidity() -> pd.DataFrame:
+    p = _data_path("liquidity.csv")
+    if p is None:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(p, index_col=0, parse_dates=True).sort_index()
+    except Exception:
+        return pd.DataFrame()
+
+
+# --------------------------------------------------------------------------
+# Seri istatistikleri
+# --------------------------------------------------------------------------
+def build_series(prices: dict[str, pd.DataFrame], crypto: pd.DataFrame,
+                 liq: pd.DataFrame) -> dict[str, pd.Series]:
+    """Her rotasyon anahtarı için günlük seri (oran ya da tekil)."""
+    close = {t: df["Close"].dropna() for t, df in prices.items()
+             if df is not None and not df.empty}
+    for c in ("TOTAL", "TOTAL3", "OTHERS", "BTC.D", "ETH/BTC", "OTHERS/BTC"):
+        if c in crypto.columns:
+            close[c] = crypto[c].dropna()
+    for c in ("NET_LIQ", "M2SL"):
+        if c in liq.columns:
+            close[c] = liq[c].dropna()
+
+    out: dict[str, pd.Series] = {}
+    for p in PAIRS:
+        a = close.get(p["num"])
+        if a is None or len(a) < 30:
+            continue
+        if p["den"]:
+            b = close.get(p["den"])
+            if b is None or len(b) < 30:
+                continue
+            a, b = a.copy(), b.copy()
+            a.index = pd.to_datetime(a.index).tz_localize(None).normalize()
+            b.index = pd.to_datetime(b.index).tz_localize(None).normalize()
+            a = a[~a.index.duplicated()]
+            b = b[~b.index.duplicated()]
+            j = pd.concat([a, b], axis=1, join="inner").dropna()
+            if len(j) < 30:
+                continue
+            s = j.iloc[:, 0] / j.iloc[:, 1]
+        else:
+            s = a.copy()
+            s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+            s = s[~s.index.duplicated()]
+        out[p["key"]] = s.astype(float)
+    return out
+
+
+def _pct(s: pd.Series, n: int) -> float:
+    if len(s) <= n or not s.iloc[-1 - n]:
+        return np.nan
+    return float((s.iloc[-1] / s.iloc[-1 - n] - 1) * 100)
+
+
+def quarterly_ohlc(s: pd.Series) -> pd.DataFrame:
+    q = s.resample("QE").agg(["first", "max", "min", "last"]).dropna()
+    q.columns = ["Open", "High", "Low", "Close"]
+    return q
+
+
+def breakout_info(s: pd.Series, freq: str = "QE", look: int = 8) -> dict[str, Any]:
+    """
+    Kapanış bazlı kırılım: içinde bulunulan dönemin kapanışı, önceki `look`
+    dönemin en yüksek KAPANIŞINI (ekran görüntüsündeki yatay direnç) geçti mi?
+    """
+    r = s.resample(freq).last().dropna()
+    if len(r) < look + 2:
+        return {"kirilim": False, "direnc": np.nan, "uzaklik": np.nan}
+    prev = r.iloc[-look - 1:-1]
+    res = float(prev.max())
+    last = float(r.iloc[-1])
+    br = last > res
+    # bir önceki dönem de kırmış mıydı? (taze kırılım ayrımı)
+    prev2 = r.iloc[-look - 2:-2]
+    br_prev = float(r.iloc[-2]) > float(prev2.max()) if len(prev2) else False
+    return {"kirilim": br, "taze": br and not br_prev, "direnc": res,
+            "uzaklik": (last / res - 1) * 100}
+
+
+def series_stats(s: pd.Series, risk: int) -> dict[str, Any]:
+    """
+    Bir oran/serinin akış durumu.
+    Skor −100…+100: pozitif = pay lehine akış (oran yükseliyor).
+    Faz: güçlü akış / akış başlıyor (ERKEN) / yavaşlıyor / çıkış.
+    """
+    s = s.dropna()
+    n = len(s)
+    c20, c63 = _pct(s, 20), _pct(s, 63)
+    sma50 = s.rolling(50).mean()
+    sma200 = s.rolling(200).mean()
+    last = float(s.iloc[-1])
+    above50 = bool(last > sma50.iloc[-1]) if n >= 50 else None
+    above200 = bool(last > sma200.iloc[-1]) if n >= 200 else None
+
+    # 20 günlük değişimin tarihsel oynaklığa göre normalize edilmesi
+    ch20 = s.pct_change(20) * 100
+    sd = float(ch20.dropna().tail(750).std()) if ch20.notna().sum() > 60 else np.nan
+    z20 = c20 / sd if sd and np.isfinite(sd) and np.isfinite(c20) else 0.0
+    ch63 = s.pct_change(63) * 100
+    sd63 = float(ch63.dropna().tail(750).std()) if ch63.notna().sum() > 60 else np.nan
+    z63 = c63 / sd63 if sd63 and np.isfinite(sd63) and np.isfinite(c63) else 0.0
+
+    score = (40 * np.tanh(z20) + 30 * np.tanh(z63)
+             + (15 if above50 else -15 if above50 is not None else 0)
+             + (15 if above200 else -15 if above200 is not None else 0))
+
+    # ivme: 20 günlük değişim 10 gün öncekine göre artıyor mu
+    accel = (float(ch20.iloc[-1] - ch20.iloc[-11])
+             if n > 31 and np.isfinite(ch20.iloc[-11]) else np.nan)
+    # SMA50'yi son 15 günde yukarı kesti mi (erken dönüş)
+    cross_up = False
+    if n >= 65:
+        above = (s > sma50).tail(16)
+        cross_up = bool(above.iloc[-1] and not above.iloc[:-1].all()
+                        and (~above.iloc[:-1]).any())
+
+    long_neg = (np.isfinite(c63) and c63 <= 0) or above200 is False
+    if np.isfinite(c20) and c20 > 0 and long_neg and (
+            cross_up or (np.isfinite(accel) and accel > 0)):
+        faz = "🌱 Yükseliş başlıyor"
+    elif np.isfinite(c20) and c20 > 0 and np.isfinite(c63) and c63 > 0:
+        faz = "🚀 Güçlü yükseliş"
+    elif np.isfinite(c63) and c63 > 0 and np.isfinite(c20) and c20 <= 0:
+        faz = "🌤️ Yükseliş yavaşlıyor"
+    elif np.isfinite(c20) and c20 < 0 and np.isfinite(c63) and c63 < 0:
+        faz = "🩸 Düşüş"
+    else:
+        faz = "⚖️ Kararsız"
+
+    q = breakout_info(s, "QE", 8)
+    m = breakout_info(s, "ME", 12)
+    return {"Son": last, "20G %": c20, "63G %": c63, "Skor": float(score),
+            "Risk Etkisi": float(score) * risk if risk else 0.0,
+            "Faz": faz, "50G üstü": above50, "200G üstü": above200,
+            "İvme": accel, "Çeyreklik Kırılım": q["kirilim"],
+            "Taze Çeyreklik Kırılım": q.get("taze", False),
+            "Çeyreklik Direnç": q["direnc"], "Dirence Uzaklık %": q["uzaklik"],
+            "Aylık Kırılım": m["kirilim"]}
+
+
+def flow_sentence(p: dict[str, Any], st: dict[str, Any]) -> str:
+    """İnsan dilinde tek cümle: para nereden nereye."""
+    sc = st["Skor"]
+    if p["den"]:
+        a, b = NAMES.get(p["num"], p["num"]), NAMES.get(p["den"], p["den"])
+        if sc >= 15:
+            return f"Para {b} → {a} yönünde akıyor"
+        if sc <= -15:
+            return f"Para {a} → {b} yönünde akıyor"
+        return f"{a} ile {b} arasında belirgin akış yok"
+    ad = p["ad"]
+    if p["key"] == "BTC.D":
+        if sc >= 15:
+            return "Kripto içinde para altcoinlerden BTC'ye kaçıyor"
+        if sc <= -15:
+            return "Kripto içinde para BTC'den altcoinlere akıyor"
+        return "BTC hakimiyeti yatay"
+    if sc >= 15:
+        return f"{ad} yükseliyor — para giriyor"
+    if sc <= -15:
+        return f"{ad} düşüyor — para çıkıyor"
+    return f"{ad} yatay"
+
+
+def rotation_table(series: dict[str, pd.Series]) -> pd.DataFrame:
+    rows = []
+    for p in PAIRS:
+        s = series.get(p["key"])
+        if s is None or len(s) < 30:
+            continue
+        st = series_stats(s, p["risk"])
+        re_ = st["Risk Etkisi"]
+        okuma = ("➖ nötr" if not p["risk"] or abs(re_) < 15
+                 else "✅ risk iştahı" if re_ > 0 else "❌ risk kaçışı")
+        rows.append({"Anahtar": p["key"], "Grup": p["grup"], "Gösterge": p["ad"],
+                     "Akış": flow_sentence(p, st), "Risk Okuması": okuma,
+                     **st, "Not": p["not_"]})
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------
+# 1) RİSK AÇIK MI?
+# --------------------------------------------------------------------------
+def _avg(*xs: float) -> float:
+    v = [x for x in xs if x is not None and np.isfinite(x)]
+    return float(np.mean(v)) if v else np.nan
+
+
+def _durum(x: float) -> str:
+    if not np.isfinite(x):
+        return "➖"
+    return "✅" if x >= 60 else "⚠️" if x >= 40 else "❌"
+
+
+def risk_pillars(scores: dict[str, float], rot: pd.DataFrame) -> list[dict[str, Any]]:
+    """Altı sütun; her biri 0–100 (yüksek = risk iştahı)."""
+    def rs(key: str) -> float:
+        if rot.empty or key not in set(rot["Anahtar"]):
+            return np.nan
+        return float(np.clip(50 + rot.loc[rot["Anahtar"] == key, "Risk Etkisi"].iloc[0] / 2,
+                             0, 100))
+
+    g = scores.get
+    liq = _avg(rs("NET_LIQ"), g("dollar", np.nan))
+    pillars = [
+        dict(ad="Trend", skor=g("trend", np.nan),
+             ne="S&P 500'ün 50 ve 200 günlük ortalamalara göre dizilimi.",
+             neden="Fiyat ana trendin üstündeyken alım sinyallerinin isabeti "
+                   "belirgin şekilde yüksektir. Trendin altında 'ucuz' görünen "
+                   "hisse daha da ucuzlayabilir."),
+        dict(ad="Korku (VIX)", skor=_avg(g("vix", np.nan), g("vix_ts", np.nan)),
+             ne="VIX seviyesi ve vade yapısı (VIX / VIX3M).",
+             neden="VIX 20'nin altında ve vade yapısı normalken piyasa sakin; "
+                   "VIX3M'in üstüne çıkan VIX yakın vadeli paniğe işaret eder."),
+        dict(ad="Kredi", skor=_avg(g("credit", np.nan), rs("HYG/TLT")),
+             ne="Riskli şirket tahvilinin hazineye göre performansı (HYG/TLT).",
+             neden="Kredi piyasası hisseden önce uyarır. Borç verenler geri "
+                   "çekiliyorsa hisse yükselişi kırılgandır."),
+        dict(ad="Likidite", skor=liq,
+             ne="Fed net likiditesi (bilanço − TGA − ters repo) ve dolar.",
+             neden="Piyasaya giren para artıyorsa varlık fiyatları rüzgârı "
+                   "arkasına alır; güçlü dolar ise küresel likiditeyi emer."),
+        dict(ad="Katılım", skor=_avg(g("breadth", np.nan), g("smallcap", np.nan)),
+             ne="Eşit ağırlıklı S&P ve küçük şirketlerin performansı.",
+             neden="Yükselişe geniş katılım varsa sağlıklıdır. Endeksi 5–10 dev "
+                   "hisse taşıyorsa, sizin seçtiğiniz hisse büyük ihtimalle "
+                   "o rallinin dışında kalır."),
+        dict(ad="Spekülatif iştah", skor=_avg(g("crypto", np.nan), rs("ARKK/QQQ"),
+                                              rs("OTHERS/BTC")),
+             ne="Bitcoin, spekülatif büyüme (ARKK) ve küçük altcoinler.",
+             neden="Riskin en uç noktası. Burada iştah varsa yatırımcı cesur; "
+                   "yoksa piyasa yalnızca güvenli büyük şirketleri alıyor."),
+    ]
+    for p in pillars:
+        p["durum"] = _durum(p["skor"])
+    return pillars
+
+
+def risk_verdict(pillars: list[dict[str, Any]], regime_label: str = ""
+                 ) -> dict[str, Any]:
+    w = {"Trend": 0.25, "Korku (VIX)": 0.15, "Kredi": 0.15, "Likidite": 0.15,
+         "Katılım": 0.15, "Spekülatif iştah": 0.15}
+    tot, ws = 0.0, 0.0
+    for p in pillars:
+        if np.isfinite(p["skor"]):
+            tot += w[p["ad"]] * p["skor"]
+            ws += w[p["ad"]]
+    score = tot / ws if ws else np.nan
+    n_ok = sum(p["durum"] == "✅" for p in pillars)
+    n_bad = sum(p["durum"] == "❌" for p in pillars)
+    trend_ok = next((p["skor"] for p in pillars if p["ad"] == "Trend"), np.nan)
+
+    if np.isfinite(score) and score >= 60 and (not np.isfinite(trend_ok) or trend_ok >= 50):
+        etiket, renk = "🟢 RİSK AÇIK", "pos"
+        ozet = ("Piyasa risk almayı ödüllendiriyor. Alım sinyalleri tam "
+                "pozisyonla değerlendirilebilir; asıl soru 'nereye' — 2. adıma "
+                "geçin.")
+        boyut = "Normal pozisyon boyutu"
+    elif np.isfinite(score) and (score <= 40 or n_bad >= 4):
+        etiket, renk = "🔴 RİSK KAPALI", "neg"
+        ozet = ("Piyasa riskten kaçıyor. Yeni alımlar düşük isabetli olur; "
+                "nakit, kısa vade ve koruma öncelikli. İstisna: 2. adımda "
+                "güçlü akış alan defansif segmentler.")
+        boyut = "Yeni pozisyon yok ya da çeyrek boyut"
+    else:
+        etiket, renk = "🟡 TEMKİNLİ", ""
+        ozet = ("Göstergeler karışık. Sadece en güçlü kurulumlar, küçük "
+                "pozisyon ve sıkı stop. Zayıf sütunları aşağıda görün — "
+                "onlar düzelince risk tam açılır.")
+        boyut = "Yarım pozisyon"
+    return {"etiket": etiket, "renk": renk, "skor": score, "ozet": ozet,
+            "boyut": boyut, "n_ok": n_ok, "n_bad": n_bad, "rejim": regime_label}
+
+
+# --------------------------------------------------------------------------
+# 2) PARA NEREYE AKIYOR? — segment kararları
+# --------------------------------------------------------------------------
+def segment_verdicts(rot: pd.DataFrame) -> pd.DataFrame:
+    if rot.empty:
+        return pd.DataFrame()
+    by = rot.set_index("Anahtar")
+    rows = []
+    for seg, cfg in SEGMENTS.items():
+        vals, detay = [], []
+        for k in cfg["pairs"]:
+            if k not in by.index:
+                continue
+            r = by.loc[k]
+            sign = SEGMENT_ABS.get(seg, {}).get(k, PAIR[k]["risk"] or 1)
+            v = float(r["Skor"]) * sign
+            if seg in SEGMENT_INVERT:
+                v = -v
+            vals.append(v)
+            detay.append(f"{PAIR[k]['ad']}: {r['Faz']}")
+        if not vals:
+            continue
+        sc = float(np.mean(vals))
+        erken = any(by.loc[k, "Faz"] == "🌱 Yükseliş başlıyor"
+                    for k in cfg["pairs"] if k in by.index)
+        if sc >= 25:
+            k_ = "🟢 İştahlı"
+        elif sc >= 5:
+            k_ = "🟡 Isınıyor" if erken else "🟡 Hafif olumlu"
+        elif sc > -10:
+            k_ = "⚪ Nötr" + (" (erken dönüş sinyali var)" if erken else "")
+        else:
+            k_ = "🔴 İştahsız"
+        rows.append({"Segment": seg, "Karar": k_, "Skor": sc,
+                     "Erken Sinyal": "🌱" if erken else "",
+                     "Dayanak": " · ".join(detay), "Kapsam": cfg["aciklama"]})
+    return pd.DataFrame(rows).sort_values("Skor", ascending=False)
+
+
+def money_flow_summary(rot: pd.DataFrame, top: int = 4) -> list[str]:
+    """En güçlü akışları sade cümlelere çevirir."""
+    if rot.empty:
+        return []
+    r = rot.copy()
+    r["abs"] = r["Skor"].abs()
+    r = r[r["abs"] >= 25].sort_values("abs", ascending=False)
+    out = [f"{row['Akış']} — {row['Risk Okuması']}" for _, row in r.head(top).iterrows()]
+    erken = rot[rot["Faz"] == "🌱 Yükseliş başlıyor"]
+    for _, row in erken.head(3).iterrows():
+        out.append(f"🌱 Erken: {row['Gösterge']} — {row['Akış']}")
+    kir = rot[rot["Taze Çeyreklik Kırılım"] == True]  # noqa: E712
+    for _, row in kir.iterrows():
+        out.append(f"📐 {row['Gösterge']} çeyreklik grafikte direnci kırdı "
+                   f"(önceki 8 çeyreğin zirvesi)")
+    return out
+
+
+# --------------------------------------------------------------------------
+# 3) HANGİ TEMA İVMELENİYOR? — göreli rotasyon grafiği (RRG)
+# --------------------------------------------------------------------------
+def rrg_lines(close: pd.Series, bench: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """
+    RS-Oranı: (fiyat / SPY) oranının 50 günlük ortalamasına göre konumu ×100.
+      100'ün üstü = endeksten güçlü.
+    RS-Momentum: RS-Oranının 10 gün önceye göre değişimi ×100.
+      100'ün üstü = göreli güç artıyor.
+    """
+    j = pd.concat([close, bench], axis=1, join="inner").dropna()
+    rs = j.iloc[:, 0] / j.iloc[:, 1]
+    ratio = (100 * rs / rs.rolling(50).mean()).ewm(span=5, adjust=False).mean()
+    mom = (100 * ratio / ratio.shift(10)).ewm(span=3, adjust=False).mean()
+    return ratio, mom
+
+
+RRG_Q = {
+    "lider": ("🚀 Lider", "Endeksten güçlü ve güçlenmeye devam ediyor."),
+    "zayif": ("🌤️ Yoruluyor", "Hâlâ endeksten güçlü ama göreli güç azalıyor — "
+                             "kâr realizasyonu bölgesi."),
+    "geride": ("🩸 Geride", "Endeksten zayıf ve zayıflamaya devam ediyor."),
+    "iyilesen": ("🌱 İyileşiyor", "Endeksten zayıf AMA göreli güç artıyor — "
+                                 "akıllı paranın erken girdiği bölge."),
+}
+
+
+def rrg_quadrant(r: float, m: float) -> str:
+    if not (np.isfinite(r) and np.isfinite(m)):
+        return "geride"
+    if r >= 100 and m >= 100:
+        return "lider"
+    if r >= 100:
+        return "zayif"
+    if m >= 100:
+        return "iyilesen"
+    return "geride"
+
+
+def theme_index(prices: dict[str, pd.DataFrame], members: list[str]
+                ) -> tuple[pd.Series | None, pd.Series | None]:
+    """Eşit ağırlıklı tema endeksi (her ETF başlangıçta 1'e normalize) ve
+    toplam dolar hacmi."""
+    cl, dv = [], []
+    for t in members:
+        df = prices.get(t)
+        if df is None or df.empty or len(df) < 80:
+            continue
+        c = df["Close"].dropna()
+        cl.append(c / c.iloc[0])
+        dv.append((df["Close"] * df["Volume"]).rename(t))
+    if not cl:
+        return None, None
+    idx = pd.concat(cl, axis=1).ffill().mean(axis=1)
+    vol = pd.concat(dv, axis=1).sum(axis=1, min_count=1)
+    return idx, vol
+
+
+def early_score(ratio: pd.Series, mom: pd.Series, vol: pd.Series | None,
+                close: pd.Series) -> dict[str, Any]:
+    r, m = float(ratio.iloc[-1]), float(mom.iloc[-1])
+    q = rrg_quadrant(r, m)
+    m_up = float(mom.iloc[-1] - mom.iloc[-6]) if len(mom) > 6 else np.nan
+    r_up = float(ratio.iloc[-1] - ratio.iloc[-6]) if len(ratio) > 6 else np.nan
+    # liderliğe yeni mi geçti? (son 10 günde iyileşen → lider)
+    qs = [rrg_quadrant(a, b) for a, b in zip(ratio.tail(11), mom.tail(11))]
+    taze_lider = q == "lider" and any(x in ("iyilesen", "geride") for x in qs[:-1])
+
+    vol_ok = False
+    vr = np.nan
+    if vol is not None and len(vol.dropna()) > 70:
+        v10 = vol.tail(10).mean()
+        v60 = vol.tail(70).head(60).mean()
+        vr = float(v10 / v60) if v60 else np.nan
+        vol_ok = bool(np.isfinite(vr) and vr >= 1.15)
+
+    s = {"iyilesen": 45, "lider": 30, "zayif": 8, "geride": 0}[q]
+    if q == "iyilesen" and np.isfinite(m_up) and m_up > 0:
+        s += 15
+    if taze_lider:
+        s += 25
+    if np.isfinite(r_up) and r_up > 0:
+        s += 10
+    if vol_ok:
+        s += 15
+    c5 = _pct(close, 5)
+    if np.isfinite(c5) and c5 > 0:
+        s += 5
+    return {"RS-Oran": r, "RS-Mom": m, "Bölge": RRG_Q[q][0], "_q": q,
+            "Taze Lider": taze_lider, "Hacim Oranı": vr, "Hacim Onayı": vol_ok,
+            "Erken Skor": int(np.clip(s, 0, 100)),
+            "1H %": c5, "1A %": _pct(close, 21), "3A %": _pct(close, 63)}
+
+
+def theme_rotation(prices: dict[str, pd.DataFrame], themes: dict[str, list[str]],
+                   bench: str = "SPY") -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Tema bazında RRG + erken akış skoru. Döner: (tablo, {tema: kuyruk})."""
+    b = prices.get(bench)
+    if b is None or b.empty:
+        return pd.DataFrame(), {}
+    bc = b["Close"].dropna()
+    rows, tails = [], {}
+    for tema, members in themes.items():
+        idx, vol = theme_index(prices, members)
+        if idx is None:
+            continue
+        ratio, mom = rrg_lines(idx, bc)
+        if ratio.dropna().empty or mom.dropna().empty:
+            continue
+        e = early_score(ratio.dropna(), mom.dropna(), vol, idx)
+        rows.append({"Tema": tema, **e, "ETF'ler": ", ".join(members)})
+        t = pd.DataFrame({"RS-Oran": ratio, "RS-Mom": mom}).dropna()
+        tails[tema] = t.iloc[::-5].head(6).iloc[::-1]   # son 6 hafta
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("Erken Skor", ascending=False).reset_index(drop=True)
+    return df, tails
+
+
+def etf_rotation(prices: dict[str, pd.DataFrame], etfs: list[str],
+                 bench: str = "SPY") -> pd.DataFrame:
+    b = prices.get(bench)
+    if b is None or b.empty:
+        return pd.DataFrame()
+    bc = b["Close"].dropna()
+    rows = []
+    for t in etfs:
+        df = prices.get(t)
+        if df is None or len(df) < 80:
+            continue
+        c = df["Close"].dropna()
+        ratio, mom = rrg_lines(c, bc)
+        if ratio.dropna().empty or mom.dropna().empty:
+            continue
+        e = early_score(ratio.dropna(), mom.dropna(), df["Close"] * df["Volume"], c)
+        rows.append({"ETF": t, **e})
+    out = pd.DataFrame(rows)
+    return out.sort_values("Erken Skor", ascending=False) if not out.empty else out
+
+
+# --------------------------------------------------------------------------
+# 4) BU TEMADA HANGİ HİSSE?
+# --------------------------------------------------------------------------
+BULL = {"💎 DIAMOND AL", "⭐ GOLDEN STAR", "🎣 LİKİDİTE SÜPÜRMESİ", "🐋 TOPLAMA",
+        "🚀 AFTERBURNER", "🟢 GİRİŞ BÖLGESİ", "📈 MINERVINI MVP",
+        "🎯 SIKIŞMA PATLADI", "⚡ PRO ↗ RETAIL"}
+BEAR = {"🩸 GÜÇLÜ RİSK", "⛔ DIAMOND SAT", "🐋 DAĞITIM", "🔻 AFTERBURNER AYI",
+        "⚡ PRO ↘ RETAIL"}
+
+STOCK_CLASSES = {
+    "🎯 Alım adayı": "Alım sinyali var, temasından güçlü ve kurumsal para "
+                    "giriyor. Giriş planı yapılabilir.",
+    "🌱 Geride kaldı, toparlanıyor": "Son bir ayda temasının gerisinde ama son "
+                                     "hafta göreli gücü dönmüş ve whale "
+                                     "artıyor — yetişme (catch-up) adayı.",
+    "🚀 Lider": "Temasını sürükleyen hisse. Trend devam ediyor; yeni giriş "
+               "için geri çekilme beklemek daha iyi risk/ödül verir.",
+    "🔥 Lider ama uzamış": "Lider fakat tükenme işareti var ya da çok hızlı "
+                          "yükselmiş. Kovalamayın.",
+    "⚪ İzle": "Belirgin bir avantajı yok; izleme listesinde tutun.",
+    "⛔ Uzak dur": "Dağıtım, risk ya da satış sinyali var.",
+    "📅 Bilanço yakın": "7 gün içinde bilanço var — gap riski stop mantığını "
+                       "bozar. Bilanço sonrasına bırakın.",
+    "💧 Likidite düşük": "Günlük işlem hacmi eşiğin altında; spread geniş, "
+                        "stop kayar.",
+}
+
+
+def classify_stock(d: dict[str, Any], min_liq_m: float = 10.0) -> tuple[str, list[str]]:
+    """Döner: (sınıf, [gerekçe parçaları])."""
+    why: list[str] = []
+    sig = d.get("Sinyal", "")
+    rs1a, rs1h = d.get("Temaya Göre 1A", np.nan), d.get("Temaya Göre 1H", np.nan)
+    dw5 = d.get("ΔWHALE 5B", np.nan)
+    liq = d.get("Hacim ($M)", np.nan)
+    kg = pd.to_numeric(d.get("Kalan Gün"), errors="coerce")
+    dsv = d.get("ΔSV pp", np.nan)
+    p1h = d.get("1 Hafta %", np.nan)
+
+    if np.isfinite(rs1a):
+        why.append(f"temaya göre {rs1a:+.1f}% (1A)")
+    if np.isfinite(dw5):
+        why.append("whale ↑" if dw5 > 1 else "whale ↓" if dw5 < -1 else "whale yatay")
+    if np.isfinite(dsv):
+        if dsv <= -3:
+            why.append(f"short azalıyor ({dsv:+.1f}p)")
+        elif dsv >= 3:
+            why.append(f"short artıyor ({dsv:+.1f}p)"
+                       + (" — fiyat düşerken" if np.isfinite(p1h) and p1h < 0 else ""))
+    if np.isfinite(kg) and kg >= 0:
+        why.append(f"bilanço {int(kg)} gün")
+    if sig and sig != "⚪ BEKLE":
+        why.append(sig)
+
+    if np.isfinite(liq) and liq < min_liq_m:
+        return "💧 Likidite düşük", [f"günlük ${liq:.1f}M"] + why
+    if np.isfinite(kg) and 0 <= kg <= 7:
+        return "📅 Bilanço yakın", why
+    if sig in BEAR:
+        return "⛔ Uzak dur", why
+    short_bad = np.isfinite(dsv) and dsv >= 3 and np.isfinite(p1h) and p1h < 0
+    if (sig in BULL and d.get("Skor", 0) >= 50
+            and (not np.isfinite(rs1h) or rs1h > 0) and not short_bad):
+        return "🎯 Alım adayı", why
+    if (np.isfinite(rs1a) and rs1a < 0 and np.isfinite(rs1h) and rs1h > 0
+            and np.isfinite(dw5) and dw5 > 0):
+        return "🌱 Geride kaldı, toparlanıyor", why
+    if np.isfinite(rs1a) and rs1a > 0:
+        if d.get("_exhausted") or sig == "⚠️ TÜKENME" or (
+                np.isfinite(d.get("1 Ay %", np.nan)) and d.get("1 Ay %") > 35):
+            return "🔥 Lider ama uzamış", why
+        return "🚀 Lider", why
+    return "⚪ İzle", why
+
+
+CLASS_ORDER = ["🎯 Alım adayı", "🌱 Geride kaldı, toparlanıyor", "🚀 Lider",
+               "🔥 Lider ama uzamış", "⚪ İzle", "📅 Bilanço yakın",
+               "💧 Likidite düşük", "⛔ Uzak dur"]
+
+
+def funnel_score(d: dict[str, Any]) -> int:
+    """0–100: swing skoru + temaya göre güç + whale + short akışı."""
+    s = 0.55 * float(d.get("Skor", 0) or 0)
+    rs = d.get("Temaya Göre 1A", np.nan)
+    if np.isfinite(rs):
+        s += 15 * np.tanh(rs / 10) + 10
+    rs1h = d.get("Temaya Göre 1H", np.nan)
+    if np.isfinite(rs1h):
+        s += 8 * np.tanh(rs1h / 4)
+    dw = d.get("ΔWHALE 5B", np.nan)
+    if np.isfinite(dw):
+        s += 8 * np.tanh(dw / 8)
+    dsv = d.get("ΔSV pp", np.nan)
+    if np.isfinite(dsv):
+        s -= 6 * np.tanh(dsv / 5)
+    return int(np.clip(round(s), 0, 100))
+
+
+def build_stock_table(scan_df: pd.DataFrame, theme_close: pd.Series | None,
+                      prices: dict[str, pd.DataFrame] | None = None,
+                      earn: pd.DataFrame | None = None,
+                      short: pd.DataFrame | None = None,
+                      min_liq_m: float = 10.0, swing_score=None) -> pd.DataFrame:
+    """Tarama tablosunu tema içi göreli güç, bilanço ve short ile birleştirir."""
+    if scan_df is None or scan_df.empty:
+        return pd.DataFrame()
+    df = scan_df.copy()
+    if "Sinyal" in df.columns:
+        df = df[df["Sinyal"] != "⚫ VERİ YOK"].copy()
+    if df.empty:
+        return df
+    th1a = _pct(theme_close, 21) if theme_close is not None else np.nan
+    th1h = _pct(theme_close, 5) if theme_close is not None else np.nan
+    df["Temaya Göre 1A"] = pd.to_numeric(df.get("1 Ay %"), errors="coerce") - th1a
+    df["Temaya Göre 1H"] = pd.to_numeric(df.get("1 Hafta %"), errors="coerce") - th1h
+
+    if prices:
+        hi = {}
+        for t in df["Sembol"]:
+            p = prices.get(t)
+            if p is not None and len(p) > 20:
+                c = p["Close"].dropna()
+                hi[t] = (c.iloc[-1] / c.tail(252).max() - 1) * 100
+        df["Zirveye Uzaklık %"] = df["Sembol"].map(hi)
+
+    if earn is not None and not earn.empty:
+        keep = [c for c in ("Hisse", "Kalan Gün", "Bilanço", "P/S Durum",
+                            "Hedef", "Potansiyel %") if c in earn.columns]
+        e = earn[keep].rename(columns={"Hisse": "Sembol"})
+        df = df.merge(e, on="Sembol", how="left")
+    if short is not None and not short.empty:
+        keep = [c for c in ("Sembol", "SV% 5G", "ΔSV pp") if c in short.columns]
+        df = df.merge(short[keep], on="Sembol", how="left")
+
+    if swing_score is not None:
+        df["Skor"] = [swing_score(r) for r in df.to_dict("records")]
+    cls, why = [], []
+    for r in df.to_dict("records"):
+        c, w = classify_stock(r, min_liq_m)
+        cls.append(c)
+        why.append(" · ".join(w))
+    df["Durum"] = cls
+    df["Neden"] = why
+    df["Huni Skoru"] = [funnel_score(r) for r in df.to_dict("records")]
+    df["_ord"] = df["Durum"].map({c: i for i, c in enumerate(CLASS_ORDER)})
+    return (df.sort_values(["_ord", "Huni Skoru"], ascending=[True, False])
+              .drop(columns=["_ord"]).reset_index(drop=True))
+
+# ==========================================================================
 # KAYNAK: app.py
 # ==========================================================================
 
@@ -5470,7 +6296,7 @@ class _Namespace:
             raise AttributeError(name) from exc
 
 
-dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = fvm = svm = _Namespace()
+dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = fvm = svm = fnl = _Namespace()
 
 
 
@@ -5683,6 +6509,49 @@ def load_short_interest(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_rotation(nonce: str):
+    """Karar Hunisi 1–2. adım: rotasyon oranları (uzun geçmiş) + repo verileri."""
+    prices, failed = dta.fetch(fnl.ROTATION_TICKERS, "1d_long")
+    crypto = fnl.read_crypto_caps()
+    liq = fnl.read_liquidity()
+    series = fnl.build_series(prices, crypto, liq)
+    rot = fnl.rotation_table(series)
+    files = {
+        "kripto": (f"{crypto.index.max():%d.%m.%Y}" if not crypto.empty else None),
+        "likidite": (f"{liq.index.max():%d.%m.%Y}" if not liq.empty else None),
+    }
+    return rot, series, failed, files
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_theme_rotation(nonce: str):
+    """Karar Hunisi 3. adım: tema ve ETF'lerde göreli rotasyon (RRG)."""
+    etfs = sorted({t for lst in uni.THEME_TRACKER.values() for t in lst})
+    prices, failed = dta.fetch(etfs + ["SPY"], "1d")
+    T, tails = fnl.theme_rotation(prices, uni.THEME_TRACKER)
+    E = fnl.etf_rotation(prices, etfs)
+    idx_map = {}
+    for tema, members in uni.THEME_TRACKER.items():
+        idx, _ = fnl.theme_index(prices, members)
+        if idx is not None:
+            idx_map[tema] = idx
+    return T, tails, E, idx_map, failed
+
+
+def theme_holdings(tema: str) -> list[str]:
+    """Temadaki ETF'lerin bileşenleri; bileşeni bilinmeyen sembol hissenin
+    kendisidir (ör. IONQ, MARA)."""
+    out: list[str] = []
+    for t in uni.THEME_TRACKER.get(tema, []):
+        h = uni.holdings(t)
+        if h:
+            out += [x for x in h if x not in out]
+        elif t not in uni.ETF and t not in out:
+            out.append(t)
+    return [x for x in out if "." not in x]      # yabancı borsa sembolleri hariç
+
+
 # ==========================================================================
 # DURUM
 # ==========================================================================
@@ -5690,6 +6559,7 @@ def _init_state() -> None:
     defaults = {
         "nonce_macro": "0", "nonce_scan": "0", "nonce_theme": "0",
         "nonce_news": "0", "nonce_earn": "0", "nonce_short": "0",
+        "nonce_funnel": "0",
         "manual_scenario": None,
     }
     for k, v in defaults.items():
@@ -5776,7 +6646,8 @@ with head_l:
         "<span class='tag'>Live</span></div>", unsafe_allow_html=True)
 with head_r:
     if st.button("⚡ Tümünü Yenile", width="stretch", type="primary"):
-        for k in ("nonce_macro", "nonce_scan", "nonce_theme", "nonce_news"):
+        for k in ("nonce_macro", "nonce_scan", "nonce_theme", "nonce_news",
+                  "nonce_funnel"):
             bump(k)
         st.rerun()
 
@@ -5863,12 +6734,390 @@ for e in M.errors:
 MARKET_REGIME_OK = M.scores.get("trend", 50) >= 50
 
 TABS = st.tabs([
-    "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
+    "🧭 Karar Hunisi", "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
     "🦈 Haftalık", "🚨 4H Omni Swing", "🚀 Future Themes", "📅 Bilanço",
     "📄 Rapor",
 ])
-(tab_macro, tab_theme, tab_etf, tab_val, tab_week, tab_omni,
+(tab_funnel, tab_macro, tab_theme, tab_etf, tab_val, tab_week, tab_omni,
  tab_future, tab_earn, tab_report) = TABS
+
+
+# ==========================================================================
+# 0) KARAR HUNİSİ
+# ==========================================================================
+with tab_funnel:
+    st.markdown(
+        "Bir yatırım kararını **dört soruya** böler. Her adım bir öncekinin "
+        "cevabına dayanır: önce piyasa risk almayı ödüllendiriyor mu, sonra "
+        "para hangi bölgeye akıyor, sonra o bölgede hangi tema **erken** "
+        "ivmeleniyor, en sonda o temada hangi hisse öne çıkıyor.")
+    h1, h2 = st.columns([1, 4])
+    if h1.button("🔄 Huniyi yenile", key="fn_ref", width="stretch"):
+        bump("nonce_funnel")
+        st.rerun()
+
+    with st.spinner("Rotasyon oranları çekiliyor (15 yıllık günlük veri)…"):
+        ROT, SER, ROT_FAILED, FILES = load_rotation(st.session_state.nonce_funnel)
+    eksik = [k for k, v in FILES.items() if not v]
+    h2.caption(
+        "Kripto endeksleri: " + (FILES["kripto"] or "❌ dosya yok") + " · "
+        "Fed likiditesi: " + (FILES["likidite"] or "❌ dosya yok")
+        + (" · Çekilemeyen: " + ", ".join(ROT_FAILED) if ROT_FAILED else ""))
+    if eksik:
+        st.info("Kripto endeksleri (TOTAL, TOTAL3, BTC.D, OTHERS/BTC) ve Fed "
+                "net likiditesi repodaki `data/` klasöründen okunur. GitHub'da "
+                "**Actions → FINRA short hacim güncelle → Run workflow** ile "
+                "bir kez çalıştırın; sonra her iş günü kendiliğinden güncellenir.")
+
+    # ------------------------------------------------------------------ 1
+    section("Adım 1 · Risk açık mı?")
+    PIL = fnl.risk_pillars(M.scores, ROT)
+    V = fnl.risk_verdict(PIL, M.regime)
+    v1, v2 = st.columns([1, 2])
+    v1.markdown(kpi("Piyasa durumu", V["etiket"],
+                    f"skor {V['skor']:.0f}/100 · {V['boyut']}"
+                    if np.isfinite(V["skor"]) else V["boyut"], V["renk"]),
+                unsafe_allow_html=True)
+    v2.markdown(f"**Ne demek?** {V['ozet']}")
+    v2.caption(f"{V['n_ok']} sütun olumlu, {V['n_bad']} sütun olumsuz. "
+               f"Makro sekmesindeki rejim etiketi: {M.regime}")
+    pc = st.columns(6)
+    for col, p in zip(pc, PIL):
+        tone = ("pos" if p["durum"] == "✅" else "neg" if p["durum"] == "❌" else "")
+        col.markdown(kpi(p["ad"], f"{p['durum']} {p['skor']:.0f}"
+                         if np.isfinite(p["skor"]) else "➖", p["ne"], tone),
+                     unsafe_allow_html=True)
+    if any(x in M.regime for x in ("OPEX", "FOMC")):
+        st.info(f"📅 **Takvim uyarısı — {M.regime}:** {M.regime_desc}")
+    with st.expander("Risk açık / risk kapalı ne demek? Sütunlar nasıl okunur?"):
+        st.markdown(
+            "**Risk açık (risk-on):** Yatırımcılar getiri peşinde; para "
+            "tahvil, altın ve nakitten hisseye, küçük şirketlere, büyüme "
+            "hisselerine ve kriptoya akar. Alım sinyallerinin isabeti "
+            "yüksektir.\n\n"
+            "**Risk kapalı (risk-off):** Yatırımcılar korunma peşinde; para "
+            "güvenli limana (hazine, altın, dolar, defansif sektörler) kaçar. "
+            "İyi görünen alım sinyalleri bile sık başarısız olur.\n\n"
+            "Karar altı sütunun ağırlıklı ortalamasıdır (Trend %25, diğerleri "
+            "%15). Her sütun 0–100: **60+ ✅**, **40–60 ⚠️**, **40 altı ❌**.")
+        for p in PIL:
+            st.markdown(f"- **{p['ad']}** — {p['ne']} *{p['neden']}*")
+
+    # ------------------------------------------------------------------ 2
+    section("Adım 2 · Para nereye akıyor?")
+    if ROT.empty:
+        st.warning("Rotasyon verisi çekilemedi. Birkaç dakika sonra yenileyin.")
+    else:
+        for line in fnl.money_flow_summary(ROT):
+            st.markdown(f"- {line}")
+
+        SEG = fnl.segment_verdicts(ROT)
+        s1, s2 = st.columns([1, 2])
+        seg_pick = s1.selectbox("Alacağınız hisse hangi bölgede?",
+                                list(fnl.SEGMENTS), key="fn_seg")
+        row = SEG[SEG["Segment"] == seg_pick]
+        if not row.empty:
+            r = row.iloc[0]
+            tone = ("pos" if r["Karar"].startswith("🟢")
+                    else "neg" if r["Karar"].startswith("🔴") else "")
+            s1.markdown(kpi(seg_pick, r["Karar"], f"skor {r['Skor']:+.0f}", tone),
+                        unsafe_allow_html=True)
+            s2.markdown(f"**Kapsam:** {r['Kapsam']}")
+            s2.markdown("**Dayanak:** " + r["Dayanak"])
+            uyum = ("✅ Piyasa risk açık ve bu bölgeye iştah var — ortam uygun."
+                    if V["etiket"].startswith("🟢") and r["Skor"] >= 5 else
+                    "⚠️ Bölgeye iştah var ama genel piyasa temkinli — küçük "
+                    "pozisyon, sadece en güçlü kurulumlar."
+                    if r["Skor"] >= 5 else
+                    "🌱 Bölgede erken dönüş sinyali var — izleme listesine "
+                    "alın, teyit bekleyin."
+                    if r["Erken Sinyal"] else
+                    "❌ Para bu bölgeye akmıyor — doğru zaman değil. Adım 2'de "
+                    "iştahlı bölgelere bakın.")
+            s2.markdown(f"**Sonuç:** {uyum}")
+
+        st.dataframe(
+            SEG[["Segment", "Karar", "Skor", "Erken Sinyal", "Dayanak"]],
+            width="stretch", hide_index=True,
+            column_config={
+                "Skor": st.column_config.ProgressColumn(
+                    format="%+.0f", min_value=-100, max_value=100,
+                    help="Bölgeye ait oranların ortalama akış skoru"),
+                "Dayanak": st.column_config.TextColumn(width="large")})
+
+        st.markdown("**Bütün akış göstergeleri**")
+        gtabs = st.tabs(["Hisse içi rotasyon", "Varlık sınıfları", "Kripto",
+                         "Likidite / para basımı"])
+        gmap = ["Hisse içi", "Varlık sınıfları", "Kripto", "Likidite"]
+        for gt, g in zip(gtabs, gmap):
+            with gt:
+                sub = ROT[ROT["Grup"] == g].copy()
+                if sub.empty:
+                    st.caption("Veri yok" + (" — data/ klasöründeki dosya "
+                                             "henüz oluşmamış." if g in
+                                             ("Kripto", "Likidite") else "."))
+                    continue
+                sub["Çeyreklik"] = sub.apply(
+                    lambda x: ("📐 TAZE KIRILIM" if x["Taze Çeyreklik Kırılım"]
+                               else "✅ direnç üstü" if x["Çeyreklik Kırılım"]
+                               else f"{x['Dirence Uzaklık %']:+.1f}% uzakta"
+                               if np.isfinite(x["Dirence Uzaklık %"]) else "—"),
+                    axis=1)
+                st.dataframe(
+                    sub[["Gösterge", "Akış", "Risk Okuması", "Faz", "20G %",
+                         "63G %", "Çeyreklik", "Not"]],
+                    width="stretch", hide_index=True,
+                    column_config={
+                        "20G %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "63G %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "Çeyreklik": st.column_config.TextColumn(
+                            help="Çeyrek kapanışı, önceki 8 çeyreğin en yüksek "
+                                 "kapanışını geçti mi?"),
+                        "Not": st.column_config.TextColumn(width="large")})
+                if g == "Kripto":
+                    st.caption("TOTAL, TOTAL3, OTHERS ve BTC.D, ilk ~150 coinin "
+                               "bugünkü arzı × günlük fiyatla hesaplanan "
+                               "yaklaşık değerlerdir; yön ve kırılımlar "
+                               "TradingView ile uyumludur, seviye birkaç puan "
+                               "sapabilir.")
+
+        # ---- oran grafiği (QQQ/SPY çeyreklik gibi)
+        st.markdown("**Oran grafiği ve kırılım**")
+        k1, k2 = st.columns([2, 1])
+        keys = [k for k in ROT["Anahtar"]]
+        ck = k1.selectbox("Gösterge", keys,
+                          index=keys.index("QQQ/SPY") if "QQQ/SPY" in keys else 0,
+                          format_func=lambda k: fnl.PAIR[k]["ad"], key="fn_ratio")
+        per = k2.radio("Zaman dilimi", ["Çeyreklik", "Aylık", "Haftalık"],
+                       horizontal=True, key="fn_per")
+        sser = SER.get(ck)
+        if sser is not None:
+            rule, look = {"Çeyreklik": ("QE", 8), "Aylık": ("ME", 12),
+                          "Haftalık": ("W-FRI", 26)}[per]
+            o = sser.resample(rule).agg(["first", "max", "min", "last"]).dropna()
+            o.columns = ["Open", "High", "Low", "Close"]
+            o = o.tail({"QE": 48, "ME": 120, "W-FRI": 156}[rule])
+            bi = fnl.breakout_info(sser, rule, look)
+            fig = go.Figure(go.Candlestick(
+                x=o.index, open=o["Open"], high=o["High"], low=o["Low"],
+                close=o["Close"], increasing_line_color="#2fbe86",
+                decreasing_line_color="#e66767", name=fnl.PAIR[ck]["ad"]))
+            if np.isfinite(bi["direnc"]):
+                fig.add_hline(y=bi["direnc"], line_dash="dot",
+                              line_color="#c98500",
+                              annotation_text=f"önceki {look} dönemin zirvesi",
+                              annotation_font_color="#c98500")
+            fig.update_layout(height=380, xaxis_rangeslider_visible=False,
+                              showlegend=False, **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            if bi["kirilim"]:
+                st.success(f"📐 {fnl.PAIR[ck]['ad']} {per.lower()} kapanışta "
+                           f"önceki {look} dönemin zirvesinin "
+                           f"%{bi['uzaklik']:.1f} üstünde"
+                           + (" — **bu dönem kırdı (taze)**." if bi.get("taze")
+                              else "."))
+            elif np.isfinite(bi["uzaklik"]):
+                st.caption(f"Dirence uzaklık: {bi['uzaklik']:+.1f}%")
+            st.caption(fnl.PAIR[ck]["not_"])
+
+    # ------------------------------------------------------------------ 3
+    section("Adım 3 · Hangi tema erken ivmeleniyor?")
+    st.markdown(
+        "Her tema S&P 500 ile kıyaslanır. **Yatay eksen** temanın endeksten "
+        "güçlü mü zayıf mı olduğunu, **dikey eksen** bu gücün artıp "
+        "azaldığını gösterir. Akıllı paranın erken izi, **🌱 İyileşiyor** "
+        "bölgesinden **🚀 Lider** bölgesine geçiştir: tema henüz endeksi "
+        "geçmemiştir ama göreli gücü artmaktadır.")
+    with st.spinner("Tema ETF'leri karşılaştırılıyor…"):
+        T, TAILS, E, IDX, T_FAILED = load_theme_rotation(
+            st.session_state.nonce_funnel)
+    if T.empty:
+        st.warning("Tema verisi çekilemedi.")
+    else:
+        top = T.head(3)
+        tc = st.columns(3)
+        for col, (_, r) in zip(tc, top.iterrows()):
+            neden = [r["Bölge"]]
+            if r["Taze Lider"]:
+                neden.append("liderliğe yeni geçti")
+            if r["Hacim Onayı"]:
+                neden.append(f"hacim {r['Hacim Oranı']:.1f}×")
+            if np.isfinite(r["1H %"]):
+                neden.append(f"1H {r['1H %']:+.1f}%")
+            col.markdown(kpi(r["Tema"], f"{r['Erken Skor']}/100",
+                             " · ".join(neden), "pos"), unsafe_allow_html=True)
+
+        flt = st.radio("Göster", ["🌱 Erken akış", "🚀 Liderler", "Tümü"],
+                       horizontal=True, key="fn_tflt")
+        view = T
+        if flt.startswith("🌱"):
+            view = T[(T["_q"] == "iyilesen") | (T["Taze Lider"])]
+        elif flt.startswith("🚀"):
+            view = T[T["_q"] == "lider"]
+        st.dataframe(
+            view[["Tema", "Bölge", "Erken Skor", "1H %", "1A %", "3A %",
+                  "Hacim Onayı", "RS-Oran", "RS-Mom", "ETF'ler"]],
+            width="stretch", hide_index=True,
+            column_config={
+                "Erken Skor": st.column_config.ProgressColumn(
+                    format="%d", min_value=0, max_value=100,
+                    help="İyileşen bölge +45, liderliğe taze geçiş +25, göreli "
+                         "güç artışı +10, hacim onayı +15, haftalık artı +5"),
+                "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "1A %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "3A %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "Hacim Onayı": st.column_config.CheckboxColumn(
+                    help="Son 10 günün dolar hacmi önceki 60 günün 1.15 katından "
+                         "fazla — fiyat hareketine para eşlik ediyor"),
+                "RS-Oran": st.column_config.NumberColumn(format="%.1f"),
+                "RS-Mom": st.column_config.NumberColumn(format="%.1f")})
+
+        # ---- RRG grafiği
+        pick = st.multiselect("Grafikte göster", list(T["Tema"]),
+                              default=list(T["Tema"].head(10)), key="fn_rrg")
+        if pick:
+            fig = go.Figure()
+            for i, tema in enumerate(pick):
+                tl = TAILS.get(tema)
+                if tl is None or tl.empty:
+                    continue
+                colr = SERIES[i % len(SERIES)]
+                fig.add_trace(go.Scatter(
+                    x=tl["RS-Oran"], y=tl["RS-Mom"], mode="lines+markers",
+                    line=dict(color=colr, width=1.5), marker=dict(size=4),
+                    name=tema, showlegend=False, hoverinfo="skip"))
+                fig.add_trace(go.Scatter(
+                    x=[tl["RS-Oran"].iloc[-1]], y=[tl["RS-Mom"].iloc[-1]],
+                    mode="markers+text", marker=dict(size=11, color=colr),
+                    text=[tema], textposition="top center",
+                    textfont=dict(size=11, color=colr), name=tema,
+                    hovertemplate=f"{tema}<br>RS-Oran %{{x:.1f}}<br>"
+                                  f"RS-Mom %{{y:.1f}}<extra></extra>"))
+            fig.add_vline(x=100, line_color="#3a3a46")
+            fig.add_hline(y=100, line_color="#3a3a46")
+            for x_, y_, t_ in ((1, 1, "🚀 Lider"), (0, 1, "🌱 İyileşiyor"),
+                               (0, 0, "🩸 Geride"), (1, 0, "🌤️ Yoruluyor")):
+                fig.add_annotation(xref="paper", yref="paper", x=0.02 + 0.96 * x_,
+                                   y=0.02 + 0.96 * y_, text=t_, showarrow=False,
+                                   xanchor="right" if x_ else "left",
+                                   font=dict(size=12, color="#6e6e7a"))
+            fig.update_layout(height=520, xaxis_title="RS-Oran (güç)",
+                              yaxis_title="RS-Momentum (güçteki değişim)",
+                              **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            st.caption("Çizgiler son 6 haftanın izi, büyük nokta bugün. Saat "
+                       "yönünün tersine dönüş (Geride → İyileşiyor → Lider) "
+                       "sağlıklı rotasyondur.")
+        with st.expander("ETF bazında aynı tablo"):
+            if not E.empty:
+                st.dataframe(
+                    E[["ETF", "Bölge", "Erken Skor", "1H %", "1A %", "3A %",
+                       "Hacim Onayı", "RS-Oran", "RS-Mom"]],
+                    width="stretch", hide_index=True,
+                    column_config={
+                        "Erken Skor": st.column_config.ProgressColumn(
+                            format="%d", min_value=0, max_value=100),
+                        "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "1A %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "3A %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "RS-Oran": st.column_config.NumberColumn(format="%.1f"),
+                        "RS-Mom": st.column_config.NumberColumn(format="%.1f")})
+
+    # ------------------------------------------------------------------ 4
+    section("Adım 4 · Bu temada hangi hisse?")
+    tema_list = list(T["Tema"]) if not T.empty else list(uni.THEME_TRACKER)
+    q1, q2 = st.columns([2, 1])
+    tema = q1.selectbox("Tema", tema_list, key="fn_tema",
+                        help="Liste Adım 3'teki erken skor sırasıyla gelir")
+    min_liq = q2.number_input("Min. günlük işlem hacmi ($M)", 0.0, 500.0,
+                              10.0, 1.0, key="fn_liq")
+    hold = theme_holdings(tema)
+    if not hold:
+        st.info("Bu temadaki ETF'lerin bileşen listesi tanımlı değil. ETF "
+                "Radarı sekmesinde bileşeni olan bir tema seçin.")
+    else:
+        st.caption(f"{len(hold)} hisse · kaynak: "
+                   + ", ".join(f"`{e}`" for e in uni.THEME_TRACKER.get(tema, [])))
+        S = scan_gate(f"funnel_{tema}", hold, "1d", "Tema hisselerini tara")
+        if not S.empty:
+            with st.spinner("Bilanço tarihleri ve değerleme çekiliyor…"):
+                EARN_T = load_earnings(tuple(hold), st.session_state.nonce_earn)
+            if not EARN_T.empty:
+                EARN_T = fvm.add_fair_values(EARN_T)
+            SVRAW_T, _, _ = load_short_volume(st.session_state.nonce_short)
+            pchg = dict(zip(S["Sembol"], pd.to_numeric(S.get("1 Hafta %"),
+                                                        errors="coerce")))
+            SVT_T = svm.short_table(SVRAW_T, hold, pchg)
+            TB = fnl.build_stock_table(S, IDX.get(tema), None, EARN_T, SVT_T,
+                                       min_liq, swing_score=scr.swing_score)
+            if TB.empty:
+                st.warning("Tarama sonucu boş.")
+            else:
+                counts = TB["Durum"].value_counts()
+                st.markdown(" ".join(
+                    badge(f"{c} · {counts[c]}",
+                          "pos" if c.startswith(("🎯", "🌱")) else
+                          "neg" if c.startswith(("⛔", "💧")) else "")
+                    for c in fnl.CLASS_ORDER if c in counts), unsafe_allow_html=True)
+                show = st.multiselect(
+                    "Gösterilecek durumlar", [c for c in fnl.CLASS_ORDER
+                                              if c in counts],
+                    default=[c for c in fnl.CLASS_ORDER[:3] if c in counts]
+                    or [c for c in fnl.CLASS_ORDER if c in counts],
+                    key=f"fn_show_{tema}")
+                vv = TB[TB["Durum"].isin(show)] if show else TB
+                cols = [c for c in [
+                    "Durum", "Sembol", "Huni Skoru", "Sinyal", "Fiyat",
+                    "Temaya Göre 1A", "Temaya Göre 1H", "1 Ay %", "Hacim ($M)",
+                    "Kalan Gün", "Bilanço", "SV% 5G", "ΔSV pp", "WHALE",
+                    "ΔWHALE 5B", "P/S Durum", "Neden"] if c in vv.columns]
+                st.dataframe(
+                    vv[cols].style.map(signal_style, subset=["Sinyal"]),
+                    width="stretch", hide_index=True,
+                    column_config={
+                        "Huni Skoru": st.column_config.ProgressColumn(
+                            format="%d", min_value=0, max_value=100,
+                            help="Swing skoru (Pine sinyalleri) %55 + temaya "
+                                 "göre güç + whale yönü − short artışı"),
+                        "Fiyat": st.column_config.NumberColumn(format="$%.2f"),
+                        "Temaya Göre 1A": st.column_config.NumberColumn(
+                            format="%+.1f%%",
+                            help="Hissenin 1 aylık getirisi − tema endeksinin"),
+                        "Temaya Göre 1H": st.column_config.NumberColumn(
+                            format="%+.1f%%"),
+                        "1 Ay %": st.column_config.NumberColumn(format="%+.1f%%"),
+                        "Hacim ($M)": st.column_config.NumberColumn(
+                            "Günlük Ort. İşlem Hacmi ($M)", format="%.1f",
+                            help="20 günlük ortalama dolar hacmi"),
+                        "Kalan Gün": st.column_config.NumberColumn(
+                            "Bilançoya Gün", format="%d"),
+                        "SV% 5G": st.column_config.NumberColumn(
+                            "Short Hacim %", format="%.1f%%"),
+                        "ΔSV pp": st.column_config.NumberColumn(
+                            "Short Δ (puan)", format="%+.1f"),
+                        "WHALE": st.column_config.ProgressColumn(
+                            format="%.0f", min_value=0, max_value=100),
+                        "ΔWHALE 5B": st.column_config.NumberColumn(format="%+.1f"),
+                        "Neden": st.column_config.TextColumn(width="large")})
+                with st.expander("Durumlar ne anlama geliyor?"):
+                    for c in fnl.CLASS_ORDER:
+                        st.markdown(f"- **{c}** — {fnl.STOCK_CLASSES[c]}")
+
+                # ---- tek paragraf sonuç
+                al = TB[TB["Durum"] == "🎯 Alım adayı"]["Sembol"].head(5).tolist()
+                ger = TB[TB["Durum"] == "🌱 Geride kaldı, toparlanıyor"][
+                    "Sembol"].head(5).tolist()
+                tr = T[T["Tema"] == tema].iloc[0] if not T.empty and (
+                    T["Tema"] == tema).any() else None
+                parca = [f"**Piyasa:** {V['etiket']}"]
+                if tr is not None:
+                    parca.append(f"**Tema ({tema}):** {tr['Bölge']}, erken skor "
+                                 f"{tr['Erken Skor']}/100")
+                parca.append("**Alım adayları:** "
+                             + (", ".join(al) if al else "yok"))
+                parca.append("**Toparlanan geride kalanlar:** "
+                             + (", ".join(ger) if ger else "yok"))
+                st.success(" · ".join(parca))
 
 
 # ==========================================================================
