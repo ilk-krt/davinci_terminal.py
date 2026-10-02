@@ -6280,6 +6280,355 @@ def build_stock_table(scan_df: pd.DataFrame, theme_close: pd.Series | None,
               .drop(columns=["_ord"]).reset_index(drop=True))
 
 # ==========================================================================
+# KAYNAK: apex/fundchart.py
+# ==========================================================================
+# apex/fundchart.py — TEK HİSSE DEĞERLEME GRAFİKLERİ
+#
+# 1) F/K (TTM) geçmişi + akran medyanı
+#    Hissenin günlük fiyatı / son 4 çeyreğin HBK toplamı. Yanında seçilen
+#    akranların aynı hesapla bulunan F/K medyanı.
+#
+# 2) Fiyat vs medyan çarpan adil fiyatı ("FAST Graphs" mantığı)
+#    Hisse başı TTM metrik (faaliyet nakit akışı, serbest nakit akışı,
+#    satış ya da HBK) × hissenin kendi geçmişteki MEDYAN çarpanı = o
+#    tarihteki "normal" fiyat. Analist tahminleriyle 2 mali yıl ileri uzatılır.
+#
+# Veri: yfinance. Yıllık tablolar ~4–5 yıl, çeyreklik ~5–6 çeyrek geri gider;
+# düzeltilmiş HBK (earnings_dates) ~10 yıl. Seriler bu ikisinin birleşimidir.
+
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+METRICS: dict[str, dict[str, Any]] = {
+    "OCF": dict(ad="Faaliyet nakit akışı", kisa="P/OCF",
+                stmt="cf", row=["Operating Cash Flow",
+                                "Cash Flow From Continuing Operating Activities"]),
+    "FCF": dict(ad="Serbest nakit akışı", kisa="P/FCF",
+                stmt="cf", row=["Free Cash Flow"]),
+    "REV": dict(ad="Satış", kisa="F/S", stmt="inc",
+                row=["Total Revenue", "Operating Revenue"]),
+    "EPS": dict(ad="Hisse başı kâr (GAAP)", kisa="F/K", stmt="inc",
+                row=["Diluted EPS", "Basic EPS"], per_share=True),
+}
+SHARE_ROWS = ["Diluted Average Shares", "Basic Average Shares"]
+
+
+# --------------------------------------------------------------------------
+# Ham veri
+# --------------------------------------------------------------------------
+def fetch_raw(t: str) -> dict[str, Any]:
+    """Tek hisse için gereken tüm ham veriyi çeker (hatalar sessizce boş)."""
+    import yfinance as yf
+
+    tk = yf.Ticker(t)
+    out: dict[str, Any] = {"ticker": t, "errors": []}
+
+    def grab(name, fn):
+        try:
+            v = fn()
+            out[name] = v if v is not None else pd.DataFrame()
+        except Exception as exc:
+            out[name] = pd.DataFrame()
+            out["errors"].append(f"{name}: {type(exc).__name__}")
+
+    grab("price", lambda: tk.history(period="10y", auto_adjust=False)["Close"])
+    grab("q_inc", lambda: tk.quarterly_income_stmt)
+    grab("a_inc", lambda: tk.income_stmt)
+    grab("q_cf", lambda: tk.quarterly_cashflow)
+    grab("a_cf", lambda: tk.cashflow)
+    grab("edates", lambda: tk.get_earnings_dates(limit=44))
+    grab("eps_est", lambda: tk.earnings_estimate)
+    grab("rev_est", lambda: tk.revenue_estimate)
+    try:
+        out["info"] = yf_info(t)
+    except Exception:
+        out["info"] = {}
+    return out
+
+
+def fetch_price_eps_only(t: str) -> dict[str, Any]:
+    """Akranlar için hafif çekim: fiyat + düzeltilmiş HBK geçmişi."""
+    import yfinance as yf
+
+    tk = yf.Ticker(t)
+    out: dict[str, Any] = {"ticker": t}
+    try:
+        out["price"] = tk.history(period="10y", auto_adjust=False)["Close"]
+    except Exception:
+        out["price"] = pd.Series(dtype=float)
+    try:
+        out["edates"] = tk.get_earnings_dates(limit=44)
+    except Exception:
+        out["edates"] = pd.DataFrame()
+    try:
+        out["q_inc"] = tk.quarterly_income_stmt
+        out["a_inc"] = tk.income_stmt
+    except Exception:
+        out["q_inc"], out["a_inc"] = pd.DataFrame(), pd.DataFrame()
+    return out
+
+
+# --------------------------------------------------------------------------
+# Yardımcılar
+# --------------------------------------------------------------------------
+def _naive(idx) -> pd.DatetimeIndex:
+    idx = pd.to_datetime(idx)
+    try:
+        idx = idx.tz_localize(None)
+    except TypeError:
+        idx = idx.tz_convert(None)
+    return idx.normalize()
+
+
+def _price(raw: dict[str, Any]) -> pd.Series:
+    p = raw.get("price")
+    if p is None or len(p) == 0:
+        return pd.Series(dtype=float)
+    p = pd.Series(p).dropna().astype(float)
+    p.index = _naive(p.index)
+    return p[~p.index.duplicated(keep="last")].sort_index()
+
+
+def _row(df: pd.DataFrame, names: list[str]) -> pd.Series:
+    """Mali tablodan bir satır (sütunlar tarih). Döner: tarih → değer."""
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.Series(dtype=float)
+    for n in names:
+        if n in df.index:
+            s = pd.to_numeric(df.loc[n], errors="coerce")
+            s.index = _naive(s.index)
+            return s.dropna().sort_index()
+    return pd.Series(dtype=float)
+
+
+def ttm_events(q: pd.Series, a: pd.Series, flow: bool = True) -> pd.Series:
+    """
+    Tarih → TTM değer olayları.
+    Çeyreklik veri: ardışık 4 çeyrek varsa toplamı (akış kalemleri).
+    Yıllık veri: mali yıl sonundaki yıllık değer.
+    Çakışan dönemlerde çeyreklik tercih edilir (daha güncel).
+    """
+    ev: dict[pd.Timestamp, float] = {}
+    for d, v in a.items():
+        ev[d] = float(v)
+    if len(q) >= 4 and flow:
+        qs = q.sort_index()
+        for i in range(3, len(qs)):
+            win = qs.iloc[i - 3:i + 1]
+            span = (win.index[-1] - win.index[0]).days
+            if 250 <= span <= 300:             # gerçekten ardışık 4 çeyrek
+                ev[win.index[-1]] = float(win.sum())
+    return pd.Series(ev).sort_index()
+
+
+def shares_series(raw: dict[str, Any]) -> pd.Series:
+    a = _row(raw.get("a_inc"), SHARE_ROWS)
+    q = _row(raw.get("q_inc"), SHARE_ROWS)
+    s = pd.concat([a, q]).sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    if s.empty:
+        so = (raw.get("info") or {}).get("sharesOutstanding")
+        if so:
+            s = pd.Series({pd.Timestamp.today().normalize(): float(so)})
+    return s
+
+
+def per_share_ttm(raw: dict[str, Any], key: str) -> pd.Series:
+    """Hisse başı TTM metrik olayları (tarih → değer)."""
+    m = METRICS[key]
+    src_q = raw.get("q_cf" if m["stmt"] == "cf" else "q_inc")
+    src_a = raw.get("a_cf" if m["stmt"] == "cf" else "a_inc")
+    q, a = _row(src_q, m["row"]), _row(src_a, m["row"])
+    ev = ttm_events(q, a, flow=True)
+    if ev.empty:
+        return ev
+    if m.get("per_share"):
+        return ev
+    sh = shares_series(raw)
+    if sh.empty:
+        return pd.Series(dtype=float)
+    sh_at = sh.reindex(sh.index.union(ev.index)).sort_index().ffill().bfill()
+    return (ev / sh_at.reindex(ev.index)).dropna()
+
+
+def adjusted_eps_ttm(raw: dict[str, Any]) -> pd.Series:
+    """earnings_dates'teki 'Reported EPS' (düzeltilmiş) — 4'lü kayan toplam,
+    açıklama tarihinde bilinir hale gelir."""
+    ed = raw.get("edates")
+    if ed is None or not isinstance(ed, pd.DataFrame) or ed.empty:
+        return pd.Series(dtype=float)
+    col = next((c for c in ed.columns if "Reported" in str(c)), None)
+    if col is None:
+        return pd.Series(dtype=float)
+    s = pd.to_numeric(ed[col], errors="coerce").dropna()
+    s.index = _naive(s.index)
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    return s.rolling(4).sum().dropna()
+
+
+def step_daily(events: pd.Series, idx: pd.DatetimeIndex) -> pd.Series:
+    """Olay serisini günlük fiyat endeksine 'en son bilinen değer' olarak yayar."""
+    if events.empty:
+        return pd.Series(np.nan, index=idx)
+    u = idx.union(events.index)
+    return events.reindex(u).sort_index().ffill().reindex(idx)
+
+
+# --------------------------------------------------------------------------
+# 1) F/K geçmişi + akran medyanı
+# --------------------------------------------------------------------------
+def pe_history(raw: dict[str, Any], basis: str = "GAAP") -> pd.Series:
+    p = _price(raw)
+    if p.empty:
+        return pd.Series(dtype=float)
+    if basis == "GAAP":
+        eps = per_share_ttm(raw, "EPS")
+        if eps.empty:
+            eps = adjusted_eps_ttm(raw)
+    else:
+        eps = adjusted_eps_ttm(raw)
+        if eps.empty:
+            eps = per_share_ttm(raw, "EPS")
+    if eps.empty:
+        return pd.Series(dtype=float)
+    e = step_daily(eps, p.index)
+    pe = (p / e).where(e > 0)
+    return pe[pe.index >= eps.index.min()].dropna()
+
+
+def peer_median(pe_map: dict[str, pd.Series], freq: str = "ME",
+                min_n: int = 3) -> tuple[pd.Series, pd.Series]:
+    """Akranların F/K'larının dönem sonu medyanı ve kaç akranın katıldığı."""
+    cols = {}
+    for t, s in pe_map.items():
+        if s is None or s.empty:
+            continue
+        s = s[(s > 0) & (s < 400)]                 # anlamsız uçları dışarıda
+        cols[t] = s.resample(freq).last()
+    if not cols:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+    df = pd.DataFrame(cols)
+    n = df.notna().sum(axis=1)
+    med = df.median(axis=1).where(n >= min_n)
+    return med.dropna(), n
+
+
+# --------------------------------------------------------------------------
+# 2) Fiyat vs medyan çarpan adil fiyatı
+# --------------------------------------------------------------------------
+def _growth(est: pd.DataFrame, row: str) -> float:
+    if est is None or not isinstance(est, pd.DataFrame) or est.empty:
+        return np.nan
+    if row in est.index and "growth" in est.columns:
+        g = pd.to_numeric(est.loc[row, "growth"], errors="coerce")
+        return float(g) if np.isfinite(g) else np.nan
+    return np.nan
+
+
+def estimate_points(raw: dict[str, Any], key: str, last_ev: pd.Series
+                    ) -> tuple[pd.Series, str]:
+    """
+    Gelecek 2 mali yıl için metrik tahmini. Satış → satış tahmini büyümesi;
+    HBK → HBK tahmini; nakit akışları → HBK büyümesiyle ölçeklenir
+    (yfinance nakit akışı tahmini vermez). Döner: (tarih → değer, açıklama).
+    """
+    a = _row(raw.get("a_cf" if METRICS[key]["stmt"] == "cf" else "a_inc"),
+             METRICS[key]["row"])
+    if a.empty or last_ev.empty:
+        return pd.Series(dtype=float), ""
+    fy_end = a.index.max()
+    est = raw.get("rev_est") if key == "REV" else raw.get("eps_est")
+    g0, g1 = _growth(est, "0y"), _growth(est, "+1y")
+    if not np.isfinite(g0):
+        return pd.Series(dtype=float), ""
+    base = float(last_ev[last_ev.index <= fy_end].iloc[-1]) if (
+        last_ev.index <= fy_end).any() else float(last_ev.iloc[-1])
+    if base <= 0:
+        return pd.Series(dtype=float), ""
+    pts = {fy_end + pd.DateOffset(years=1): base * (1 + g0)}
+    if np.isfinite(g1):
+        pts[fy_end + pd.DateOffset(years=2)] = base * (1 + g0) * (1 + g1)
+    kaynak = {"REV": "analist satış tahmini",
+              "EPS": "analist HBK tahmini"}.get(
+        key, "analist HBK büyümesiyle ölçeklendi (nakit akışı tahmini yok)")
+    return pd.Series(pts).sort_index(), kaynak
+
+
+def fair_value_chart_data(raw: dict[str, Any], key: str, years: int = 0
+                          ) -> dict[str, Any]:
+    """
+    Döner: price, fair (günlük adil fiyat), points (dönem sonu noktaları),
+    est (tahmin noktaları), median multiple, korelasyon, getiri, CAGR.
+    `years`: medyan çarpanın hesaplandığı pencere (0 = mevcut tüm geçmiş).
+    """
+    p = _price(raw)
+    ev = per_share_ttm(raw, key)
+    if p.empty or ev.empty:
+        return {"ok": False, "neden": f"{METRICS[key]['ad']} verisi bulunamadı"}
+    ev = ev[ev > 0]
+    if len(ev) < 2:
+        return {"ok": False, "neden": f"{METRICS[key]['ad']} negatif ya da "
+                                      f"yetersiz — çarpan anlamlı değil"}
+    p = p[p.index >= ev.index.min()]
+    daily = step_daily(ev, p.index)
+    mult = (p / daily).dropna()
+    if years:
+        mult = mult[mult.index >= mult.index.max() - pd.DateOffset(years=years)]
+    med = float(mult.median())
+    fair = daily * med
+    est, kaynak = estimate_points(raw, key, ev)
+    corr = float(p.corr(fair)) if len(p) > 30 else np.nan
+    total = (p.iloc[-1] / p.iloc[0] - 1) * 100
+    yrs = (p.index[-1] - p.index[0]).days / 365.25
+    cagr = ((p.iloc[-1] / p.iloc[0]) ** (1 / yrs) - 1) * 100 if yrs > 0.5 else np.nan
+    fair_now = float(fair.iloc[-1])
+    return {"ok": True, "price": p, "fair": fair, "points": ev * med,
+            "est": est * med, "est_src": kaynak, "median": med,
+            "mult_now": float(mult.iloc[-1]), "fair_now": fair_now,
+            "gap": (p.iloc[-1] / fair_now - 1) * 100 if fair_now else np.nan,
+            "corr": corr, "total": total, "cagr": cagr,
+            "start": p.index[0], "metric": METRICS[key]}
+
+
+def multiples_summary(raw: dict[str, Any], peers_pe: pd.Series | None = None
+                      ) -> pd.DataFrame:
+    """Güncel çarpan, kendi medyanı ve farkı — her metrik için."""
+    p = _price(raw)
+    rows = []
+    for k, m in METRICS.items():
+        ev = per_share_ttm(raw, k)
+        ev = ev[ev > 0] if not ev.empty else ev
+        if p.empty or len(ev) < 2:
+            continue
+        pp = p[p.index >= ev.index.min()]
+        mult = (pp / step_daily(ev, pp.index)).dropna()
+        if mult.empty:
+            continue
+        now, med = float(mult.iloc[-1]), float(mult.median())
+        rows.append({"Çarpan": m["kisa"], "Şu an": now, "Kendi medyanı": med,
+                     "Medyana göre %": (now / med - 1) * 100,
+                     "En düşük": float(mult.min()), "En yüksek": float(mult.max()),
+                     "Geçmiş": f"{mult.index[0]:%m.%Y} →"})
+    out = pd.DataFrame(rows)
+    if peers_pe is not None and not peers_pe.empty and not out.empty:
+        out.loc[out["Çarpan"] == "F/K", "Akran medyanı"] = float(peers_pe.iloc[-1])
+    return out
+
+
+def suggest_peers(t: str, n: int = 8) -> list[str]:
+    """Aynı ETF'lerdeki en ağır bileşenler — varsayılan akran listesi."""
+    out: list[str] = []
+    for e in uni.etfs_containing(t):
+        for h in uni.holdings(e):
+            if h != t and h not in out and "." not in h:
+                out.append(h)
+        if len(out) >= n * 2:
+            break
+    return out[:n]
+
+# ==========================================================================
 # KAYNAK: app.py
 # ==========================================================================
 
@@ -6296,7 +6645,7 @@ class _Namespace:
             raise AttributeError(name) from exc
 
 
-dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = fvm = svm = fnl = _Namespace()
+dta = eng = hld = mac = nws = pb = rep = scr = thm = uni = fvm = svm = fnl = fch = _Namespace()
 
 
 
@@ -6539,6 +6888,24 @@ def load_theme_rotation(nonce: str):
     return T, tails, E, idx_map, failed
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_stock_raw(sym: str, nonce: str) -> dict:
+    """Hisse Analizi: tek hissenin fiyat + mali tablo + tahmin verisi."""
+    return fch.fetch_raw(sym)
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_peer_pe(peers: tuple[str, ...], basis: str, nonce: str) -> dict:
+    """Akranların F/K geçmişi (sırayla — Yahoo hız sınırı için)."""
+    out = {}
+    for t in peers:
+        try:
+            out[t] = fch.pe_history(fch.fetch_price_eps_only(t), basis)
+        except Exception:
+            out[t] = pd.Series(dtype=float)
+    return out
+
+
 def theme_holdings(tema: str) -> list[str]:
     """Temadaki ETF'lerin bileşenleri; bileşeni bilinmeyen sembol hissenin
     kendisidir (ör. IONQ, MARA)."""
@@ -6559,7 +6926,7 @@ def _init_state() -> None:
     defaults = {
         "nonce_macro": "0", "nonce_scan": "0", "nonce_theme": "0",
         "nonce_news": "0", "nonce_earn": "0", "nonce_short": "0",
-        "nonce_funnel": "0",
+        "nonce_funnel": "0", "nonce_stock": "0",
         "manual_scenario": None,
     }
     for k, v in defaults.items():
@@ -6734,11 +7101,11 @@ for e in M.errors:
 MARKET_REGIME_OK = M.scores.get("trend", 50) >= 50
 
 TABS = st.tabs([
-    "🧭 Karar Hunisi", "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
+    "🧭 Karar Hunisi", "🔬 Hisse Analizi", "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
     "🦈 Haftalık", "🚨 4H Omni Swing", "🚀 Future Themes", "📅 Bilanço",
     "📄 Rapor",
 ])
-(tab_funnel, tab_macro, tab_theme, tab_etf, tab_val, tab_week, tab_omni,
+(tab_funnel, tab_stock, tab_macro, tab_theme, tab_etf, tab_val, tab_week, tab_omni,
  tab_future, tab_earn, tab_report) = TABS
 
 
@@ -7118,6 +7485,200 @@ with tab_funnel:
                 parca.append("**Toparlanan geride kalanlar:** "
                              + (", ".join(ger) if ger else "yok"))
                 st.success(" · ".join(parca))
+
+
+# ==========================================================================
+# HİSSE ANALİZİ — tek hisse değerleme grafikleri
+# ==========================================================================
+with tab_stock:
+    st.markdown(
+        "Bir hisse seçin; **F/K geçmişini akranlarıyla** ve **fiyatı, "
+        "hissenin kendi medyan çarpanından türetilen adil fiyat çizgisiyle** "
+        "karşılaştırır. Fiyat yeşil çizginin çok üstündeyse hisse kendi "
+        "tarihine göre pahalı, altındaysa ucuzdur.")
+    a1, a2, a3 = st.columns([1, 1, 1])
+    sym = a1.text_input("Sembol", value=st.session_state.get("sa_sym", "AVGO"),
+                        key="sa_sym_in").strip().upper()
+    basis = a2.radio("HBK tabanı", ["GAAP", "Düzeltilmiş"], horizontal=True,
+                     key="sa_basis",
+                     help="GAAP: resmi mali tablolardaki seyreltilmiş HBK "
+                          "(yaklaşık 5 yıl). Düzeltilmiş: şirketin açıkladığı "
+                          "non-GAAP HBK (yaklaşık 10 yıl, genelde daha yüksek, "
+                          "F/K daha düşük çıkar).")
+    if a3.button("🔄 Veriyi yenile", key="sa_ref", width="stretch"):
+        bump("nonce_stock")
+        st.rerun()
+    st.session_state["sa_sym"] = sym
+
+    if sym:
+        with st.spinner(f"{sym} mali tabloları çekiliyor…"):
+            RAW = load_stock_raw(sym, st.session_state.nonce_stock)
+        info = RAW.get("info") or {}
+        px_ = fch._price(RAW)
+        if px_.empty:
+            st.error(f"{sym} için fiyat verisi alınamadı. Sembolü kontrol edin "
+                     "ya da birkaç dakika sonra yenileyin (Yahoo sınırlaması).")
+        else:
+            st.markdown(
+                f"**{info.get('longName') or info.get('shortName') or sym}** · "
+                f"{info.get('sector', '')} / {info.get('industry', '')} · "
+                f"son fiyat **\\${px_.iloc[-1]:.2f}**")
+
+            # ------------------------------------------------ F/K + akranlar
+            section("F/K oranı (TTM) ve akran medyanı")
+            sug = fch.suggest_peers(sym)
+            peers_txt = st.text_input(
+                "Akranlar (virgülle; varsayılan: aynı ETF'lerdeki en ağır şirketler)",
+                value=", ".join(sug), key=f"sa_peers_{sym}")
+            peers = [x.strip().upper() for x in peers_txt.split(",")
+                     if x.strip() and x.strip().upper() != sym][:12]
+            PE = fch.pe_history(RAW, basis)
+            with st.spinner("Akranların F/K geçmişi hesaplanıyor…"):
+                PEER = load_peer_pe(tuple(peers), basis,
+                                    st.session_state.nonce_stock) if peers else {}
+            MED, NPEER = fch.peer_median(PEER)
+            if PE.empty:
+                st.info("F/K hesaplanamadı (HBK verisi yok ya da şirket zararda).")
+            else:
+                own_med = float(PE.median())
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=PE.index, y=PE, mode="lines", name=f"{sym} F/K (TTM)",
+                    line=dict(color="#3987e5", width=1.8)))
+                if not MED.empty:
+                    m2 = MED[MED.index >= PE.index.min()]
+                    fig.add_trace(go.Scatter(
+                        x=m2.index, y=m2, mode="lines+markers",
+                        name=f"Akran medyanı ({len(PEER)} şirket)",
+                        line=dict(color="#c98500", width=2),
+                        marker=dict(size=4)))
+                fig.add_hline(y=own_med, line_dash="dot", line_color="#6e6e7a",
+                              annotation_text=f"{sym} kendi medyanı {own_med:.1f}",
+                              annotation_font_color="#a0a0ab")
+                fig.update_layout(height=380, legend=dict(orientation="h", y=1.08),
+                                  yaxis_title="F/K", **CHART_LAYOUT)
+                st.plotly_chart(fig, width="stretch")
+                now = float(PE.iloc[-1])
+                parts = [f"Şu an F/K **{now:.1f}**, kendi medyanı {own_med:.1f} "
+                         f"({(now / own_med - 1) * 100:+.0f}%)."]
+                if not MED.empty:
+                    pm = float(MED.iloc[-1])
+                    parts.append(f"Akran medyanı **{pm:.1f}** — hisse akranlarına "
+                                 f"göre {(now / pm - 1) * 100:+.0f}% "
+                                 + ("primli." if now > pm else "iskontolu."))
+                st.markdown(" ".join(parts))
+                if PEER:
+                    eksik = [t for t in peers if t not in PEER or PEER[t].empty]
+                    if eksik:
+                        st.caption("F/K hesaplanamayan akranlar (zarar ya da veri "
+                                   "yok): " + ", ".join(eksik))
+
+            # ------------------------------------------------ adil fiyat çizgisi
+            section("Fiyat ve medyan çarpan adil fiyatı")
+            b1, b2 = st.columns([2, 1])
+            mkey = b1.radio("Metrik", list(fch.METRICS),
+                            format_func=lambda k: f"{fch.METRICS[k]['ad']} "
+                                                  f"({fch.METRICS[k]['kisa']})",
+                            horizontal=True, key="sa_metric")
+            win = b2.selectbox("Medyan penceresi", [0, 3, 5],
+                               format_func=lambda y: "Tüm geçmiş" if y == 0
+                               else f"Son {y} yıl", key="sa_win")
+            D = fch.fair_value_chart_data(RAW, mkey, win)
+            if not D["ok"]:
+                st.info(D["neden"])
+            else:
+                kp = st.columns(5)
+                kp[0].markdown(kpi("Fiyat", f"${D['price'].iloc[-1]:.2f}",
+                                   f"toplam {D['total']:+.0f}% · yıllık "
+                                   f"{D['cagr']:+.1f}%"), unsafe_allow_html=True)
+                kp[1].markdown(kpi(f"Medyan {D['metric']['kisa']}",
+                                   f"{D['median']:.2f}",
+                                   f"şu an {D['mult_now']:.2f}"),
+                               unsafe_allow_html=True)
+                kp[2].markdown(kpi("Medyan çarpanla adil fiyat",
+                                   f"${D['fair_now']:.2f}", "son bilinen TTM"),
+                               unsafe_allow_html=True)
+                kp[3].markdown(kpi("Adile göre", f"{D['gap']:+.1f}%",
+                                   "fiyat adilin üstünde" if D["gap"] > 0
+                                   else "fiyat adilin altında",
+                                   "neg" if D["gap"] > 15 else
+                                   "pos" if D["gap"] < -10 else ""),
+                               unsafe_allow_html=True)
+                kp[4].markdown(kpi("Korelasyon", f"%{D['corr'] * 100:.0f}"
+                                   if np.isfinite(D["corr"]) else "—",
+                                   "fiyat ↔ metrik çizgisi"),
+                               unsafe_allow_html=True)
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=D["price"].index, y=D["price"], mode="lines", name="Fiyat",
+                    line=dict(color="#3987e5", width=1.6)))
+                fig.add_trace(go.Scatter(
+                    x=D["fair"].index, y=D["fair"], mode="lines",
+                    name=f"Medyan {D['metric']['kisa']} = {D['median']:.2f} ile fiyat",
+                    line=dict(color="#2fbe86", width=2, shape="hv")))
+                pts = D["points"][D["points"].index >= D["start"]]
+                fig.add_trace(go.Scatter(
+                    x=pts.index, y=pts, mode="markers", showlegend=False,
+                    marker=dict(color="#2fbe86", size=7, symbol="diamond"),
+                    hovertemplate="%{x|%m.%Y}: $%{y:.2f}<extra>dönem sonu</extra>"))
+                if not D["est"].empty:
+                    last_d = D["fair"].index[-1]
+                    ex = pd.concat([pd.Series({last_d: D["fair_now"]}), D["est"]])
+                    fig.add_trace(go.Scatter(
+                        x=ex.index, y=ex, mode="lines+markers",
+                        name="Tahmin", line=dict(color="#2fbe86", width=2,
+                                                 dash="dash"),
+                        marker=dict(size=8, symbol="diamond")))
+                    fig.add_vrect(x0=last_d, x1=D["est"].index[-1],
+                                  fillcolor="#c9b800", opacity=0.10, line_width=0,
+                                  annotation_text="Tahminler",
+                                  annotation_position="bottom right")
+                fig.update_layout(height=460, legend=dict(orientation="h", y=1.08),
+                                  yaxis_title="$", **CHART_LAYOUT)
+                st.plotly_chart(fig, width="stretch")
+                if not D["est"].empty:
+                    e_last = D["est"]
+                    st.caption(
+                        "Tahmin noktaları: " + " · ".join(
+                            f"{d:%m.%Y} → \\${v:.2f}" for d, v in e_last.items())
+                        + f" — kaynak: {D['est_src']}.")
+                st.caption(
+                    "Yeşil çizgi = hisse başı TTM " + D["metric"]["ad"].lower()
+                    + f" × hissenin {('tüm geçmişteki' if not win else f'son {win} yıldaki')} "
+                    f"medyan {D['metric']['kisa']} çarpanı. Korelasyon yüksekse "
+                    "(%70+) fiyat bu metriği takip ediyor demektir; o zaman "
+                    "çizgiden uzaklaşmalar anlamlıdır.")
+
+            # ------------------------------------------------ özet tablo
+            section("Çarpan özeti")
+            SUM = fch.multiples_summary(RAW, MED if not MED.empty else None)
+            if SUM.empty:
+                st.caption("Çarpan hesaplanamadı.")
+            else:
+                st.dataframe(SUM, width="stretch", hide_index=True,
+                             column_config={
+                                 c: st.column_config.NumberColumn(format="%.2f")
+                                 for c in ("Şu an", "Kendi medyanı", "En düşük",
+                                           "En yüksek", "Akran medyanı")} | {
+                                 "Medyana göre %": st.column_config.NumberColumn(
+                                     format="%+.0f%%")})
+            if RAW.get("errors"):
+                st.caption("Eksik veri: " + ", ".join(RAW["errors"]))
+            with st.expander("Hesap yöntemi ve sınırlar"):
+                st.markdown(
+                    "- **TTM**: son 4 çeyreğin toplamı. Çeyreklik veri yetmeyen "
+                    "eski dönemlerde mali yıl sonu değeri kullanılır.\n"
+                    "- **Geçmiş uzunluğu**: Yahoo yıllık tabloları ~4–5 yıl, "
+                    "çeyrekliği ~5–6 çeyrek verir; grafikler bu aralıktan "
+                    "başlar. Düzeltilmiş HBK ~10 yıl gider.\n"
+                    "- **Akran medyanı**: sektörün tamamı değil, seçtiğiniz "
+                    "akranların aylık F/K medyanıdır (en az 3 akran gerekir).\n"
+                    "- **Tahminler**: satış ve HBK için analist tahminleri "
+                    "kullanılır. Yahoo nakit akışı tahmini vermediği için OCF/FCF "
+                    "tahmini HBK büyümesiyle ölçeklenir — kaba bir yaklaşımdır.\n"
+                    "- Zarardaki dönemlerde F/K ve çarpanlar tanımsızdır, "
+                    "grafikte boş kalır.")
 
 
 # ==========================================================================
