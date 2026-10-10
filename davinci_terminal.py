@@ -697,7 +697,10 @@ with tab_funnel:
     st.markdown(
         "Her varlık **günlük, haftalık ve aylık** mumlarda bütün modüllerle tek "
         "tek incelenir: mum, hacim, trend, EMA'lar, RSI, whale/retail, efor, "
-        "konfluans, Fusion, Synergy, Omni, sıkışma ve tükenme. Karar haftalık "
+        "konfluans, Fusion, Synergy, Omni, sıkışma ve tükenme; ayrıca Pine "
+        "göstergelerinizden çevrilen Mum Gücü, Fibonacci, Elliott, Q-dry, "
+        "Volatility Hole, Whale profili, Gap/FVG, S/R matrisi, Wyckoff "
+        "bölgeleri, likidite havuzları, GFR ve VSA & Delta. Karar haftalık "
         "ağırlıklıdır (G %30 · H %40 · A %30); Adım 1'de risk kapalıysa "
         "\"uygun\" kararı verilmez.")
     with st.spinner("Endeksler üç zaman diliminde inceleniyor…"):
