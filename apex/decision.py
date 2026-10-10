@@ -338,13 +338,16 @@ def market_notes(prices: dict[str, pd.DataFrame], rot: pd.DataFrame
         spy_ch = (cl["SPY"].iloc[-1] / cl["SPY"].iloc[-2] - 1) * 100
         avg_rv = float(np.mean(list(rvs.values())))
         lead = max(chg, key=chg.get)
-        if spy_ch > 0.2 and not sharp_down and up >= 7:
-            out.append(("✅", f"{up}/{len(secs)} sektör yükseldi, hiçbir sektörde "
-                              f"sert satış yok, ortalama hacim {avg_rv:.1f}× — bu "
-                              f"bir rotasyon değil; piyasaya dışarıdan net para "
-                              f"girişi var. Öncü: {SECTORS[lead]} "
-                              f"(%{chg[lead]:+.1f}, hacim {rvs[lead]:.1f}×)."))
-        elif spy_ch > 0.2 and (sharp_down or up <= 5):
+        if spy_ch > 0.2 and len(sharp_down) <= 1 and up >= 7:
+            istisna = (f" (yalnızca {SECTORS[sharp_down[0]]} sert düştü)"
+                       if sharp_down else ", hiçbir sektörde sert satış yok")
+            hacim = (f"ortalama hacim {avg_rv:.1f}×" if avg_rv >= 0.9 else
+                     f"ama ortalama hacim düşük ({avg_rv:.1f}×) — giriş zayıf")
+            out.append(("✅" if avg_rv >= 0.9 else "⚪",
+                        f"{up}/{len(secs)} sektör yükseldi{istisna}; {hacim}. "
+                        f"Bu bir rotasyon değil, piyasaya net para girişi. Öncü: "
+                        f"{SECTORS[lead]} (%{chg[lead]:+.1f}, hacim {rvs[lead]:.1f}×)."))
+        elif spy_ch > 0.2 and (len(sharp_down) >= 2 or up <= 5):
             out.append(("⚠️", f"Endeks yükseldi ama yalnızca {up}/{len(secs)} sektör "
                               f"artıda" + (f"; sert satış: "
                                            + ", ".join(SECTORS[s] for s in sharp_down)
