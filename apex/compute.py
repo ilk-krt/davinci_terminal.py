@@ -238,3 +238,21 @@ def theme_holdings(tema: str) -> list[str]:
         elif t not in uni.ETF and t not in out:
             out.append(t)
     return [x for x in out if "." not in x]      # yabancı borsa sembolleri hariç
+
+
+def plan_universe() -> list[str]:
+    """İşlem planı hesaplanan hisseler: bütün temaların bileşenleri."""
+    out: set[str] = set()
+    for tema in uni.THEME_TRACKER:
+        out |= set(theme_holdings(tema))
+    return sorted(out)
+
+
+def plans(tickers) -> pd.DataFrame:
+    """Giriş / stop / hedef planları (günlük mumdan)."""
+    from apex import plan as pln
+    tickers = sorted(set(tickers))
+    if not tickers:
+        return pd.DataFrame()
+    prices, _ = dta.fetch(tickers, "1d")
+    return pln.plans(prices, tickers)

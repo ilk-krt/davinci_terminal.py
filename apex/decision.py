@@ -492,9 +492,10 @@ def asset_decision(tf_scores: dict[str, float], rot: pd.DataFrame, asset: str,
             "baglam": ctx_sc, "baglam_txt": ctx_txt}
 
 
-def reasons(mods_by_tf: dict[str, pd.DataFrame], n: int = 3
+def reasons(mods_by_tf: dict[str, pd.DataFrame], n: int = 4
             ) -> tuple[list[str], list[str]]:
-    """En güçlü olumlu ve olumsuz gerekçeler (haftalık önce)."""
+    """En güçlü olumlu ve olumsuz gerekçeler — her modül EN FAZLA bir kez
+    (aynı uyarı üç zaman diliminde tekrarlanmasın), haftalık önce."""
     rows = []
     for tf in ("Haftalık", "Günlük", "Aylık"):
         m = mods_by_tf.get(tf)
@@ -502,11 +503,63 @@ def reasons(mods_by_tf: dict[str, pd.DataFrame], n: int = 3
             continue
         for _, r in m.iterrows():
             rows.append((tf, r["Modül"], r["Durum"], r["Not"]))
-    pos = [f"{tf}: {mod} — {nt}" for tf, mod, d, nt in
-           sorted(rows, key=lambda x: -x[2]) if d >= 0.5][:n]
-    neg = [f"{tf}: {mod} — {nt}" for tf, mod, d, nt in
-           sorted(rows, key=lambda x: x[2]) if d <= -0.5][:n]
+
+    def pick(sel, key):
+        out, seen = [], set()
+        for tf, mod, d, nt in sorted(sel, key=key):
+            if mod in seen or mod == "Başlık sinyali":
+                continue
+            seen.add(mod)
+            tfs = [t for t, m2, d2, _ in sel if m2 == mod]
+            tft = "G·H·A" if len(tfs) == 3 else tf
+            out.append(f"**{mod}** ({tft}) — {_short(nt)}")
+            if len(out) >= n:
+                break
+        return out
+    pos = pick([r for r in rows if r[2] >= 0.4], lambda x: -x[2])
+    neg = pick([r for r in rows if r[2] <= -0.4], lambda x: x[2])
     return pos, neg
+
+
+def _short(t: str, n: int = 90) -> str:
+    t = str(t)
+    return t if len(t) <= n else t[:n].rsplit(" ", 1)[0] + "…"
+
+
+GROUP_ORDER = ["Fiyat", "Trend", "Momentum", "Volatilite", "Akıllı para", "Yapı"]
+GROUP_DESC = {"Fiyat": "Mum ve hacim", "Trend": "Trend ve EMA'lar",
+              "Momentum": "RSI, konfluans, Fusion, Omni",
+              "Volatilite": "Sıkışma, tükenme, Q-dry",
+              "Akıllı para": "Whale, efor, VSA, kurumsal bölgeler",
+              "Yapı": "Fibonacci, Elliott, destek/direnç, boşluklar"}
+
+
+def _word(x: float) -> str:
+    if not np.isfinite(x):
+        return "—"
+    return ("✅ Olumlu" if x >= 0.35 else "🟢 Hafif olumlu" if x >= 0.1 else
+            "❌ Olumsuz" if x <= -0.35 else "🔴 Hafif olumsuz" if x <= -0.1
+            else "⚪ Nötr")
+
+
+def summary(mods_by_tf: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Sade görünüm: 6 grup × 3 zaman dilimi + haftalıkta grubun öne çıkan notu."""
+    rows = []
+    for g in GROUP_ORDER:
+        row = {"Konu": f"{g} — {GROUP_DESC[g]}"}
+        for tf in TFS:
+            m = mods_by_tf.get(tf)
+            sub = m[m["Grup"] == g] if m is not None and not m.empty else None
+            row[tf] = _word(float(sub["Durum"].mean())) if sub is not None and len(sub) else "—"
+        m = mods_by_tf.get("Haftalık")
+        sub = m[m["Grup"] == g] if m is not None and not m.empty else None
+        if sub is not None and len(sub):
+            r = sub.loc[sub["Durum"].abs().idxmax()]
+            row["Öne çıkan (haftalık)"] = f"{r['Modül']}: {_short(r['Not'], 80)}"
+        else:
+            row["Öne çıkan (haftalık)"] = "—"
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def matrix(mods_by_tf: dict[str, pd.DataFrame]) -> pd.DataFrame:
