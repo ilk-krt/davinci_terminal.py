@@ -860,6 +860,39 @@ with tab_funnel:
                          "1A %": st.column_config.NumberColumn(format="%+.1f%%")})
         good = TT[TT["_q"].isin(["lider", "iyilesen"])]["Tema"].tolist() \
             if "_q" in TT.columns else TT["Tema"].tolist()
+
+        # ---- 📥 bütün temaların planı tek Excel dosyasında (internetsiz inceleme)
+        xkey = f"xlsx_{pick}"
+        e1, e2 = st.columns([1, 1])
+        if e1.button(f"📥 {pick} — bütün temaların planını Excel'e hazırla",
+                     key=f"xbtn_{pick}", width="stretch"):
+            per = {}
+            prog = st.progress(0.0, text="Temalar hesaplanıyor…")
+            tlist = list(TT["Tema"])
+            for i, tm in enumerate(tlist):
+                prog.progress((i + 1) / len(tlist), text=f"{tm} ({i + 1}/{len(tlist)})")
+                try:
+                    tb_, h_ = theme_stock_table(tm, 10.0, IDX3.get(tm))
+                    p_ = load_plans(tuple(h_), st.session_state.nonce_scan) if h_ \
+                        else pd.DataFrame()
+                    per[tm] = trade_plan_table(tb_, p_, index_ok and tm in good)
+                except Exception as exc:          # tek tema hatası dosyayı bozmasın
+                    _log.info("Excel tema %s: %s", tm, exc)
+            prog.empty()
+            info = [("Endeks kararı", f"{pick}: {dd['etiket']}"),
+                    ("Piyasa (Adım 1)", V["etiket"]),
+                    ("Hazırlanma", dt.datetime.now().strftime("%d.%m.%Y %H:%M")),
+                    ("Veri", snap.summary() if _use_snap(st.session_state.nonce_scan)
+                     else "canlı")]
+            st.session_state[xkey] = pln.excel_report(
+                f"AETHER APEX · {pick} alım planı", info, TT[tcols], per)
+        if xkey in st.session_state:
+            safe = "".join(ch for ch in pick if ch.isalnum()) or "endeks"
+            e2.download_button(
+                "⬇️ Excel dosyasını indir", st.session_state[xkey],
+                file_name=f"alim_plani_{safe}_{dt.date.today():%Y%m%d}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"xdl_{pick}", width="stretch", type="primary")
         opts = good + [t for t in TT["Tema"] if t not in good]
         k1, k2 = st.columns([3, 1])
         tema3 = k1.selectbox("2) Hangi temanın hisselerine bakalım?", opts,
