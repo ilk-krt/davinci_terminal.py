@@ -6,7 +6,7 @@ GitHub Actions her iş günü ABD kapanışından sonra çalıştırır. Kendi
 bilgisayarınızda da çalıştırabilirsiniz:
 
     python tools/build_snapshot.py            # hepsi
-    python tools/build_snapshot.py karar tema # yalnızca seçilenler
+    python tools/build_snapshot.py karar plan  # yalnızca seçilenler
 
 Her adım bağımsızdır: biri başarısız olursa diğerleri yine yazılır; durum
 data/snapshot/_status.json dosyasına kaydedilir (arayüzde görünür).
@@ -100,6 +100,14 @@ def main(only: list[str]) -> int:
             s = cmp.scan(tuple(universe), "1wk")
             return s, f"{len(s)} sembol"
         step("scan_1wk", f)
+
+    if want("plan") or want("tarama"):
+        def f():
+            pu = cmp.plan_universe()
+            p = cmp.plans(pu)
+            ok = int(p["ok"].fillna(False).sum()) if "ok" in p else 0
+            return p, f"{ok}/{len(pu)} hisse"
+        step("plans", f)
 
     if want("bilanco"):
         def f():
