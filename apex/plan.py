@@ -231,3 +231,108 @@ INDEX_THEMES: dict[str, list[str]] = {
                 "Su Altyapısı", "Metal & Madencilik", "Temettü", "Değer"],
     "Kripto (BTC)": ["Bitcoin", "Bitcoin Madenciliği", "Fintek"],
 }
+
+
+# --------------------------------------------------------------------------
+# Excel raporu (internetsiz inceleme için)
+# --------------------------------------------------------------------------
+EXCEL_HELP = [
+    ("Giriş bölgesi", "Fiyatın altındaki (en fazla 3 ATR) desteklerden en çok çakışanı: "
+                      "S/R matrisi, açık boşluklar (FVG/GAP), Wyckoff alım bölgeleri, "
+                      "EMA21/50/200, ana yapı Fibonacci 0.382/0.5/0.618."),
+    ("Stop", "Giriş bölgesinin dibi − 1 ATR. Parantezde girişe göre yüzde."),
+    ("Kâr al 1 / 2", "Girişten en az 1R yukarıdaki ilk ve ikinci direnç; yakında "
+                     "direnç yoksa 2R ve 3R."),
+    ("R:R", "Kâr al 1'e kazanç ÷ stopa kayıp. 2 üstü iyi, 1.5 altı zayıf."),
+    ("✅ AL", "Fiyat giriş bölgesinde, risk/ödül yeterli, endeks ve tema uygun."),
+    ("🟡 LİMİT EMİR / BEKLE", "Hisse iyi ama fiyat bölgenin üstünde (limit emir "
+                             "giriş bölgesinin üst sınırına) ya da teyit bekleniyor."),
+    ("⛔ UZAK DUR", "Satış/dağıtım sinyali, 7 gün içinde bilanço, düşüş trendi, "
+                   "düşük hacim, zayıf risk/ödül ya da altında destek yok."),
+    ("Not", "Seviyeler son günlük kapanışa göre hesaplanır; emir vermeden önce "
+            "grafikte teyit edin."),
+]
+
+
+def _sheet_name(name: str, used: set[str]) -> str:
+    bad = '[]:*?/\\'
+    s = "".join("-" if ch in bad else ch for ch in name)[:31] or "Sayfa"
+    base, k = s, 2
+    while s in used:
+        s = f"{base[:28]}~{k}"
+        k += 1
+    used.add(s)
+    return s
+
+
+def excel_report(title: str, info_rows: list[tuple[str, str]], themes: pd.DataFrame,
+                 per_theme: dict[str, pd.DataFrame]) -> bytes:
+    """Özet + Temalar + her tema için bir sayfa + Açıklama → .xlsx baytları."""
+    import io
+
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    fills = {"✅": PatternFill("solid", fgColor="D9F2E3"),
+             "🟡": PatternFill("solid", fgColor="FFF4CC"),
+             "⛔": PatternFill("solid", fgColor="F8D7DA")}
+    head_fill = PatternFill("solid", fgColor="1F2937")
+    head_font = Font(bold=True, color="FFFFFF")
+    widths = {"Tema": 22, "Karar": 22, "Hisse": 8, "Fiyat": 10,
+              "Giriş bölgesi": 18, "Stop": 18, "Kâr al 1": 10, "Kâr al 2": 10,
+              "R:R": 6, "Sebep": 110, "Para": 22, "Erken Skor": 11,
+              "1H %": 8, "1A %": 8, "Başlık": 26, "Açıklama": 110}
+
+    allrows = []
+    for tema, df in per_theme.items():
+        if df is not None and not df.empty:
+            allrows.append(df.assign(Tema=tema))
+    top = pd.concat(allrows, ignore_index=True) if allrows else pd.DataFrame()
+    if not top.empty:
+        top = top[top["Karar"].str.startswith(("✅", "🟡"))]
+        top["_o"] = top["Karar"].str[:1].map({"✅": 0, "🟡": 1})
+        top = top.sort_values(["_o", "R:R"], ascending=[True, False]).drop(columns="_o")
+        top = top[["Tema"] + [c for c in top.columns if c != "Tema"]]
+
+    buf = io.BytesIO()
+    used: set[str] = set()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        start = len(info_rows) + 3
+        sheet = _sheet_name("Özet", used)
+        (top if not top.empty else pd.DataFrame({"Karar": ["Alınabilir ya da beklenecek hisse yok"]})
+         ).to_excel(xw, sheet_name=sheet, index=False, startrow=start)
+        ws = xw.sheets[sheet]
+        ws.cell(row=1, column=1, value=title).font = Font(bold=True, size=14)
+        for i, (k, v) in enumerate(info_rows, start=2):
+            ws.cell(row=i, column=1, value=k).font = Font(bold=True)
+            ws.cell(row=i, column=2, value=v)
+        if themes is not None and not themes.empty:
+            themes.round(1).to_excel(xw, sheet_name=_sheet_name("Temalar", used), index=False)
+        for tema, df in per_theme.items():
+            if df is not None and not df.empty:
+                df.to_excel(xw, sheet_name=_sheet_name(tema, used), index=False)
+        pd.DataFrame(EXCEL_HELP, columns=["Başlık", "Açıklama"]).to_excel(
+            xw, sheet_name=_sheet_name("Açıklama", used), index=False)
+
+        for ws in xw.book.worksheets:
+            hdr = start + 1 if ws.title == "Özet" else 1
+            cols = {}
+            for cell in ws[hdr]:
+                if cell.value is None:
+                    continue
+                cols[cell.value] = cell.column
+                cell.fill, cell.font = head_fill, head_font
+                ws.column_dimensions[get_column_letter(cell.column)].width = \
+                    widths.get(str(cell.value), 14)
+            ws.freeze_panes = ws.cell(row=hdr + 1, column=1)
+            kcol = cols.get("Karar")
+            for row in ws.iter_rows(min_row=hdr + 1):
+                for cell in row:
+                    cell.alignment = Alignment(vertical="top", wrap_text=(
+                        cell.column in (cols.get("Sebep"), cols.get("Açıklama"))))
+                if kcol:
+                    v = str(row[kcol - 1].value or "")[:1]
+                    if v in fills:
+                        for cell in row:
+                            cell.fill = fills[v]
+    return buf.getvalue()
