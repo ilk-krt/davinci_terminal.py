@@ -28,6 +28,7 @@ from apex import universe as uni
 from apex import valuation as fvm
 from apex import compute as cmp
 from apex import snapshot as snap
+from apex import plan as pln
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -297,6 +298,80 @@ def load_decision(nonce: str, rot: pd.DataFrame):
 
 def theme_holdings(tema: str) -> list[str]:
     return cmp.theme_holdings(tema)
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_plans(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+    """Giriş/stop/hedef planları — akşam hesabından, eksikler canlı."""
+    if _use_snap(nonce):
+        s = snap.load("plans")
+        if s is not None and not s.empty and "Sembol" in s.columns:
+            have = s[s["Sembol"].isin(set(tickers))]
+            missing = sorted(set(tickers) - set(have["Sembol"]))
+            if not missing:
+                return have.reset_index(drop=True)
+            if len(have):
+                return pd.concat([have, cmp.plans(missing)], ignore_index=True)
+    return cmp.plans(tickers)
+
+
+def theme_stock_table(tema: str, min_liq: float, idx_close) -> tuple[pd.DataFrame, list[str]]:
+    """Temanın hisseleri: tarama + bilanço + short → Durum sınıfı (Adım 3b ve 5)."""
+    hold = theme_holdings(tema)
+    if not hold:
+        return pd.DataFrame(), hold
+    S = scan(tuple(hold), "1d", st.session_state.nonce_scan)
+    if S.empty:
+        return pd.DataFrame(), hold
+    EARN_T = load_earnings(tuple(hold), st.session_state.nonce_earn)
+    if not EARN_T.empty:
+        EARN_T = fvm.add_fair_values(EARN_T)
+    SVRAW_T, _, _ = load_short_volume(st.session_state.nonce_short)
+    pchg = dict(zip(S["Sembol"], pd.to_numeric(S.get("1 Hafta %"), errors="coerce")))
+    SVT_T = svm.short_table(SVRAW_T, hold, pchg)
+    TB = fnl.build_stock_table(S, idx_close, None, EARN_T, SVT_T, min_liq,
+                               swing_score=scr.swing_score)
+    return TB, hold
+
+
+def _px(x) -> str:
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "—"
+    if not np.isfinite(x):
+        return "—"
+    return f"{x:,.0f}" if x >= 1000 else f"{x:.2f}"
+
+
+def trade_plan_table(TB: pd.DataFrame, P: pd.DataFrame, index_ok: bool) -> pd.DataFrame:
+    """Tarama tablosu + plan → sade karar tablosu (sebepleriyle)."""
+    if TB is None or TB.empty or P is None or P.empty:
+        return pd.DataFrame()
+    pm = {r["Sembol"]: r for r in P.to_dict("records")}
+    rows = []
+    for r in TB.to_dict("records"):
+        p = pm.get(r["Sembol"], {"ok": False, "neden": "plan yok"})
+        p = dict(p)
+        p["ok"] = p.get("ok") is True or p.get("ok") == True  # noqa: E712 (NaN → False)
+        karar, why = pln.verdict(p, r.get("Durum", ""), r.get("Sinyal", ""),
+                                 r.get("Kalan Gün"), index_ok)
+        ok = p["ok"]
+        rows.append({
+            "Karar": karar, "Hisse": r["Sembol"],
+            "Fiyat": _px(p["Fiyat"] if ok else r.get("Fiyat")),
+            "Giriş bölgesi": f"{_px(p['Giriş Alt'])} – {_px(p['Giriş Üst'])}" if ok else "—",
+            "Stop": (f"{_px(p['Stop'])} ({p['Stop %']:+.1f}%)" if ok else "—"),
+            "Kâr al 1": f"{_px(p['Hedef 1'])}" if ok else "—",
+            "Kâr al 2": f"{_px(p['Hedef 2'])}" if ok else "—",
+            "R:R": round(float(p["R:R"]), 1) if ok else np.nan,
+            "Sebep": " · ".join(why),
+            "_o": {"✅": 0, "🟡": 1, "⛔": 2}.get(karar[:1], 3),
+            "_s": r.get("Huni Skoru", 0),
+        })
+    out = pd.DataFrame(rows)
+    return out.sort_values(["_o", "_s"], ascending=[True, False]).drop(
+        columns=["_o", "_s"]).reset_index(drop=True)
 
 # ==========================================================================
 # DURUM
@@ -721,25 +796,141 @@ with tab_funnel:
         st.markdown("**Piyasa notları**")
         for ic, tx in DEC["notes"]:
             st.markdown(f"{ic} {tx}")
-    pick = st.radio("Ayrıntı", list(dcs.DEC_ASSETS), horizontal=True,
+    pick = st.radio("Hangi endeksi açalım?", list(dcs.DEC_ASSETS), horizontal=True,
                     key="fn_dec")
     info, dd = DEC["assets"][pick], DECV[pick]
     pos, neg = dcs.reasons(info["mods"])
     r1, r2 = st.columns(2)
-    r1.markdown("**Lehte**\n" + "\n".join(f"- ✅ {x}" for x in pos)
-                if pos else "**Lehte**\n- —")
-    r2.markdown("**Aleyhte**\n" + "\n".join(f"- ❌ {x}" for x in neg)
-                if neg else "**Aleyhte**\n- —")
+    r1.markdown("**👍 Lehte**\n" + "\n".join(f"- {x}" for x in pos)
+                if pos else "**👍 Lehte**\n- —")
+    r2.markdown("**👎 Aleyhte**\n" + "\n".join(f"- {x}" for x in neg)
+                if neg else "**👎 Aleyhte**\n- —")
     if dd["baglam_txt"]:
         st.caption("Bağlam (Adım 2): " + " · ".join(dd["baglam_txt"]))
-    MX = dcs.matrix(info["mods"])
-    st.dataframe(MX, width="stretch", hide_index=True,
-                 height=min(38 * (len(MX) + 1), 900),
-                 column_config={tf: st.column_config.TextColumn(width="large")
-                                for tf in dcs.TFS})
-    st.caption("✅ güçlü olumlu · 🟢 hafif olumlu · ⚪ nötr · 🔴 hafif olumsuz · "
-               "❌ güçlü olumsuz. Haftalık ve aylık mumlar içinde bulunulan "
-               "(henüz kapanmamış) dönemi de gösterir.")
+    st.dataframe(dcs.summary(info["mods"]), width="stretch", hide_index=True,
+                 column_config={"Konu": st.column_config.TextColumn(width="medium"),
+                                "Öne çıkan (haftalık)": st.column_config.TextColumn(
+                                    width="large")})
+    with st.expander(f"🔎 Bütün modüller tek tek ({pick}, ayrıntı)"):
+        MX = dcs.matrix(info["mods"])
+        st.dataframe(MX, width="stretch", hide_index=True,
+                     height=min(38 * (len(MX) + 1), 1100),
+                     column_config={tf: st.column_config.TextColumn(width="large")
+                                    for tf in dcs.TFS})
+        st.caption("✅ güçlü olumlu · 🟢 hafif olumlu · ⚪ nötr · 🔴 hafif olumsuz · "
+                   "❌ güçlü olumsuz. Haftalık ve aylık mumlar içinde bulunulan "
+                   "(henüz kapanmamış) dönemi de gösterir.")
+
+    # ------------------------------------------------------------------ 3b
+    section(f"Adım 3b · {pick} için alım planı: tema → hisse → giriş · stop · kâr al")
+    index_ok = dd["etiket"].startswith(("✅", "🟡"))
+    if index_ok:
+        st.success(f"**{pick} alım bölgesinde** ({dd['etiket']}). Aşağıda bu "
+                   "endeksin para giren temaları ve o temalarda hangi hissenin hangi "
+                   "fiyattan alınabileceği, stopu ve kâr alma seviyeleri var.")
+    else:
+        st.warning(f"**{pick} şu an alım bölgesinde değil** ({dd['etiket']}). "
+                   "Planlar yine gösteriliyor ama hiçbir hisseye ✅ AL verilmez; "
+                   "seviyeleri bekleme/limit emir haritası olarak okuyun.")
+    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel)
+    themes3 = [t for t in pln.INDEX_THEMES.get(pick, []) if t in uni.THEME_TRACKER]
+    if T3.empty:
+        TT = pd.DataFrame({"Tema": themes3})
+    else:
+        TT = T3[T3["Tema"].isin(themes3)].copy()
+    if TT.empty:
+        st.info("Bu endeks için tema verisi yok.")
+    else:
+        if "_q" in TT.columns:
+            TT["Para"] = TT["_q"].map({"lider": "✅ giriyor (lider)",
+                                       "iyilesen": "🌱 girmeye başladı",
+                                       "zayif": "⚠️ çıkmaya başladı",
+                                       "geride": "⛔ çıkıyor / zayıf"}).fillna("—")
+            TT["_o"] = TT["_q"].map({"iyilesen": 0, "lider": 1, "zayif": 2,
+                                     "geride": 3}).fillna(4)
+            TT = TT.sort_values(["_o", "Erken Skor"], ascending=[True, False])
+        tcols = [c for c in ["Tema", "Para", "Erken Skor", "1H %", "1A %"]
+                 if c in TT.columns]
+        st.markdown("**1) Temalar** — önce para girmeye başlayan ve lider olanlar:")
+        st.dataframe(TT[tcols], width="stretch", hide_index=True,
+                     column_config={
+                         "Erken Skor": st.column_config.ProgressColumn(
+                             format="%d", min_value=0, max_value=100),
+                         "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
+                         "1A %": st.column_config.NumberColumn(format="%+.1f%%")})
+        good = TT[TT["_q"].isin(["lider", "iyilesen"])]["Tema"].tolist() \
+            if "_q" in TT.columns else TT["Tema"].tolist()
+        opts = good + [t for t in TT["Tema"] if t not in good]
+        k1, k2 = st.columns([3, 1])
+        tema3 = k1.selectbox("2) Hangi temanın hisselerine bakalım?", opts,
+                             key=f"plan_tema_{pick}",
+                             format_func=lambda t: ("✅ " if t in good else "⛔ ") + t)
+        liq3 = k2.number_input("Min. günlük hacim ($M)", 0.0, 500.0, 10.0, 1.0,
+                               key="plan_liq")
+        if tema3 not in good:
+            st.warning(f"**{tema3}** temasından para çıkıyor — bu temada yeni "
+                       "alım önerilmez; liste yalnızca bilgi için.")
+        with st.spinner(f"{tema3} hisseleri için plan hazırlanıyor…"):
+            TB3, hold3 = theme_stock_table(tema3, liq3, IDX3.get(tema3))
+            P3 = load_plans(tuple(hold3), st.session_state.nonce_scan) if hold3 \
+                else pd.DataFrame()
+        PT = trade_plan_table(TB3, P3, index_ok and tema3 in good)
+        if PT.empty:
+            st.info("Bu tema için hisse listesi ya da fiyat verisi yok.")
+        else:
+            n_al = int(PT["Karar"].str.startswith("✅").sum())
+            n_bk = int(PT["Karar"].str.startswith("🟡").sum())
+            n_uz = len(PT) - n_al - n_bk
+            st.markdown(" ".join([badge(f"✅ AL · {n_al}", "pos"),
+                                  badge(f"🟡 LİMİT EMİR / BEKLE · {n_bk}", ""),
+                                  badge(f"⛔ UZAK DUR · {n_uz}", "neg")]),
+                        unsafe_allow_html=True)
+            pcols = ["Hisse", "Fiyat", "Giriş bölgesi", "Stop", "Kâr al 1",
+                     "Kâr al 2", "R:R", "Sebep"]
+            pcfg = {"R:R": st.column_config.NumberColumn(
+                        format="%.1f", help="Kâr al 1'e kazanç ÷ stopa kayıp"),
+                    "Sebep": st.column_config.TextColumn(width="large")}
+            st.markdown("**✅ Şimdi alınabilir** — fiyat giriş bölgesinde, "
+                        "risk/ödül yeterli")
+            al = PT[PT["Karar"].str.startswith("✅")]
+            if al.empty:
+                st.caption("Şu an giriş bölgesinde olan uygun hisse yok.")
+            else:
+                st.dataframe(al[pcols], width="stretch", hide_index=True,
+                             column_config=pcfg)
+            st.markdown("**🟡 Limit emir / bekle** — hisse iyi ama fiyat henüz "
+                        "giriş bölgesinde değil (limit emir giriş bölgesinin "
+                        "üst sınırına) ya da teyit bekleniyor")
+            bk = PT[PT["Karar"].str.startswith("🟡")]
+            if bk.empty:
+                st.caption("Yok.")
+            else:
+                st.dataframe(bk[pcols], width="stretch", hide_index=True,
+                             column_config=pcfg)
+            uz = PT[~PT["Karar"].str.startswith(("✅", "🟡"))]
+            with st.expander(f"⛔ Uzak durulacaklar ({len(uz)}) — sebepleriyle"):
+                st.dataframe(uz[["Hisse", "Fiyat", "Sebep"]], width="stretch",
+                             hide_index=True,
+                             column_config={"Sebep": st.column_config.TextColumn(
+                                 width="large")})
+            with st.expander("Seviyeler nasıl hesaplanıyor?"):
+                st.markdown(
+                    "- **Giriş bölgesi:** fiyatın altındaki (en fazla 3 ATR) "
+                    "desteklerden **en çok çakışanı** — S/R matrisi, açık boşluklar "
+                    "(FVG/GAP), Wyckoff alım bölgeleri, EMA21/50/200 ve ana yapı "
+                    "Fibonacci 0.382/0.5/0.618. Sebep sütununda hangileri çakıştığı "
+                    "yazar.\n"
+                    "- **Stop:** giriş bölgesinin dibi − 1 ATR (GFR çalışmasında "
+                    "aynı beklentiyi en az gereksiz stopla veren mesafe).\n"
+                    "- **Kâr al 1 / 2:** girişten en az 1R yukarıdaki ilk ve ikinci "
+                    "direnç (S/R direnci, doldurulmamış boşluk, Wyckoff satış "
+                    "bölgesi, 52 hafta zirvesi, Fib 1.272/1.618). Yakında direnç "
+                    "yoksa 2R ve 3R.\n"
+                    "- **⛔ Uzak dur:** satış/dağıtım sinyali, 7 gün içinde bilanço, "
+                    "düşüş trendi, düşük hacim, en iyi hedefte bile R:R < 1.5 ya da "
+                    "fiyat yeni dipte (altında destek yok).\n"
+                    "- Seviyeler günlük mumdan, son kapanışa göre hesaplanır; "
+                    "emir vermeden önce grafikte teyit edin.")
 
     # ------------------------------------------------------------------ 4
     section("Adım 4 · Hangi tema erken ivmeleniyor?")
@@ -859,18 +1050,9 @@ with tab_funnel:
     else:
         st.caption(f"{len(hold)} hisse · kaynak: "
                    + ", ".join(f"`{e}`" for e in uni.THEME_TRACKER.get(tema, [])))
-        S = scan_gate(f"funnel_{tema}", hold, "1d", "Tema hisselerini tara")
-        if not S.empty:
-            with st.spinner("Bilanço tarihleri ve değerleme çekiliyor…"):
-                EARN_T = load_earnings(tuple(hold), st.session_state.nonce_earn)
-            if not EARN_T.empty:
-                EARN_T = fvm.add_fair_values(EARN_T)
-            SVRAW_T, _, _ = load_short_volume(st.session_state.nonce_short)
-            pchg = dict(zip(S["Sembol"], pd.to_numeric(S.get("1 Hafta %"),
-                                                        errors="coerce")))
-            SVT_T = svm.short_table(SVRAW_T, hold, pchg)
-            TB = fnl.build_stock_table(S, IDX.get(tema), None, EARN_T, SVT_T,
-                                       min_liq, swing_score=scr.swing_score)
+        with st.spinner("Tema hisseleri, bilanço tarihleri ve short verisi…"):
+            TB, _ = theme_stock_table(tema, min_liq, IDX.get(tema))
+        if True:
             if TB.empty:
                 st.warning("Tarama sonucu boş.")
             else:
@@ -887,13 +1069,16 @@ with tab_funnel:
                     or [c for c in fnl.CLASS_ORDER if c in counts],
                     key=f"fn_show_{tema}")
                 vv = TB[TB["Durum"].isin(show)] if show else TB
-                cols = [c for c in [
-                    "Durum", "Sembol", "Huni Skoru", "Sinyal", "Fiyat",
-                    "Temaya Göre 1A", "Temaya Göre 1H", "1 Ay %", "Hacim ($M)",
-                    "Kalan Gün", "Bilanço", "SV% 5G", "ΔSV pp", "WHALE",
-                    "ΔWHALE 5B", "P/S Durum", "Neden"] if c in vv.columns]
+                full = st.toggle("Bütün sütunları göster", False, key="fn_full")
+                base = ["Durum", "Sembol", "Fiyat", "Huni Skoru", "Kalan Gün", "Neden"]
+                more = ["Sinyal", "Temaya Göre 1A", "Temaya Göre 1H", "1 Ay %",
+                        "Hacim ($M)", "Bilanço", "SV% 5G", "ΔSV pp", "WHALE",
+                        "ΔWHALE 5B", "P/S Durum"]
+                cols = [c for c in (base[:5] + more + ["Neden"] if full else base)
+                        if c in vv.columns]
                 st.dataframe(
-                    vv[cols].style.map(signal_style, subset=["Sinyal"]),
+                    vv[cols].style.map(signal_style, subset=[c for c in ["Sinyal"]
+                                                              if c in cols]),
                     width="stretch", hide_index=True,
                     column_config={
                         "Huni Skoru": st.column_config.ProgressColumn(
