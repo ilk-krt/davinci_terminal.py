@@ -1,0 +1,68 @@
+{
+ "short hacim (FINRA)": {
+  "ok": true,
+  "ts": "2026-10-10T18:38:30+00:00",
+  "sure_sn": 0.0,
+  "not": "30 gün, son 20261009"
+ },
+ "kripto (CoinGecko)": {
+  "ok": true,
+  "ts": "2026-10-10T18:38:54+00:00",
+  "sure_sn": 0.0,
+  "not": ""
+ },
+ "likidite (FRED)": {
+  "ok": false,
+  "ts": "2026-10-10T18:46:32+00:00",
+  "sure_sn": 0.0,
+  "not": "WALCL: ReadTimeout, WTREGEN: ReadTimeout, RRPONTSYD: ReadTimeout, M2SL: ReadTimeout — repo Secrets'a FRED_API_KEY eklenirse resmî API denenir"
+ },
+ "macro_frames": {
+  "ok": true,
+  "ts": "2026-10-10T18:46:35+00:00",
+  "sure_sn": 2.3,
+  "not": "18 seri, 0 çekilemedi"
+ },
+ "rotation": {
+  "ok": true,
+  "ts": "2026-10-10T18:46:37+00:00",
+  "sure_sn": 2.3,
+  "not": "21 gösterge, çekilemeyen: 0"
+ },
+ "decision": {
+  "ok": true,
+  "ts": "2026-10-10T18:46:40+00:00",
+  "sure_sn": 3.1,
+  "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
+ },
+ "theme_rotation": {
+  "ok": true,
+  "ts": "2026-10-10T18:46:48+00:00",
+  "sure_sn": 8.5,
+  "not": "52 tema, 92 ETF"
+ },
+ "theme_perf": {
+  "ok": true,
+  "ts": "2026-10-10T18:46:53+00:00",
+  "sure_sn": 5.0,
+  "not": "52 tema"
+ },
+ "scan_1d": {
+  "ok": true,
+  "ts": "2026-10-10T18:48:59+00:00",
+  "sure_sn": 125.7,
+  "not": "544 sembol"
+ },
+ "scan_1wk": {
+  "ok": true,
+  "ts": "2026-10-10T18:50:24+00:00",
+  "sure_sn": 85.2,
+  "not": "544 sembol"
+ },
+ "earnings": {
+  "ok": true,
+  "ts": "2026-10-10T18:52:35+00:00",
+  "sure_sn": 130.8,
+  "not": "432/455 hisse"
+ }
+}
