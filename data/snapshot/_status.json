@@ -1,68 +1,68 @@
 {
  "short hacim (FINRA)": {
   "ok": true,
-  "ts": "2026-10-10T19:02:58+00:00",
+  "ts": "2026-10-10T19:21:56+00:00",
   "sure_sn": 0.0,
   "not": "30 gün, son 20261009"
  },
  "kripto (CoinGecko)": {
   "ok": true,
-  "ts": "2026-10-10T19:03:17+00:00",
+  "ts": "2026-10-10T19:22:12+00:00",
   "sure_sn": 0.0,
   "not": ""
  },
  "likidite (FRED)": {
   "ok": true,
-  "ts": "2026-10-10T19:10:56+00:00",
+  "ts": "2026-10-10T19:29:51+00:00",
   "sure_sn": 0.0,
   "not": "3072 gün, eksik seri: yok"
  },
  "macro_frames": {
   "ok": true,
-  "ts": "2026-10-10T19:10:58+00:00",
-  "sure_sn": 1.8,
+  "ts": "2026-10-10T19:29:53+00:00",
+  "sure_sn": 1.2,
   "not": "18 seri, 0 çekilemedi"
  },
  "rotation": {
   "ok": true,
-  "ts": "2026-10-10T19:11:00+00:00",
-  "sure_sn": 2.2,
+  "ts": "2026-10-10T19:29:54+00:00",
+  "sure_sn": 1.5,
   "not": "23 gösterge, çekilemeyen: 0"
  },
  "decision": {
   "ok": true,
-  "ts": "2026-10-10T19:11:02+00:00",
-  "sure_sn": 2.3,
+  "ts": "2026-10-10T19:29:58+00:00",
+  "sure_sn": 3.7,
   "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
  },
  "theme_rotation": {
   "ok": true,
-  "ts": "2026-10-10T19:11:10+00:00",
-  "sure_sn": 8.1,
+  "ts": "2026-10-10T19:30:04+00:00",
+  "sure_sn": 6.5,
   "not": "52 tema, 92 ETF"
  },
  "theme_perf": {
   "ok": true,
-  "ts": "2026-10-10T19:11:15+00:00",
-  "sure_sn": 4.5,
+  "ts": "2026-10-10T19:30:10+00:00",
+  "sure_sn": 5.5,
   "not": "52 tema"
  },
  "scan_1d": {
   "ok": true,
-  "ts": "2026-10-10T19:12:53+00:00",
-  "sure_sn": 97.8,
+  "ts": "2026-10-10T19:32:24+00:00",
+  "sure_sn": 134.1,
   "not": "544 sembol"
  },
  "scan_1wk": {
   "ok": true,
-  "ts": "2026-10-10T19:13:40+00:00",
-  "sure_sn": 47.4,
+  "ts": "2026-10-10T19:33:52+00:00",
+  "sure_sn": 87.9,
   "not": "544 sembol"
  },
  "earnings": {
   "ok": true,
-  "ts": "2026-10-10T19:15:48+00:00",
-  "sure_sn": 127.9,
-  "not": "432/455 hisse"
+  "ts": "2026-10-10T19:36:49+00:00",
+  "sure_sn": 177.5,
+  "not": "428/455 hisse"
  }
 }
