@@ -197,6 +197,7 @@ def decision(rot: pd.DataFrame):
     """Adım 3: S&P 500 / Nasdaq / Kripto — G/H/A modül tabloları."""
     prices, failed = dta.fetch(dcs.DEC_TICKERS, "1d_long")
     spy = prices.get("SPY")
+    qqq = prices.get("QQQ")
     assets = {}
     for ad, t in dcs.DEC_ASSETS.items():
         df = prices.get(t)
@@ -205,12 +206,14 @@ def decision(rot: pd.DataFrame):
             for tf, rule in dcs.TFS.items():
                 d_ = dcs.resample(df, rule)
                 b_ = dcs.resample(spy, rule) if spy is not None else None
+                q_ = dcs.resample(qqq, rule) if qqq is not None else None
                 if rule is None:
                     d_ = d_.tail(900)
                 bench = b_["Close"] if (b_ is not None and t != "SPY") else None
+                ndx = q_["Close"] if q_ is not None else None
                 frac = dcs.partial_frac(df, rule)
                 try:
-                    m, eng_d = dcs.evaluate_tf(d_, bench, t, frac)
+                    m, eng_d = dcs.evaluate_tf(d_, bench, t, frac, tf, ndx)
                 except Exception as exc:          # tek zaman dilimi hatası
                     m, eng_d = pd.DataFrame(), {}
                     _log.info("Karar %s %s: %s", t, tf, exc)

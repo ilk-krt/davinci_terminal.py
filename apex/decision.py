@@ -1,10 +1,6 @@
 # apex/decision.py — AETHER APEX
 from __future__ import annotations
 
-from apex.indicators import atr, ema, rsi
-from apex import engine as eng
-from apex import funnel as fnl
-
 # apex/decision.py — ENDEKS KARARI: S&P 500 · Nasdaq · Kripto
 #
 # Her varlık için günlük, haftalık ve aylık mumlarda bütün modüller tek tek
@@ -13,12 +9,27 @@ from apex import funnel as fnl
 # Piyasa notları (VIX kuralı, genişlik, net giriş / rotasyon, QQQ/SPY
 # çeyreklik kırılımı) kararın yanında ayrıca gösterilir.
 #
-# Pine kodu gelince eklenecek modüller PENDING listesindedir.
+# Pine göstergelerinden çevrilen modüller: pine_fib (v667.3 Fib × Mum Gücü),
+# pine_elliott (V722c), pine_v710 (Q-dry, Volatility Hole, Whale profili),
+# pine_structure (QUANTUM 885: Gap, S/R, Wyckoff bölgeleri, likidite, GFR),
+# pine_vsa (VSA & Delta Engine).
 
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from apex.indicators import atr, ema, rsi
+from apex import engine as eng
+from apex import funnel as fnl
+from apex import pine_elliott as pell
+from apex import pine_fib as pfib
+from apex import pine_structure as pst
+from apex import pine_v710 as pv710
+from apex import pine_vsa as pvsa
+
+_log = logging.getLogger(__name__)
 
 DEC_ASSETS: dict[str, str] = {"S&P 500": "SPY", "Nasdaq": "QQQ",
                               "Kripto (BTC)": "BTC-USD"}
@@ -32,10 +43,7 @@ DEC_TICKERS: list[str] = sorted(set(list(DEC_ASSETS.values())
 TFS: dict[str, str | None] = {"Günlük": None, "Haftalık": "W-FRI", "Aylık": "ME"}
 TF_W: dict[str, float] = {"Günlük": 0.3, "Haftalık": 0.4, "Aylık": 0.3}
 
-PENDING: list[str] = [
-    "Fibonacci seviyeleri", "Elliott dalga", "Q-dry", "Volatility Hole",
-    "Whale Momentum Profile", "Gap / Fair Value Gap", "Kurumsal alım-satım bölgeleri",
-    "Kısa/orta/uzun vade dirençler", "GFR", "VSA & Delta", "Mum Gücü (v666)"]
+PENDING: list[str] = []          # hepsi çevrildi
 
 
 # --------------------------------------------------------------------------
@@ -218,6 +226,8 @@ def engine_modules(d: dict[str, Any]) -> list[dict[str, Any]]:
                    "🔴 NEG": "fiyat efor çizgisinin altında"}.get(ef, ef),
                   "Akıllı para"))
     mag, dr = d.get("MAGNITUDE", 0), d.get("DIRECTION", 0)
+    mag = int(mag) if np.isfinite(mag) else 0
+    dr = int(dr) if np.isfinite(dr) else 0
     out.append(_m("Konfluans", 1 if dr >= 3 else -1 if dr <= -3 else dr / 3,
                   f"DIRECTION {dr:+d} · MAGNITUDE {mag}", "Momentum"))
     fu, sy = d.get("Fusion", np.nan), d.get("Synergy", np.nan)
@@ -260,9 +270,23 @@ def engine_modules(d: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _pine(name: str, fn, *args) -> list[dict[str, Any]]:
+    """Bir Pine modülü hata verirse yalnızca o satır düşer, tablo yaşar."""
+    try:
+        return fn(*args)
+    except Exception as exc:                     # noqa: BLE001
+        _log.info("Pine modülü %s: %s", name, exc)
+        return []
+
+
 def evaluate_tf(df: pd.DataFrame, bench: pd.Series | None, t: str,
-                frac: float = 1.0) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Tek varlık + tek zaman dilimi → modül tablosu ve motor çıktısı."""
+                frac: float = 1.0, tf: str = "Günlük",
+                ndx: pd.Series | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Tek varlık + tek zaman dilimi → modül tablosu ve motor çıktısı.
+
+    bench: S&P 500 kapanışı (SPY'nin kendisi için None) · ndx: Nasdaq (QQQ)
+    kapanışı — V710 RS fiyatı Pine'daki gibi Nasdaq'a göre hesaplanır.
+    """
     if df is None or len(df) < 30:
         return pd.DataFrame(), {}
     c = df["Close"]
@@ -274,6 +298,13 @@ def evaluate_tf(df: pd.DataFrame, bench: pd.Series | None, t: str,
         if row.ok:
             d = row.data
             mods += engine_modules(d)
+        lf = frac if frac and frac < 1 else None
+        fib_b = bench if t not in ("SPY", "QQQ") else None
+        mods += _pine("fib", pfib.modules, df, fib_b, tf, frac or 1.0)
+        mods += _pine("elliott", pell.modules, df, tf, lf)
+        mods += _pine("v710", pv710.modules, df, ndx if t != "QQQ" else None, tf)
+        mods += _pine("yapı", pst.modules, df, bench, tf, lf)
+        mods += _pine("vsa", pvsa.modules, df, tf, lf)
     return pd.DataFrame(mods), d
 
 
@@ -349,7 +380,7 @@ def market_notes(prices: dict[str, pd.DataFrame], rot: pd.DataFrame
                         f"{SECTORS[lead]} (%{chg[lead]:+.1f}, hacim {rvs[lead]:.1f}×)."))
         elif spy_ch > 0.2 and (len(sharp_down) >= 2 or up <= 5):
             out.append(("⚠️", f"Endeks yükseldi ama yalnızca {up}/{len(secs)} sektör "
-                              f"artıda" + (f"; sert satış: "
+                              f"artıda" + ("; sert satış: "
                                            + ", ".join(SECTORS[s] for s in sharp_down)
                                            if sharp_down else "")
                               + " — bu net giriş değil, sektörler arası rotasyon."))
@@ -494,6 +525,9 @@ def matrix(mods_by_tf: dict[str, pd.DataFrame]) -> pd.DataFrame:
             cells.setdefault(r["Modül"], {})[tf] = (
                 r["Not"] if r["Modül"] == "Başlık sinyali"   # sinyalin kendi ikonu var
                 else f"{_icon(r['Durum'])} {r['Not']}")
+    g_ord = {g: i for i, g in enumerate(
+        ["Fiyat", "Trend", "Momentum", "Volatilite", "Akıllı para", "Yapı"])}
+    order.sort(key=lambda mo: g_ord.get(grp[mo], 99))       # sıralama kararlı
     rows = [{"Grup": grp[mo], "Modül": mo,
              **{tf: cells[mo].get(tf, "—") for tf in TFS}} for mo in order]
     for p in PENDING:

@@ -242,6 +242,10 @@ def technical_note(d: dict[str, Any]) -> str:
 
     # 4) Konfluans
     mag, dr = d.get("MAGNITUDE"), d.get("DIRECTION")
+    try:                       # tablo/snapshot'tan gelince float (ya da NaN) olabilir
+        mag, dr = int(mag), int(dr)
+    except (TypeError, ValueError):
+        mag = dr = None
     if mag is not None and dr is not None:
         parts.append(f"Konfluans: MAGNITUDE {mag}/18, DIRECTION {dr:+d} "
                      f"(0'ın üstü alıcı baskısı).")
