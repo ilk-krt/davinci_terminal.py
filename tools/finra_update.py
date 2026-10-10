@@ -88,6 +88,13 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     all_.to_csv(OUT, index=False, compression="gzip")
     print(f"{got} yeni gün eklendi; toplam {len(keep)} gün, {len(all_)} satır → {OUT}")
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from apex.snapshot import write_status
+        write_status("short hacim (FINRA)", True, 0.0,
+                     f"{len(keep)} gün, son {max(keep)}")
+    except Exception:
+        pass
     return 0
 
 

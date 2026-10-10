@@ -19,6 +19,7 @@ Elle çalıştırma:  python tools/macro_update.py
 from __future__ import annotations
 
 import io
+import os
 import sys
 import time
 from pathlib import Path
@@ -29,6 +30,24 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent / "data"
 UA = {"User-Agent": "Mozilla/5.0 (davinci_terminal data job)"}
+# FRED kısa/robot görünümlü istekleri reddedebiliyor — tarayıcı başlığı
+BROWSER = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/126.0 Safari/537.36"),
+           "Accept": "text/csv,text/plain,*/*;q=0.8",
+           "Accept-Language": "en-US,en;q=0.9",
+           "Referer": "https://fred.stlouisfed.org/"}
+ERRORS: dict[str, str] = {}
+
+
+def _status(name: str, ok: bool, note: str) -> None:
+    """Sonucu arayüzde görünen durum dosyasına yaz (data/snapshot/_status.json)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from apex.snapshot import write_status
+        write_status(name, ok, 0.0, note)
+    except Exception as exc:                      # durum yazılamazsa iş durmasın
+        print(f"durum yazılamadı: {exc}", file=sys.stderr)
 
 # Sabit 1$ kabul edilen stablecoin'ler (yfinance fiyatı gürültülü olabiliyor)
 STABLES = {"usdt", "usdc", "dai", "usde", "fdusd", "tusd", "usdd", "pyusd",
@@ -161,29 +180,57 @@ FRED = {"WALCL": "Fed Bilançosu", "WTREGEN": "TGA", "RRPONTSYD": "Ters Repo",
         "M2SL": "M2"}
 
 
+def _fred_api(sid: str) -> pd.Series | None:
+    """Resmî FRED API'si — repo Secrets'ta FRED_API_KEY varsa (ücretsiz anahtar)."""
+    key = os.environ.get("FRED_API_KEY", "").strip()
+    if not key:
+        return None
+    url = ("https://api.stlouisfed.org/fred/series/observations"
+           f"?series_id={sid}&api_key={key}&file_type=json"
+           "&observation_start=2015-01-01")
+    r = requests.get(url, headers=UA, timeout=30)
+    if r.status_code != 200:
+        ERRORS[sid] = f"API HTTP {r.status_code}"
+        return None
+    obs = r.json().get("observations", [])
+    s = pd.Series({pd.Timestamp(o["date"]): pd.to_numeric(o["value"], errors="coerce")
+                   for o in obs}, name=sid)
+    return s.dropna()
+
+
 def fred_series(sid: str) -> pd.Series | None:
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd=2015-01-01"
-    for i in range(4):
+    for i in range(3):
         try:
-            r = requests.get(url, headers=UA, timeout=30)
-            if r.status_code == 200 and r.content:
+            r = requests.get(url, headers=BROWSER, timeout=30)
+            if r.status_code == 200 and r.content and b"," in r.content[:200]:
                 df = pd.read_csv(io.BytesIO(r.content), na_values=["."])
                 dcol = df.columns[0]          # 'DATE' ya da 'observation_date'
                 s = pd.Series(pd.to_numeric(df[sid], errors="coerce").values,
                               index=pd.to_datetime(df[dcol]), name=sid)
                 return s.dropna()
+            ERRORS[sid] = f"HTTP {r.status_code}"
             print(f"FRED {sid}: HTTP {r.status_code}", file=sys.stderr)
         except Exception as exc:
+            ERRORS[sid] = type(exc).__name__
             print(f"FRED {sid}: {exc}", file=sys.stderr)
-        time.sleep(5 * (i + 1))
-    return None
+        time.sleep(4 * (i + 1))
+    try:
+        return _fred_api(sid)
+    except Exception as exc:
+        ERRORS[sid] = f"API {type(exc).__name__}"
+        return None
 
 
 def liquidity() -> bool:
     ser = {k: fred_series(k) for k in FRED}
     ok = {k: v for k, v in ser.items() if v is not None and len(v)}
     if "WALCL" not in ok:
-        print("FRED verisi alınamadı", file=sys.stderr)
+        msg = ", ".join(f"{k}: {v}" for k, v in ERRORS.items()) or "bilinmiyor"
+        print(f"FRED verisi alınamadı ({msg})", file=sys.stderr)
+        _status("likidite (FRED)", False, msg
+                + (" — repo Secrets'a FRED_API_KEY eklenirse resmî API denenir"
+                   if not os.environ.get("FRED_API_KEY") else ""))
         return False
     idx = pd.date_range(min(s.index.min() for s in ok.values()),
                         max(s.index.max() for s in ok.values()), freq="D")
@@ -200,6 +247,8 @@ def liquidity() -> bool:
     df.round(2).to_csv(ROOT / "liquidity.csv")
     print(f"liquidity.csv: {len(df)} gün, son net likidite "
           f"{df['NET_LIQ'].iloc[-1]:,.0f} milyar $")
+    _status("likidite (FRED)", True, f"{len(df)} gün, eksik seri: "
+            + (", ".join(k for k in FRED if k not in ok) or "yok"))
     return True
 
 
@@ -208,8 +257,10 @@ def main() -> int:
     b = False
     try:
         a = crypto()
+        _status("kripto (CoinGecko)", a, "" if a else "CoinGecko/yfinance verisi alınamadı")
     except Exception as exc:
         print(f"kripto hatası: {exc}", file=sys.stderr)
+        _status("kripto (CoinGecko)", False, f"{type(exc).__name__}: {exc}")
     try:
         b = liquidity()
     except Exception as exc:
