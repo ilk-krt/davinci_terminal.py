@@ -29,6 +29,13 @@ from apex import valuation as fvm
 from apex import compute as cmp
 from apex import snapshot as snap
 from apex import plan as pln
+from apex import flows as flw
+from apex import gold as gld
+from apex import markets as mkt
+from apex import reading as rdg
+from apex import seasonal as sea
+from apex import tfview as tfv
+from apex import tvchart as tvc
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -95,9 +102,26 @@ _st_plotly_chart = st.plotly_chart
 
 
 def _plotly_chart(fig, *args, **kwargs):
-    """Streamlit'in açık temasının grafik renklerini ezmesini engeller."""
+    """Streamlit'in açık temasının grafik renklerini ezmesini engeller ve grafiği
+    SABİTLER: tıklayınca/sürükleyince yakınlaşma, seri gizleme olmaz (görüntü
+    bozulmaz). Kamera düğmesi seçili formatta (PNG/JPEG/SVG) indirir."""
     kwargs.setdefault("theme", None)
-    return _st_plotly_chart(fig, *args, **kwargs)
+    try:
+        fig.update_layout(dragmode=False)
+        fig.update_xaxes(fixedrange=True)
+        fig.update_yaxes(fixedrange=True)
+        fig.update_layout(legend=dict(itemclick=False, itemdoubleclick=False))
+    except Exception:                       # noqa: BLE001 (alt grafik türleri)
+        pass
+    fmt = st.session_state.get("img_fmt", "png") if hasattr(st, "session_state") else "png"
+    cfg = {"displaylogo": False, "scrollZoom": False, "doubleClick": False,
+           "modeBarButtonsToRemove": ["zoom2d", "pan2d", "select2d", "lasso2d",
+                                      "zoomIn2d", "zoomOut2d", "autoScale2d",
+                                      "resetScale2d", "toggleSpikelines"],
+           "toImageButtonOptions": {"format": fmt, "scale": 2,
+                                    "filename": "aether_grafik"}}
+    cfg.update(kwargs.pop("config", {}) or {})
+    return _st_plotly_chart(fig, *args, config=cfg, **kwargs)
 
 
 st.plotly_chart = _plotly_chart
@@ -578,8 +602,758 @@ for e in M.errors:
 
 MARKET_REGIME_OK = M.scores.get("trend", 50) >= 50
 
+def stock_fundamentals(sym: str, basis: str) -> None:
+    """F/K + akranlar, medyan çarpan adil fiyatı ve çarpan özeti (Hisse Analizi ve
+    Hisse Avcısı ortak)."""
+    if sym:
+        with st.spinner(f"{sym} mali tabloları çekiliyor…"):
+            RAW = load_stock_raw(sym, st.session_state.nonce_stock)
+        info = RAW.get("info") or {}
+        px_ = fch._price(RAW)
+        if px_.empty:
+            st.error(f"{sym} için fiyat verisi alınamadı. Sembolü kontrol edin "
+                     "ya da birkaç dakika sonra yenileyin (Yahoo sınırlaması).")
+        else:
+            st.markdown(
+                f"**{info.get('longName') or info.get('shortName') or sym}** · "
+                f"{info.get('sector', '')} / {info.get('industry', '')} · "
+                f"son fiyat **\\${px_.iloc[-1]:.2f}**")
+
+            # ------------------------------------------------ F/K + akranlar
+            section("F/K oranı (TTM) ve akran medyanı")
+            sug = fch.suggest_peers(sym)
+            peers_txt = st.text_input(
+                "Akranlar (virgülle; varsayılan: aynı ETF'lerdeki en ağır şirketler)",
+                value=", ".join(sug), key=f"sa_peers_{sym}")
+            peers = [x.strip().upper() for x in peers_txt.split(",")
+                     if x.strip() and x.strip().upper() != sym][:12]
+            PE = fch.pe_history(RAW, basis)
+            with st.spinner("Akranların F/K geçmişi hesaplanıyor…"):
+                PEER = load_peer_pe(tuple(peers), basis,
+                                    st.session_state.nonce_stock) if peers else {}
+            MED, NPEER = fch.peer_median(PEER)
+            if PE.empty:
+                st.info("F/K hesaplanamadı (HBK verisi yok ya da şirket zararda).")
+            else:
+                own_med = float(PE.median())
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=PE.index, y=PE, mode="lines", name=f"{sym} F/K (TTM)",
+                    line=dict(color="#3987e5", width=1.8)))
+                if not MED.empty:
+                    m2 = MED[MED.index >= PE.index.min()]
+                    fig.add_trace(go.Scatter(
+                        x=m2.index, y=m2, mode="lines+markers",
+                        name=f"Akran medyanı ({len(PEER)} şirket)",
+                        line=dict(color="#c98500", width=2),
+                        marker=dict(size=4)))
+                fig.add_hline(y=own_med, line_dash="dot", line_color="#6e6e7a",
+                              annotation_text=f"{sym} kendi medyanı {own_med:.1f}",
+                              annotation_font_color="#a0a0ab")
+                fig.update_layout(height=380, legend=dict(orientation="h", y=1.08),
+                                  yaxis_title="F/K", **CHART_LAYOUT)
+                st.plotly_chart(fig, width="stretch")
+                now = float(PE.iloc[-1])
+                parts = [f"Şu an F/K **{now:.1f}**, kendi medyanı {own_med:.1f} "
+                         f"({(now / own_med - 1) * 100:+.0f}%)."]
+                if not MED.empty:
+                    pm = float(MED.iloc[-1])
+                    parts.append(f"Akran medyanı **{pm:.1f}** — hisse akranlarına "
+                                 f"göre {(now / pm - 1) * 100:+.0f}% "
+                                 + ("primli." if now > pm else "iskontolu."))
+                st.markdown(" ".join(parts))
+                if PEER:
+                    eksik = [t for t in peers if t not in PEER or PEER[t].empty]
+                    if eksik:
+                        st.caption("F/K hesaplanamayan akranlar (zarar ya da veri "
+                                   "yok): " + ", ".join(eksik))
+
+            # ------------------------------------------------ adil fiyat çizgisi
+            section("Fiyat ve medyan çarpan adil fiyatı")
+            b1, b2 = st.columns([2, 1])
+            mkey = b1.radio("Metrik", list(fch.METRICS),
+                            format_func=lambda k: f"{fch.METRICS[k]['ad']} "
+                                                  f"({fch.METRICS[k]['kisa']})",
+                            horizontal=True, key="sa_metric")
+            win = b2.selectbox("Medyan penceresi", [0, 3, 5],
+                               format_func=lambda y: "Tüm geçmiş" if y == 0
+                               else f"Son {y} yıl", key="sa_win")
+            D = fch.fair_value_chart_data(RAW, mkey, win)
+            if not D["ok"]:
+                st.info(D["neden"])
+            else:
+                kp = st.columns(5)
+                kp[0].markdown(kpi("Fiyat", f"${D['price'].iloc[-1]:.2f}",
+                                   f"toplam {D['total']:+.0f}% · yıllık "
+                                   f"{D['cagr']:+.1f}%"), unsafe_allow_html=True)
+                kp[1].markdown(kpi(f"Medyan {D['metric']['kisa']}",
+                                   f"{D['median']:.2f}",
+                                   f"şu an {D['mult_now']:.2f}"),
+                               unsafe_allow_html=True)
+                kp[2].markdown(kpi("Medyan çarpanla adil fiyat",
+                                   f"${D['fair_now']:.2f}", "son bilinen TTM"),
+                               unsafe_allow_html=True)
+                kp[3].markdown(kpi("Adile göre", f"{D['gap']:+.1f}%",
+                                   "fiyat adilin üstünde" if D["gap"] > 0
+                                   else "fiyat adilin altında",
+                                   "neg" if D["gap"] > 15 else
+                                   "pos" if D["gap"] < -10 else ""),
+                               unsafe_allow_html=True)
+                kp[4].markdown(kpi("Korelasyon", f"%{D['corr'] * 100:.0f}"
+                                   if np.isfinite(D["corr"]) else "—",
+                                   "fiyat ↔ metrik çizgisi"),
+                               unsafe_allow_html=True)
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=D["price"].index, y=D["price"], mode="lines", name="Fiyat",
+                    line=dict(color="#3987e5", width=1.6)))
+                fig.add_trace(go.Scatter(
+                    x=D["fair"].index, y=D["fair"], mode="lines",
+                    name=f"Medyan {D['metric']['kisa']} = {D['median']:.2f} ile fiyat",
+                    line=dict(color="#2fbe86", width=2, shape="hv")))
+                pts = D["points"][D["points"].index >= D["start"]]
+                fig.add_trace(go.Scatter(
+                    x=pts.index, y=pts, mode="markers", showlegend=False,
+                    marker=dict(color="#2fbe86", size=7, symbol="diamond"),
+                    hovertemplate="%{x|%m.%Y}: $%{y:.2f}<extra>dönem sonu</extra>"))
+                if not D["est"].empty:
+                    last_d = D["fair"].index[-1]
+                    ex = pd.concat([pd.Series({last_d: D["fair_now"]}), D["est"]])
+                    fig.add_trace(go.Scatter(
+                        x=ex.index, y=ex, mode="lines+markers",
+                        name="Tahmin", line=dict(color="#2fbe86", width=2,
+                                                 dash="dash"),
+                        marker=dict(size=8, symbol="diamond")))
+                    fig.add_vrect(x0=last_d, x1=D["est"].index[-1],
+                                  fillcolor="#c9b800", opacity=0.10, line_width=0,
+                                  annotation_text="Tahminler",
+                                  annotation_position="bottom right")
+                fig.update_layout(height=460, legend=dict(orientation="h", y=1.08),
+                                  yaxis_title="$", **CHART_LAYOUT)
+                st.plotly_chart(fig, width="stretch")
+                if not D["est"].empty:
+                    e_last = D["est"]
+                    st.caption(
+                        "Tahmin noktaları: " + " · ".join(
+                            f"{d:%m.%Y} → \\${v:.2f}" for d, v in e_last.items())
+                        + f" — kaynak: {D['est_src']}.")
+                st.caption(
+                    "Yeşil çizgi = hisse başı TTM " + D["metric"]["ad"].lower()
+                    + f" × hissenin {('tüm geçmişteki' if not win else f'son {win} yıldaki')} "
+                    f"medyan {D['metric']['kisa']} çarpanı. Korelasyon yüksekse "
+                    "(%70+) fiyat bu metriği takip ediyor demektir; o zaman "
+                    "çizgiden uzaklaşmalar anlamlıdır.")
+
+            # ------------------------------------------------ özet tablo
+            section("Çarpan özeti")
+            SUM = fch.multiples_summary(RAW, MED if not MED.empty else None)
+            if SUM.empty:
+                st.caption("Çarpan hesaplanamadı.")
+            else:
+                st.dataframe(SUM, width="stretch", hide_index=True,
+                             column_config={
+                                 c: st.column_config.NumberColumn(format="%.2f")
+                                 for c in ("Şu an", "Kendi medyanı", "En düşük",
+                                           "En yüksek", "Akran medyanı")} | {
+                                 "Medyana göre %": st.column_config.NumberColumn(
+                                     format="%+.0f%%")})
+            if RAW.get("errors"):
+                st.caption("Eksik veri: " + ", ".join(RAW["errors"]))
+            with st.expander("Hesap yöntemi ve sınırlar"):
+                st.markdown(
+                    "- **TTM**: son 4 çeyreğin toplamı. Çeyreklik veri yetmeyen "
+                    "eski dönemlerde mali yıl sonu değeri kullanılır.\n"
+                    "- **Geçmiş uzunluğu**: Yahoo yıllık tabloları ~4–5 yıl, "
+                    "çeyrekliği ~5–6 çeyrek verir; grafikler bu aralıktan "
+                    "başlar. Düzeltilmiş HBK ~10 yıl gider.\n"
+                    "- **Akran medyanı**: sektörün tamamı değil, seçtiğiniz "
+                    "akranların aylık F/K medyanıdır (en az 3 akran gerekir).\n"
+                    "- **Tahminler**: satış ve HBK için analist tahminleri "
+                    "kullanılır. Yahoo nakit akışı tahmini vermediği için OCF/FCF "
+                    "tahmini HBK büyümesiyle ölçeklenir — kaba bir yaklaşımdır.\n"
+                    "- Zarardaki dönemlerde F/K ve çarpanlar tanımsızdır, "
+                    "grafikte boş kalır.")
+
+
+
+# ==========================================================================
+# YENİ SAYFA YAPISI — Para Akışı → Endeksler & Risk → Tema Avcısı →
+# Hisse Avcısı → Hype & Biotech · eski sekmeler "Araçlar" altında.
+# st.tabs yerine sayfa seçici: bir sayfadaki düğme bir sonraki sayfayı açabilir
+# ve yalnızca seçili sayfa hesaplanır (uygulama hızlanır).
+# ==========================================================================
+PAGES = ["🌊 Para Akışı", "🧭 Endeksler & Risk", "🎯 Tema Avcısı",
+         "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🗂️ Araçlar"]
+for _k, _v in {"nav": PAGES[0], "nonce_chart": "0", "nonce_flow": "0",
+               "mk_sel": "S&P 500", "ta_index": "Nasdaq", "ha_tema": None,
+               "ha_sym": None}.items():
+    st.session_state.setdefault(_k, _v)
+
+
+def _go(page: str, **ctx) -> None:
+    """Düğme geri çağrısı: sayfayı değiştirir ve bağlamı taşır."""
+    st.session_state["nav"] = page
+    for w_ in ("ta_index_radio", "ha_tema_sel", "ha_sym_sel"):
+        st.session_state.pop(w_, None)          # eski widget seçimi yeni bağlamı ezmesin
+    for k_, v_ in ctx.items():
+        st.session_state[k_] = v_
+
+
+st.radio("Sayfa", PAGES, key="nav", horizontal=True, label_visibility="collapsed")
+st.sidebar.radio("Etkileşimli grafiklerin indirme formatı (📷 düğmesi)",
+                 ["png", "jpeg", "svg"], key="img_fmt", horizontal=True,
+                 help="Pine çizimli grafikler ve akış görseli altlarındaki "
+                      "PNG / JPEG / PDF düğmeleriyle iner.")
+PAGE = st.session_state["nav"]
+
+
+def _fname(x: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in x).strip("_") or "grafik"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_long(syms: tuple[str, ...], nonce: str) -> dict:
+    prices, _ = dta.fetch(list(syms), "1d_long")
+    return prices
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def chart_pack(sym: str, label: str, nonce: str) -> dict:
+    """Günlük/haftalık/aylık grafikler (PNG/JPEG/PDF) + teknik okumalar."""
+    need = tuple(sorted(set(sym.split("/")) | {"SPY", "QQQ"}))
+    prices = load_long(need, nonce)
+    vs = mkt.views(sym, prices)
+    out: dict = {}
+    pngs, texts = [], []
+    for tf, v in vs.items():
+        f = tvc.draw(v, label)
+        out[tf] = {"png": tvc.to_bytes(f, "png"), "jpeg": tvc.to_bytes(f, "jpeg"),
+                   "pdf": tvc.to_bytes(f, "pdf"), "text": rdg.read(v),
+                   "score": v.get("score", np.nan)}
+        pngs.append(out[tf]["png"])
+        texts.append(f"{tf}\n\n" + out[tf]["text"])
+        tvc.close(f)
+    out["_pdf"] = tvc.report_pdf(f"{label} — teknik görünüm "
+                                 f"({dt.date.today():%d.%m.%Y})", pngs, texts)
+    return out
+
+
+def img_downloads(data: dict, base: str, key: str, cols=None) -> None:
+    """PNG / JPEG / PDF indirme düğmeleri."""
+    c = cols or st.columns(3)
+    for col, (fmt, mime) in zip(c, (("png", "image/png"), ("jpeg", "image/jpeg"),
+                                    ("pdf", "application/pdf"))):
+        col.download_button(fmt.upper(), data[fmt], f"{base}.{'jpg' if fmt == 'jpeg' else fmt}",
+                            mime, key=f"{key}_{fmt}", width="stretch")
+
+
+def show_triptych(sym: str, label: str, key: str) -> None:
+    """Pine çizimli G/H/A grafikler yan yana + altlarında teknik okuma."""
+    with st.spinner(f"{label}: günlük, haftalık ve aylık grafikler çiziliyor…"):
+        try:
+            R = chart_pack(sym, label, st.session_state.nonce_chart)
+        except Exception as exc:                  # noqa: BLE001
+            st.error(f"{label} grafikleri çizilemedi: {exc}")
+            return
+    cols = st.columns(3)
+    for col, tf in zip(cols, tfv.TF_RULE):
+        with col:
+            st.image(R[tf]["png"], width="stretch")
+            img_downloads(R[tf], f"{_fname(label)}_{tf}", f"{key}_{tf}")
+    st.download_button("📄 Üç grafik + teknik okumalar (tek PDF)", R["_pdf"],
+                       f"{_fname(label)}_teknik.pdf", "application/pdf",
+                       key=f"{key}_allpdf")
+    tcols = st.columns(3)
+    for col, tf in zip(tcols, tfv.TF_RULE):
+        with col, st.container(border=True):
+            st.markdown(f"##### {tf}")
+            st.markdown(R[tf]["text"])
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_flows(nonce: str):
+    if _use_snap(nonce):
+        s = snap.load("flows")
+        if s is not None:
+            return s
+    return cmp.flows()
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_markets(nonce: str):
+    if _use_snap(nonce):
+        s = snap.load("markets")
+        if s is not None:
+            return s
+    return cmp.markets()
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_gold(nonce: str):
+    if _use_snap(nonce):
+        s = snap.load("gold")
+        if s is not None:
+            return s
+    return cmp.gold()
+
+
+@st.cache_data(ttl=TTL_NEWS, show_spinner=False)
+def load_query_news(query: str, nonce: str):
+    return nws.fetch_query(query)
+
+
+def news_list(items: list, n: int = 8) -> None:
+    if not items:
+        st.caption("Haber bulunamadı.")
+        return
+    for it in items[:n]:
+        st.markdown(f"- [{it['Başlık']}]({it['Link']}) · {it['Tarih'][:16]}  \n"
+                    f"  <span style='color:#7a8394;font-size:0.85em'>{it['Etki']}</span>",
+                    unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def flow_pack(nonce: str) -> dict:
+    FT, _ = load_flows(nonce)
+    f = flw.diagram(FT)
+    out = {fmt: tvc.to_bytes(f, fmt) for fmt in ("png", "jpeg", "pdf")}
+    tvc.close(f)
+    return out
+
+
+def rrg_fig(T: pd.DataFrame, TAILS: dict, names: list[str]):
+    fig = go.Figure()
+    for i, tema in enumerate(names):
+        tl = TAILS.get(tema)
+        if tl is None or tl.empty:
+            continue
+        colr = SERIES[i % len(SERIES)]
+        fig.add_trace(go.Scatter(x=tl["RS-Oran"], y=tl["RS-Mom"], mode="lines+markers",
+                                 line=dict(color=colr, width=1.5), marker=dict(size=4),
+                                 showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=[tl["RS-Oran"].iloc[-1]], y=[tl["RS-Mom"].iloc[-1]],
+                                 mode="markers+text", marker=dict(size=11, color=colr),
+                                 text=[tema], textposition="top center",
+                                 textfont=dict(size=11, color=colr), name=tema,
+                                 hovertemplate=f"{tema}<br>RS-Oran %{{x:.1f}}<br>"
+                                               f"RS-Mom %{{y:.1f}}<extra></extra>"))
+    fig.add_vline(x=100, line_color="#3a3a46")
+    fig.add_hline(y=100, line_color="#3a3a46")
+    for x_, y_, t_ in ((1, 1, "🚀 Lider"), (0, 1, "🌱 İyileşiyor"),
+                       (0, 0, "🩸 Geride"), (1, 0, "🌤️ Yoruluyor")):
+        fig.add_annotation(xref="paper", yref="paper", x=0.02 + 0.96 * x_,
+                           y=0.02 + 0.96 * y_, text=t_, showarrow=False,
+                           xanchor="right" if x_ else "left",
+                           font=dict(size=12, color="#6e6e7a"))
+    fig.update_layout(height=520, xaxis_title="RS-Oran (güç)",
+                      yaxis_title="RS-Momentum (güçteki değişim)", showlegend=False,
+                      **CHART_LAYOUT)
+    return fig
+
+
+def market_verdicts(MK: dict, ROT: pd.DataFrame, V: dict, vix_skor: float) -> dict:
+    out = {}
+    for name, r in MK.items():
+        m = mkt.MARKETS.get(name, {})
+        dd_ = dcs.asset_decision(r.get("scores", {}), ROT, name, V["etiket"],
+                                 vix_skor if m.get("vix") else 0.0)
+        out[name] = dd_
+    return out
+
+
+THEME_GROUPS = {**pln.INDEX_THEMES,
+                "Russell 2000": ["Küçük Ölçekli (Small Cap)", "Bankalar", "Biyoteknoloji",
+                                 "Konut İnşaatı", "Taşımacılık", "Bitcoin Madenciliği",
+                                 "Kuantum", "Uzay", "Temiz Enerji", "Metal & Madencilik",
+                                 "Petrol & Gaz", "Perakende"],
+                "Dow Jones": ["Bankalar", "Sağlık (Geniş)", "Altyapı", "Savunma & Havacılık",
+                              "Perakende", "Tüketici Defansif", "Petrol & Gaz", "Temettü",
+                              "Değer", "Teknoloji (Geniş)"],
+                "Altın": ["Altın Madenciliği", "Gümüş", "Metal & Madencilik"],
+                "Gümüş": ["Gümüş", "Altın Madenciliği", "Metal & Madencilik"],
+                "Bakır/Altın": ["Bakır", "Metal & Madencilik", "Lityum & Batarya",
+                                "Nadir Toprak", "Altyapı"],
+                "Petrol (Brent)": ["Petrol & Gaz", "Nükleer & Uranyum", "Temiz Enerji"]}
+
+
+# ---------------------------------------------------------------- ortak veriler
+if PAGE != PAGES[-1]:
+    ROT_, SER_, ROT_FAILED_, FILES_ = load_rotation(st.session_state.nonce_funnel)
+    PIL_ = fnl.risk_pillars(M.scores, ROT_)
+    V_ = fnl.risk_verdict(PIL_, M.regime)
+
+# ======================================================================= 1
+if PAGE == PAGES[0]:
+    h1, h2 = st.columns([4, 1])
+    h1.markdown("### 🌊 Akıllı para nereye akıyor?")
+    if h2.button("🔄 Yenile", key="fl_ref", width="stretch"):
+        bump("nonce_flow")
+        st.rerun()
+    FT, FT_FAILED = load_flows(st.session_state.nonce_flow)
+    FP = flow_pack(st.session_state.nonce_flow)
+    g1, g2 = st.columns([3, 2])
+    with g1:
+        st.image(FP["png"], width="stretch")
+        img_downloads(FP, "para_akisi", "fl_dl")
+    with g2:
+        st.markdown("#### Neden böyle akıyor?")
+        for line in flw.reasons(FT):
+            st.markdown(f"- {line}")
+        if not ROT_.empty:
+            with st.expander("Rotasyon oranlarından ek okumalar"):
+                for line in fnl.money_flow_summary(ROT_):
+                    st.markdown(f"- {line}")
+    st.markdown("#### Rakamlarla akış")
+    if FT is None or FT.empty:
+        st.warning("Akış verisi çekilemedi.")
+    else:
+        st.dataframe(FT[["Varlık", "Sembol", "Akış", "Akış Skoru", "5G %", "20G %",
+                         "60G %", "Hacim trendi"]], width="stretch", hide_index=True,
+                     column_config={
+                         "Akış Skoru": st.column_config.ProgressColumn(
+                             format="%+.2f", min_value=-2.5, max_value=2.5,
+                             help="20 günlük göreli performans (ağırlık 0.6) + 5 günlük "
+                                  "ivme (0.4), dolar hacmi artışıyla güçlendirilir"),
+                         "5G %": st.column_config.NumberColumn(format="%+.1f%%"),
+                         "20G %": st.column_config.NumberColumn(format="%+.1f%%"),
+                         "60G %": st.column_config.NumberColumn(format="%+.1f%%"),
+                         "Hacim trendi": st.column_config.NumberColumn(
+                             format="%.2f×", help="Son 10 günün dolar hacmi ÷ son 60 gün")})
+    st.markdown("#### İlgili haberler")
+    n1, n2 = st.columns(2)
+    with n1:
+        st.markdown("**Fon akışları**")
+        it, _ = load_query_news(nws.FEEDS["Fon akışları"], st.session_state.nonce_news)
+        news_list(it, 6)
+    with n2:
+        st.markdown("**Fed, faiz ve dolar**")
+        it, _ = load_query_news(nws.FEEDS["Makro & Fed"], st.session_state.nonce_news)
+        news_list(it, 6)
+    st.button("➡️ Endeksler & Risk sayfasına geç", on_click=_go, args=(PAGES[1],),
+              key="fl_next")
+
+# ======================================================================= 2
+elif PAGE == PAGES[1]:
+    h1, h2 = st.columns([4, 1])
+    h1.markdown("### 🧭 Endeksler, risk iştahı ve değerli metaller")
+    if h2.button("🔄 Yenile", key="mk_ref", width="stretch"):
+        bump("nonce_funnel")
+        st.rerun()
+    v1, v2 = st.columns([1, 2])
+    v1.markdown(kpi("Piyasa durumu", V_["etiket"],
+                    f"skor {V_['skor']:.0f}/100 · {V_['boyut']}"
+                    if np.isfinite(V_["skor"]) else V_["boyut"], V_["renk"]),
+                unsafe_allow_html=True)
+    v2.markdown(f"**Ne demek?** {V_['ozet']}")
+    v2.caption(f"{V_['n_ok']} sütun olumlu, {V_['n_bad']} sütun olumsuz · rejim: {M.regime}")
+    pc = st.columns(6)
+    for col, p in zip(pc, PIL_):
+        tone = ("pos" if p["durum"] == "✅" else "neg" if p["durum"] == "❌" else "")
+        col.markdown(kpi(p["ad"], f"{p['durum']} {p['skor']:.0f}"
+                         if np.isfinite(p["skor"]) else "➖", p["ne"], tone),
+                     unsafe_allow_html=True)
+    with st.expander("Risk iştahı neden böyle? (sütunların gerekçeleri)"):
+        for p in PIL_:
+            st.markdown(f"- **{p['ad']}** — {p['ne']} *{p['neden']}*")
+
+    with st.spinner("Endeks kararları yükleniyor…"):
+        DEC_ = load_decision(st.session_state.nonce_funnel, ROT_)
+        MK, MK_FAILED = load_markets(st.session_state.nonce_funnel)
+    vix_sk = DEC_["vix"]["skor"]
+    MV = market_verdicts(MK, ROT_, V_, vix_sk)
+    if DEC_.get("notes"):
+        with st.expander("📌 Piyasa notları (hacim, genişlik, VIX kuralı, QQQ/SPY)",
+                         expanded=True):
+            for ic, tx in DEC_["notes"]:
+                st.markdown(f"{ic} {tx}")
+
+    st.markdown("#### Varlıklar — karar ve zaman dilimi skorları")
+    st.caption("🔍 grafiği açar (günlük/haftalık/aylık + teknik okuma). 🎯 yalnızca "
+               "girişe uygun varlıklarda çıkar ve o varlığın temalarına götürür.")
+    names = list(mkt.MARKETS)
+    for i in range(0, len(names), 4):
+        cc = st.columns(4)
+        for col, name in zip(cc, names[i:i + 4]):
+            r, dd_ = MK.get(name, {}), MV.get(name, {})
+            sc = r.get("scores", {})
+            tfs = " · ".join(f"{tf[0]} {sc[tf]:+.0f}" for tf in tfv.TF_RULE
+                             if np.isfinite(sc.get(tf, np.nan)))
+            with col, st.container(border=True):
+                st.markdown(kpi(name, dd_.get("etiket", "—"),
+                                (f"5G {r['chg5']:+.1f}% · " if np.isfinite(r.get("chg5", np.nan))
+                                 else "") + tfs, dd_.get("tone", "")),
+                            unsafe_allow_html=True)
+                b1, b2 = st.columns(2)
+                b1.button("🔍 Grafik", key=f"mk_g_{name}", width="stretch",
+                          on_click=_go, args=(PAGES[1],), kwargs={"mk_sel": name})
+                if (name in THEME_GROUPS and name not in mkt.NO_THEMES
+                        and dd_.get("etiket", "").startswith(("✅", "🟡"))):
+                    b2.button("🎯 Temalar", key=f"mk_t_{name}", width="stretch",
+                              on_click=_go, args=(PAGES[2],), kwargs={"ta_index": name})
+
+    sel = st.session_state.mk_sel if st.session_state.mk_sel in mkt.MARKETS else "S&P 500"
+    st.markdown(f"#### 🔍 {sel} — günlük · haftalık · aylık")
+    if sel in mkt.ROW_NOTE:
+        st.caption(mkt.ROW_NOTE[sel])
+    dd_sel = MV.get(sel, {})
+    if dd_sel.get("baglam_txt"):
+        st.caption("Bağlam: " + " · ".join(dd_sel["baglam_txt"]))
+    show_triptych(mkt.MARKETS[sel]["sym"], sel, f"mk_{_fname(sel)}")
+    if sel in THEME_GROUPS and sel not in mkt.NO_THEMES:
+        st.button(f"🎯 {sel} temalarına git (Tema Avcısı)", on_click=_go,
+                  args=(PAGES[2],), kwargs={"ta_index": sel}, key="mk_go_theme",
+                  type="primary")
+    with st.expander(f"📰 {sel} ile ilgili haberler"):
+        q = {"Altın": "gold price", "Gümüş": "silver price", "Kripto (BTC)": "bitcoin",
+             "Petrol (Brent)": "oil price Brent", "Dolar (DXY)": "dollar index",
+             "ABD 10Y faiz": "Treasury yields", "Bakır/Altın": "copper price",
+             "Altın/Gümüş": "gold silver ratio", "Russell 2000": "Russell 2000 small caps",
+             "Dow Jones": "Dow Jones"}.get(sel, f"{sel} stock market")
+        it, _ = load_query_news(q, st.session_state.nonce_news)
+        news_list(it, 8)
+
+    # ---- altın & gümüş
+    st.markdown("---")
+    st.markdown("### 🥇 Altın & gümüş — fiyatı hareket ettiren zincir")
+    st.caption("ABD verisi → Fed beklentisi → tahvil faizi ve dolar → altın. Önem sırası: "
+               "reel faiz, dolar, Fed beklentisi. Göstergeler çelişirse en doğru "
+               "pozisyon çoğu zaman beklemektir.")
+    (GT, GS), _ = load_gold(st.session_state.nonce_funnel)
+    k1, k2 = st.columns([1, 2])
+    k1.markdown(kpi("Altın için zincir", GS["etiket"],
+                    f"ilk 3 halka: {GS['plus']} destek · {GS['minus']} baskı",
+                    "pos" if GS["etiket"].startswith("🟢") else
+                    "neg" if GS["etiket"].startswith("🔴") else ""),
+                unsafe_allow_html=True)
+    k2.markdown(GS["ozet"])
+    st.dataframe(GT, width="stretch", hide_index=True,
+                 column_config={"20G değişim": st.column_config.NumberColumn(format="%+.2f"),
+                                "Kural": st.column_config.TextColumn(width="large")})
+    gc1, gc2 = st.columns(2)
+    gc1.button("🔍 Altın grafiği", on_click=_go, args=(PAGES[1],),
+               kwargs={"mk_sel": "Altın"}, key="gd_g", width="stretch")
+    gc2.button("🔍 Gümüş grafiği", on_click=_go, args=(PAGES[1],),
+               kwargs={"mk_sel": "Gümüş"}, key="sv_g", width="stretch")
+    with st.expander("🗓️ Altın takvimi ve rutini"):
+        for a_, b_ in gld.CALENDAR:
+            st.markdown(f"- **{a_}:** {b_}")
+        st.markdown("- **Veri ile beklenti farkı:** beklentiden güçlü veri → artırım "
+                    "beklentisi ↑ → faiz ve dolar ↑ → altın ↓. Beklentiden zayıf veri → "
+                    "tersi.\n- **Jeopolitik primler** genelde kısa sürer; kalıcı yükseliş "
+                    "faiz ve para politikasından gelir.\n- **Panik anında** altın önce "
+                    "nakit ihtiyacıyla düşebilir.")
+    with st.expander("📰 Altın, faiz ve dolar haberleri"):
+        it, _ = load_query_news(nws.FEEDS["Altın & Faiz"], st.session_state.nonce_news)
+        news_list(it, 8)
+
+# ======================================================================= 3
+elif PAGE == PAGES[2]:
+    st.markdown("### 🎯 Tema Avcısı")
+    idx_opts = [k for k in THEME_GROUPS if k in mkt.MARKETS]
+    cur = st.session_state.ta_index if st.session_state.ta_index in idx_opts else "Nasdaq"
+    t1, t2 = st.columns([3, 1])
+    ta_index = t1.radio("Endeks / varlık", idx_opts, index=idx_opts.index(cur),
+                        horizontal=True, key="ta_index_radio")
+    st.session_state.ta_index = ta_index
+    if t2.button("🔄 Yenile", key="ta_ref", width="stretch"):
+        bump("nonce_funnel")
+        st.rerun()
+    MK, _ = load_markets(st.session_state.nonce_funnel)
+    DEC_ = load_decision(st.session_state.nonce_funnel, ROT_)
+    MV = market_verdicts(MK, ROT_, V_, DEC_["vix"]["skor"])
+    dd_i = MV.get(ta_index, {})
+    index_ok = dd_i.get("etiket", "").startswith(("✅", "🟡"))
+    (st.success if index_ok else st.warning)(
+        f"**{ta_index}:** {dd_i.get('etiket', '—')} — "
+        + ("temalarda alım fırsatı aranabilir." if index_ok else
+           "endeks alım bölgesinde değil; temalar yalnızca izleme için."))
+
+    T3, TAILS3, E3, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel)
+    themes3 = [t for t in THEME_GROUPS.get(ta_index, []) if t in uni.THEME_TRACKER]
+    TT = T3[T3["Tema"].isin(themes3)].copy() if not T3.empty else pd.DataFrame()
+    if TT.empty:
+        st.info("Bu endeks için tema verisi yok.")
+    else:
+        TT["Para"] = TT["_q"].map({"lider": "✅ giriyor (lider)",
+                                   "iyilesen": "🌱 girmeye başladı",
+                                   "zayif": "⚠️ çıkmaya başladı",
+                                   "geride": "⛔ çıkıyor / zayıf"}).fillna("—")
+        TT["_o"] = TT["_q"].map({"iyilesen": 0, "lider": 1, "zayif": 2, "geride": 3}).fillna(4)
+        TT = TT.sort_values(["_o", "Erken Skor"], ascending=[True, False])
+        good3 = TT[TT["_q"].isin(["lider", "iyilesen"])]["Tema"].tolist()
+        r1, r2 = st.columns([3, 2])
+        with r1:
+            st.plotly_chart(rrg_fig(T3, TAILS3, list(TT["Tema"])), width="stretch")
+            st.caption("Çizgiler son 6 haftanın izi, büyük nokta bugün. Geride → "
+                       "İyileşiyor → Lider geçişi akıllı paranın erken izidir.")
+        with r2:
+            st.dataframe(TT[["Tema", "Para", "Erken Skor", "1H %", "1A %"]],
+                         width="stretch", hide_index=True, height=480,
+                         column_config={
+                             "Erken Skor": st.column_config.ProgressColumn(
+                                 format="%d", min_value=0, max_value=100),
+                             "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
+                             "1A %": st.column_config.NumberColumn(format="%+.1f%%")})
+        opts3 = good3 + [t for t in TT["Tema"] if t not in good3]
+        st.session_state.setdefault("ta_tema", opts3[0])
+        if st.session_state.ta_tema not in opts3:
+            st.session_state.ta_tema = opts3[0]
+        tema = st.selectbox("Tema seçin", opts3, key="ta_tema",
+                            format_func=lambda t: ("✅ " if t in good3 else "⛔ ") + t)
+        etfs = uni.THEME_TRACKER.get(tema, [])
+        row = TT[TT["Tema"] == tema].iloc[0]
+        st.markdown(f"**{tema}** · {row['Para']} · erken skor {row['Erken Skor']} · "
+                    f"1H {row['1H %']:+.1f}% · 1A {row['1A %']:+.1f}% · ETF'ler: "
+                    + ", ".join(f"`{e}`" for e in etfs))
+        b1, b2 = st.columns([1, 1])
+        etf = b1.selectbox("Grafiği çizilecek ETF", etfs, key=f"ta_etf_{tema}") if etfs else None
+        b2.button(f"🦅 {tema} hisselerine git (Hisse Avcısı)", on_click=_go,
+                  args=(PAGES[3],), kwargs={"ha_tema": tema}, type="primary",
+                  key="ta_go_stock", width="stretch")
+        if tema not in good3:
+            st.warning(f"{tema} temasından para çıkıyor — yeni alım için uygun değil.")
+        if etf:
+            show_triptych(etf, f"{tema} ({etf})", f"ta_{_fname(etf)}")
+        with st.expander(f"📰 {tema} haberleri"):
+            it, _ = load_query_news(f"{tema.split('(')[0]} stocks OR " + " OR ".join(etfs[:2]),
+                                    st.session_state.nonce_news)
+            news_list(it, 8)
+
+# ======================================================================= 4
+elif PAGE == PAGES[3]:
+    st.markdown("### 🦅 Hisse Avcısı")
+    all_themes = [t for t in uni.THEME_TRACKER if theme_holdings(t)]
+    cur = st.session_state.ha_tema if st.session_state.ha_tema in all_themes else all_themes[0]
+    q1, q2, q3 = st.columns([2, 1, 1])
+    tema = q1.selectbox("Tema", all_themes, index=all_themes.index(cur), key="ha_tema_sel")
+    st.session_state.ha_tema = tema
+    liq = q2.number_input("Min. günlük hacim ($M)", 0.0, 500.0, 10.0, 1.0, key="ha_liq")
+    if q3.button("🔄 Yenile", key="ha_ref", width="stretch"):
+        bump("nonce_scan")
+        bump("nonce_chart")
+        st.rerun()
+    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel)
+    trow = T3[T3["Tema"] == tema] if not T3.empty else pd.DataFrame()
+    tema_ok = not trow.empty and trow.iloc[0]["_q"] in ("lider", "iyilesen")
+    MK, _ = load_markets(st.session_state.nonce_funnel)
+    DEC_ = load_decision(st.session_state.nonce_funnel, ROT_)
+    MV = market_verdicts(MK, ROT_, V_, DEC_["vix"]["skor"])
+    idx_name = st.session_state.ta_index
+    index_ok = MV.get(idx_name, {}).get("etiket", "").startswith(("✅", "🟡"))
+    st.caption(f"Endeks ({idx_name}): {MV.get(idx_name, {}).get('etiket', '—')} · "
+               f"Tema: {trow.iloc[0]['Bölge'] if not trow.empty else '—'}")
+    with st.spinner(f"{tema} hisseleri için plan hazırlanıyor…"):
+        TBh, holdh = theme_stock_table(tema, liq, IDX3.get(tema))
+        Ph = load_plans(tuple(holdh), st.session_state.nonce_scan) if holdh else pd.DataFrame()
+    PT = trade_plan_table(TBh, Ph, index_ok and tema_ok)
+    if PT.empty:
+        st.info("Bu tema için hisse listesi ya da fiyat verisi yok.")
+    else:
+        n_al = int(PT["Karar"].str.startswith("✅").sum())
+        n_bk = int(PT["Karar"].str.startswith("🟡").sum())
+        st.markdown(" ".join([badge(f"✅ AL · {n_al}", "pos"),
+                              badge(f"🟡 LİMİT EMİR / BEKLE · {n_bk}", ""),
+                              badge(f"⛔ UZAK DUR · {len(PT) - n_al - n_bk}", "neg")]),
+                    unsafe_allow_html=True)
+        pcols = ["Karar", "Hisse", "Fiyat", "Giriş bölgesi", "Stop", "Kâr al 1",
+                 "Kâr al 2", "R:R", "Sebep"]
+        show_bad = st.toggle("⛔ Uzak durulacakları da göster", False, key="ha_bad")
+        view = PT if show_bad else PT[PT["Karar"].str.startswith(("✅", "🟡"))]
+        st.dataframe(view[pcols], width="stretch", hide_index=True,
+                     column_config={"R:R": st.column_config.NumberColumn(format="%.1f"),
+                                    "Sebep": st.column_config.TextColumn(width="large")})
+        xl = pln.excel_report(f"AETHER APEX · {tema} hisse planı",
+                              [("Tema", tema), ("Endeks", idx_name),
+                               ("Hazırlanma", dt.datetime.now().strftime("%d.%m.%Y %H:%M"))],
+                              pd.DataFrame(), {tema: PT})
+        st.download_button("⬇️ Bu temanın planı (Excel)", xl,
+                           f"plan_{_fname(tema)}_{dt.date.today():%Y%m%d}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="ha_xl")
+
+        syms = PT["Hisse"].tolist()
+        cur_s = st.session_state.ha_sym if st.session_state.ha_sym in syms else syms[0]
+        sym = st.selectbox("🔍 İncelenecek hisse", syms, index=syms.index(cur_s),
+                           key="ha_sym_sel",
+                           format_func=lambda s: f"{s} — " + PT.loc[PT['Hisse'] == s, 'Karar'].iloc[0])
+        st.session_state.ha_sym = sym
+        prow = PT[PT["Hisse"] == sym].iloc[0]
+        trow2 = TBh[TBh["Sembol"] == sym]
+        with st.container(border=True):
+            st.markdown(f"#### {sym} · {prow['Karar']}")
+            k = st.columns(5)
+            k[0].markdown(kpi("Fiyat", prow["Fiyat"], ""), unsafe_allow_html=True)
+            k[1].markdown(kpi("Giriş bölgesi", prow["Giriş bölgesi"], ""), unsafe_allow_html=True)
+            k[2].markdown(kpi("Stop", prow["Stop"], "", "neg"), unsafe_allow_html=True)
+            k[3].markdown(kpi("Kâr al 1 / 2", f"{prow['Kâr al 1']} / {prow['Kâr al 2']}", "",
+                              "pos"), unsafe_allow_html=True)
+            k[4].markdown(kpi("R:R", f"{prow['R:R']:.1f}" if np.isfinite(prow["R:R"]) else "—",
+                              "kâr al 1'e göre"), unsafe_allow_html=True)
+            st.markdown(f"**Sebep:** {prow['Sebep']}")
+            if not trow2.empty:
+                t_ = trow2.iloc[0]
+                bits = []
+                for c_, lab in (("Temaya Göre 1A", "temaya göre 1 ay"),
+                                ("Temaya Göre 1H", "temaya göre 1 hafta")):
+                    v_ = pd.to_numeric(t_.get(c_), errors="coerce")
+                    if np.isfinite(v_):
+                        bits.append(f"{lab} {v_:+.1f}% ({'öne geçmiş' if v_ > 0 else 'geride kalmış'})")
+                kg = pd.to_numeric(t_.get("Kalan Gün"), errors="coerce")
+                if np.isfinite(kg):
+                    bits.append(f"bilançoya {int(kg)} gün")
+                if t_.get("P/S Durum"):
+                    bits.append(f"P/S değerleme: {t_['P/S Durum']}")
+                if bits:
+                    st.caption("Tema içi durum: " + " · ".join(bits))
+
+        show_triptych(sym, sym, f"ha_{_fname(sym)}")
+
+        st.markdown("#### 📅 Mevsimsellik")
+        LP = load_long(tuple(sorted({sym, "SPY", "QQQ"})), st.session_state.nonce_chart)
+        SEAS, stxt = sea.monthly(LP.get(sym))
+        if SEAS.empty:
+            st.caption(stxt)
+        else:
+            st.markdown(stxt)
+            fig = go.Figure(go.Bar(x=SEAS["Ay"], y=SEAS["Ortalama %"],
+                                   marker_color=["#26a69a" if v_ >= 0 else "#ef5350"
+                                                 for v_ in SEAS["Ortalama %"]],
+                                   text=[f"%{p_:.0f}" for p_ in SEAS["Pozitif %"]],
+                                   textposition="outside",
+                                   hovertemplate="%{x}: ort. %{y:+.1f}%<extra></extra>"))
+            fig.update_layout(height=300, yaxis_title="Ortalama aylık getiri %",
+                              **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            st.caption("Çubuk: o ayın ortalama getirisi · üstteki yüzde: yılların kaçında "
+                       "artıda kapandığı.")
+
+        st.markdown("#### 🧮 Temel analiz: çarpanlar — kendi geçmişi ve rakipleri")
+        basis = st.radio("HBK tabanı", ["GAAP", "Düzeltilmiş"], horizontal=True,
+                         key="ha_basis")
+        stock_fundamentals(sym, basis)
+        with st.expander(f"📰 {sym} haberleri"):
+            it, _ = load_query_news(f"{sym} stock", st.session_state.nonce_news)
+            news_list(it, 8)
+
+# ======================================================================= 5
+elif PAGE == PAGES[4]:
+    st.markdown("### 🔥 Hype & Biotech")
+    st.info("Bu sayfa 3. aşamada gelecek: Reddit/StockTwits/Yahoo trend listeleri, "
+            "biyoteknoloji haberleri (FDA, faz 3) ve teknik kurulumlar, kendi izleme "
+            "listeniz.")
+    st.markdown("Şimdilik **🗂️ Araçlar → 🚀 Future Themes** sekmesini kullanabilirsiniz.")
+    it, _ = load_query_news(nws.FEEDS["Biyoteknoloji"], st.session_state.nonce_news)
+    st.markdown("#### 🧬 Son biyoteknoloji haberleri")
+    news_list(it, 10)
+
+# ---------------------------------------------------------------- Araçlar
+if PAGE != PAGES[-1]:
+    st.stop()
+
+
 TABS = st.tabs([
-    "🧭 Karar Hunisi", "🔬 Hisse Analizi", "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
+    "🧭 Karar Hunisi (eski)", "🔬 Hisse Analizi", "🌐 Makro & Rejim", "🔥 Tema Takibi", "🦅 ETF Radarı", "⚖️ Çarpan Uçurumu",
     "🦈 Haftalık", "🚨 4H Omni Swing", "🚀 Future Themes", "📅 Bilanço",
     "📄 Rapor",
 ])
@@ -1182,175 +1956,7 @@ with tab_stock:
         st.rerun()
     st.session_state["sa_sym"] = sym
 
-    if sym:
-        with st.spinner(f"{sym} mali tabloları çekiliyor…"):
-            RAW = load_stock_raw(sym, st.session_state.nonce_stock)
-        info = RAW.get("info") or {}
-        px_ = fch._price(RAW)
-        if px_.empty:
-            st.error(f"{sym} için fiyat verisi alınamadı. Sembolü kontrol edin "
-                     "ya da birkaç dakika sonra yenileyin (Yahoo sınırlaması).")
-        else:
-            st.markdown(
-                f"**{info.get('longName') or info.get('shortName') or sym}** · "
-                f"{info.get('sector', '')} / {info.get('industry', '')} · "
-                f"son fiyat **\\${px_.iloc[-1]:.2f}**")
-
-            # ------------------------------------------------ F/K + akranlar
-            section("F/K oranı (TTM) ve akran medyanı")
-            sug = fch.suggest_peers(sym)
-            peers_txt = st.text_input(
-                "Akranlar (virgülle; varsayılan: aynı ETF'lerdeki en ağır şirketler)",
-                value=", ".join(sug), key=f"sa_peers_{sym}")
-            peers = [x.strip().upper() for x in peers_txt.split(",")
-                     if x.strip() and x.strip().upper() != sym][:12]
-            PE = fch.pe_history(RAW, basis)
-            with st.spinner("Akranların F/K geçmişi hesaplanıyor…"):
-                PEER = load_peer_pe(tuple(peers), basis,
-                                    st.session_state.nonce_stock) if peers else {}
-            MED, NPEER = fch.peer_median(PEER)
-            if PE.empty:
-                st.info("F/K hesaplanamadı (HBK verisi yok ya da şirket zararda).")
-            else:
-                own_med = float(PE.median())
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=PE.index, y=PE, mode="lines", name=f"{sym} F/K (TTM)",
-                    line=dict(color="#3987e5", width=1.8)))
-                if not MED.empty:
-                    m2 = MED[MED.index >= PE.index.min()]
-                    fig.add_trace(go.Scatter(
-                        x=m2.index, y=m2, mode="lines+markers",
-                        name=f"Akran medyanı ({len(PEER)} şirket)",
-                        line=dict(color="#c98500", width=2),
-                        marker=dict(size=4)))
-                fig.add_hline(y=own_med, line_dash="dot", line_color="#6e6e7a",
-                              annotation_text=f"{sym} kendi medyanı {own_med:.1f}",
-                              annotation_font_color="#a0a0ab")
-                fig.update_layout(height=380, legend=dict(orientation="h", y=1.08),
-                                  yaxis_title="F/K", **CHART_LAYOUT)
-                st.plotly_chart(fig, width="stretch")
-                now = float(PE.iloc[-1])
-                parts = [f"Şu an F/K **{now:.1f}**, kendi medyanı {own_med:.1f} "
-                         f"({(now / own_med - 1) * 100:+.0f}%)."]
-                if not MED.empty:
-                    pm = float(MED.iloc[-1])
-                    parts.append(f"Akran medyanı **{pm:.1f}** — hisse akranlarına "
-                                 f"göre {(now / pm - 1) * 100:+.0f}% "
-                                 + ("primli." if now > pm else "iskontolu."))
-                st.markdown(" ".join(parts))
-                if PEER:
-                    eksik = [t for t in peers if t not in PEER or PEER[t].empty]
-                    if eksik:
-                        st.caption("F/K hesaplanamayan akranlar (zarar ya da veri "
-                                   "yok): " + ", ".join(eksik))
-
-            # ------------------------------------------------ adil fiyat çizgisi
-            section("Fiyat ve medyan çarpan adil fiyatı")
-            b1, b2 = st.columns([2, 1])
-            mkey = b1.radio("Metrik", list(fch.METRICS),
-                            format_func=lambda k: f"{fch.METRICS[k]['ad']} "
-                                                  f"({fch.METRICS[k]['kisa']})",
-                            horizontal=True, key="sa_metric")
-            win = b2.selectbox("Medyan penceresi", [0, 3, 5],
-                               format_func=lambda y: "Tüm geçmiş" if y == 0
-                               else f"Son {y} yıl", key="sa_win")
-            D = fch.fair_value_chart_data(RAW, mkey, win)
-            if not D["ok"]:
-                st.info(D["neden"])
-            else:
-                kp = st.columns(5)
-                kp[0].markdown(kpi("Fiyat", f"${D['price'].iloc[-1]:.2f}",
-                                   f"toplam {D['total']:+.0f}% · yıllık "
-                                   f"{D['cagr']:+.1f}%"), unsafe_allow_html=True)
-                kp[1].markdown(kpi(f"Medyan {D['metric']['kisa']}",
-                                   f"{D['median']:.2f}",
-                                   f"şu an {D['mult_now']:.2f}"),
-                               unsafe_allow_html=True)
-                kp[2].markdown(kpi("Medyan çarpanla adil fiyat",
-                                   f"${D['fair_now']:.2f}", "son bilinen TTM"),
-                               unsafe_allow_html=True)
-                kp[3].markdown(kpi("Adile göre", f"{D['gap']:+.1f}%",
-                                   "fiyat adilin üstünde" if D["gap"] > 0
-                                   else "fiyat adilin altında",
-                                   "neg" if D["gap"] > 15 else
-                                   "pos" if D["gap"] < -10 else ""),
-                               unsafe_allow_html=True)
-                kp[4].markdown(kpi("Korelasyon", f"%{D['corr'] * 100:.0f}"
-                                   if np.isfinite(D["corr"]) else "—",
-                                   "fiyat ↔ metrik çizgisi"),
-                               unsafe_allow_html=True)
-
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=D["price"].index, y=D["price"], mode="lines", name="Fiyat",
-                    line=dict(color="#3987e5", width=1.6)))
-                fig.add_trace(go.Scatter(
-                    x=D["fair"].index, y=D["fair"], mode="lines",
-                    name=f"Medyan {D['metric']['kisa']} = {D['median']:.2f} ile fiyat",
-                    line=dict(color="#2fbe86", width=2, shape="hv")))
-                pts = D["points"][D["points"].index >= D["start"]]
-                fig.add_trace(go.Scatter(
-                    x=pts.index, y=pts, mode="markers", showlegend=False,
-                    marker=dict(color="#2fbe86", size=7, symbol="diamond"),
-                    hovertemplate="%{x|%m.%Y}: $%{y:.2f}<extra>dönem sonu</extra>"))
-                if not D["est"].empty:
-                    last_d = D["fair"].index[-1]
-                    ex = pd.concat([pd.Series({last_d: D["fair_now"]}), D["est"]])
-                    fig.add_trace(go.Scatter(
-                        x=ex.index, y=ex, mode="lines+markers",
-                        name="Tahmin", line=dict(color="#2fbe86", width=2,
-                                                 dash="dash"),
-                        marker=dict(size=8, symbol="diamond")))
-                    fig.add_vrect(x0=last_d, x1=D["est"].index[-1],
-                                  fillcolor="#c9b800", opacity=0.10, line_width=0,
-                                  annotation_text="Tahminler",
-                                  annotation_position="bottom right")
-                fig.update_layout(height=460, legend=dict(orientation="h", y=1.08),
-                                  yaxis_title="$", **CHART_LAYOUT)
-                st.plotly_chart(fig, width="stretch")
-                if not D["est"].empty:
-                    e_last = D["est"]
-                    st.caption(
-                        "Tahmin noktaları: " + " · ".join(
-                            f"{d:%m.%Y} → \\${v:.2f}" for d, v in e_last.items())
-                        + f" — kaynak: {D['est_src']}.")
-                st.caption(
-                    "Yeşil çizgi = hisse başı TTM " + D["metric"]["ad"].lower()
-                    + f" × hissenin {('tüm geçmişteki' if not win else f'son {win} yıldaki')} "
-                    f"medyan {D['metric']['kisa']} çarpanı. Korelasyon yüksekse "
-                    "(%70+) fiyat bu metriği takip ediyor demektir; o zaman "
-                    "çizgiden uzaklaşmalar anlamlıdır.")
-
-            # ------------------------------------------------ özet tablo
-            section("Çarpan özeti")
-            SUM = fch.multiples_summary(RAW, MED if not MED.empty else None)
-            if SUM.empty:
-                st.caption("Çarpan hesaplanamadı.")
-            else:
-                st.dataframe(SUM, width="stretch", hide_index=True,
-                             column_config={
-                                 c: st.column_config.NumberColumn(format="%.2f")
-                                 for c in ("Şu an", "Kendi medyanı", "En düşük",
-                                           "En yüksek", "Akran medyanı")} | {
-                                 "Medyana göre %": st.column_config.NumberColumn(
-                                     format="%+.0f%%")})
-            if RAW.get("errors"):
-                st.caption("Eksik veri: " + ", ".join(RAW["errors"]))
-            with st.expander("Hesap yöntemi ve sınırlar"):
-                st.markdown(
-                    "- **TTM**: son 4 çeyreğin toplamı. Çeyreklik veri yetmeyen "
-                    "eski dönemlerde mali yıl sonu değeri kullanılır.\n"
-                    "- **Geçmiş uzunluğu**: Yahoo yıllık tabloları ~4–5 yıl, "
-                    "çeyrekliği ~5–6 çeyrek verir; grafikler bu aralıktan "
-                    "başlar. Düzeltilmiş HBK ~10 yıl gider.\n"
-                    "- **Akran medyanı**: sektörün tamamı değil, seçtiğiniz "
-                    "akranların aylık F/K medyanıdır (en az 3 akran gerekir).\n"
-                    "- **Tahminler**: satış ve HBK için analist tahminleri "
-                    "kullanılır. Yahoo nakit akışı tahmini vermediği için OCF/FCF "
-                    "tahmini HBK büyümesiyle ölçeklenir — kaba bir yaklaşımdır.\n"
-                    "- Zarardaki dönemlerde F/K ve çarpanlar tanımsızdır, "
-                    "grafikte boş kalır.")
+    stock_fundamentals(sym, basis)
 
 
 # ==========================================================================
