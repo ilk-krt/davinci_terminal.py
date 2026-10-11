@@ -37,6 +37,7 @@ from apex import seasonal as sea
 from apex import tfview as tfv
 from apex import tvchart as tvc
 from apex import tracking as trk
+from apex import hype as hyp
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -329,7 +330,9 @@ def theme_holdings(tema: str) -> list[str]:
 def load_plans(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     """Giriş/stop/hedef planları — akşam hesabından, eksikler canlı."""
     if _use_snap(nonce):
-        s = snap.load("plans")
+        parts = [x for x in (snap.load("plans"), snap.load("plans_hype"))
+                 if x is not None and not x.empty and "Sembol" in x.columns]
+        s = pd.concat(parts, ignore_index=True).drop_duplicates("Sembol") if parts else None
         if s is not None and not s.empty and "Sembol" in s.columns:
             have = s[s["Sembol"].isin(set(tickers))]
             missing = sorted(set(tickers) - set(have["Sembol"]))
@@ -342,7 +345,13 @@ def load_plans(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
 
 def theme_stock_table(tema: str, min_liq: float, idx_close) -> tuple[pd.DataFrame, list[str]]:
     """Temanın hisseleri: tarama + bilanço + short → Durum sınıfı (Adım 3b ve 5)."""
-    hold = theme_holdings(tema)
+    return syms_stock_table(theme_holdings(tema), min_liq, idx_close)
+
+
+def syms_stock_table(hold: list[str], min_liq: float, idx_close=None
+                     ) -> tuple[pd.DataFrame, list[str]]:
+    """Herhangi bir sembol listesi: tarama + bilanço + short → Durum sınıfı."""
+    hold = [h for h in dict.fromkeys(hold) if h]
     if not hold:
         return pd.DataFrame(), hold
     S = scan(tuple(hold), "1d", st.session_state.nonce_scan)
@@ -431,6 +440,7 @@ def _init_state() -> None:
             "sector_watch": saved.get("sector_watch") or [],
             "stock_watch": saved.get("stock_watch") or [],
             "portfolio": saved.get("portfolio") or [],
+            "biotech_watch": saved.get("biotech_watch") or [],
         }
 
 
@@ -901,6 +911,29 @@ def load_gold(nonce: str):
         if s is not None:
             return s
     return cmp.gold()
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_hype(nonce: str) -> dict:
+    """Akşam hesabından (6 saatten taze ise); yoksa canlı: sosyal + ilk 15 hissenin
+    temel verileri + biotech listesi (özel ilgi dahil)."""
+    bw = st.session_state.get("watchlist", {}).get("biotech_watch", [])
+    if _use_snap(nonce):
+        s = snap.load("hype", max_age_h=30)
+        if s is not None:
+            out = dict(s)
+            miss = sorted(set(bw) - set(out["fund"]["Sembol"])) if not out["fund"].empty else bw
+            if miss:
+                out["fund"] = pd.concat([out["fund"], hyp.fundamentals(miss, dta.yf_info)],
+                                        ignore_index=True)
+            out["_kaynak"] = f"📦 Akşam hesabından · {snap.summary()}"
+            return out
+    soc, errs = hyp.social(pages=2)
+    top = soc.head(15)["Sembol"].tolist() if not soc.empty else []
+    fund = hyp.fundamentals(sorted(set(top) | set(bw)), dta.yf_info)
+    return {"social": soc, "errs": errs, "fund": fund, "top": top, "bio": bw,
+            "_kaynak": "🔴 Canlı çekildi (biotech evreninin nakit verileri akşam hesabında "
+                       "tamamlanır)."}
 
 
 @st.cache_data(ttl=TTL_NEWS, show_spinner=False)
@@ -1534,14 +1567,207 @@ elif PAGE == PAGES[3]:
 
 # ======================================================================= 5
 elif PAGE == PAGES[4]:
-    st.markdown("### 🔥 Hype & Biotech")
-    st.info("Bu sayfa 3. aşamada gelecek: Reddit/StockTwits/Yahoo trend listeleri, "
-            "biyoteknoloji haberleri (FDA, faz 3) ve teknik kurulumlar, kendi izleme "
-            "listeniz.")
-    st.markdown("Şimdilik **🗂️ Araçlar → 🚀 Future Themes** sekmesini kullanabilirsiniz.")
-    it, _ = load_query_news(nws.FEEDS["Biyoteknoloji"], st.session_state.nonce_news)
-    st.markdown("#### 🧬 Son biyoteknoloji haberleri")
-    news_list(it, 10)
+    h1, h2 = st.columns([4, 1])
+    h1.markdown("### 🔥 Hype & Biotech")
+    if h2.button("🔄 Yenile", key="hy_ref", width="stretch"):
+        bump("nonce_hype")
+        st.rerun()
+    st.session_state.setdefault("nonce_hype", "0")
+    with st.spinner("Reddit, StockTwits ve Yahoo trend listeleri çekiliyor…"):
+        HY = load_hype(st.session_state.nonce_hype)
+    SOC, FUND = HY.get("social", pd.DataFrame()), HY.get("fund", pd.DataFrame())
+    for e in HY.get("errs", []):
+        st.caption(f"⚠️ {e}")
+    if HY.get("_kaynak"):
+        st.caption(HY["_kaynak"])
+    t_soc, t_fv, t_bio = st.tabs(["🔥 Sosyal medyada öne çıkanlar", "💎 Gelecek değer adayları",
+                                  "🧬 Biotech"])
+
+    # ------------------------------------------------ sosyal
+    with t_soc:
+        st.caption("Hype skoru: Reddit sırası (40) + StockTwits sırası (30) + Yahoo trend (15) + "
+                   "son 24 saatte bahsedilme artışı (±15). Hype bir **dikkat** ölçüsüdür, alım "
+                   "sinyali değildir — teknik karar sütununa bakın.")
+        if SOC.empty:
+            st.warning("Sosyal medya verisi çekilemedi.")
+        else:
+            topn = st.slider("Kaç hisse", 10, 60, 25, 5, key="hy_n")
+            syms = SOC.head(topn)["Sembol"].tolist()
+            with st.spinner("Teknik planlar hazırlanıyor…"):
+                TBy, _ = syms_stock_table(syms, 0.0)
+                Py = load_plans(tuple(syms), st.session_state.nonce_scan)
+                PTy = trade_plan_table(TBy, Py, True)
+            kar = dict(zip(PTy["Hisse"], PTy["Karar"])) if not PTy.empty else {}
+            V_SOC = SOC.head(topn).copy()
+            V_SOC["Teknik karar"] = V_SOC["Sembol"].map(kar).fillna("—")
+            if not FUND.empty:
+                V_SOC = V_SOC.merge(FUND[["Sembol", "Gelir büyümesi %",
+                                          "Analist hedef potansiyeli %", "Short % float"]],
+                                    on="Sembol", how="left")
+            cols = [c for c in ["Sembol", "Ad", "Hype Skoru", "Kaynak", "Bahsedilme",
+                                "Bahsedilme Δ", "Teknik karar", "Gelir büyümesi %",
+                                "Analist hedef potansiyeli %", "Short % float",
+                                "Neden konuşuluyor"] if c in V_SOC.columns]
+            st.dataframe(V_SOC[cols], width="stretch", hide_index=True, column_config={
+                "Hype Skoru": st.column_config.ProgressColumn(format="%d", min_value=0,
+                                                              max_value=100),
+                "Bahsedilme Δ": st.column_config.NumberColumn("24s Δ", format="%+.0f%%"),
+                "Gelir büyümesi %": st.column_config.NumberColumn(format="%+.0f%%"),
+                "Analist hedef potansiyeli %": st.column_config.NumberColumn(
+                    "Analist hedefi", format="%+.0f%%"),
+                "Short % float": st.column_config.NumberColumn(format="%.1f%%"),
+                "Neden konuşuluyor": st.column_config.TextColumn(width="large")})
+            hs = st.selectbox("🔍 İncele", syms, key="hy_pick")
+            c1, c2 = st.columns(2)
+            c1.button("🦅 Hisse Avcısı'nda aç (plan + temel analiz)", on_click=_go,
+                      args=(PAGES[3],), kwargs={"ha_sym": hs, "ha_tema": None},
+                      key="hy_go", width="stretch")
+            if not PTy.empty and hs in set(PTy["Hisse"]):
+                r_ = PTy[PTy["Hisse"] == hs].iloc[0]
+                c2.markdown(f"**{r_['Karar']}** · giriş {r_['Giriş bölgesi']} · stop {r_['Stop']}"
+                            f" · kâr al {r_['Kâr al 1']} / {r_['Kâr al 2']}")
+            show_triptych(hs, hs, f"hy_{_fname(hs)}")
+
+    # ------------------------------------------------ gelecek değer
+    with t_fv:
+        st.caption("Konuşulan hisseler içinde temeli de güçlü olanlar: gelir büyümesi, brüt marj, "
+                   "analist hedef potansiyeli, nakit ömrü. Puan 0–100; teknik kararı ⛔ olanlar "
+                   "listeye girmez.")
+        if FUND.empty or SOC.empty:
+            st.info("Temel veriler henüz yok — akşam hesabından sonra dolar (ya da 🔄).")
+        else:
+            F2 = FUND[FUND["Sembol"].isin(HY.get("top", []))].copy()
+            if F2.empty:
+                st.info("Hype listesindeki hisseler için temel veri yok.")
+            else:
+                sc = [hyp.future_value_note(r) for r in F2.to_dict("records")]
+                F2["Gelecek Değer"] = [x[0] for x in sc]
+                F2["Gerekçe"] = [x[1] for x in sc]
+                F2 = F2.merge(SOC[["Sembol", "Hype Skoru"]], on="Sembol", how="left")
+                TBf, _ = syms_stock_table(F2["Sembol"].tolist(), 0.0)
+                Pf = load_plans(tuple(F2["Sembol"]), st.session_state.nonce_scan)
+                PTf = trade_plan_table(TBf, Pf, True)
+                F2["Teknik karar"] = F2["Sembol"].map(dict(zip(PTf["Hisse"], PTf["Karar"]))
+                                                      if not PTf.empty else {}).fillna("—")
+                F2["Giriş bölgesi"] = F2["Sembol"].map(dict(zip(PTf["Hisse"], PTf["Giriş bölgesi"]))
+                                                       if not PTf.empty else {})
+                F2 = F2[~F2["Teknik karar"].str.startswith("⛔")]
+                F2 = F2.sort_values(["Gelecek Değer", "Hype Skoru"], ascending=False)
+                st.dataframe(F2[["Sembol", "Ad", "Gelecek Değer", "Hype Skoru", "Teknik karar",
+                                 "Giriş bölgesi", "Gelir büyümesi %", "Brüt marj %",
+                                 "Analist hedef potansiyeli %", "Piyasa değeri ($B)", "Gerekçe"]],
+                             width="stretch", hide_index=True, column_config={
+                                 "Gelecek Değer": st.column_config.ProgressColumn(
+                                     format="%d", min_value=0, max_value=100),
+                                 "Hype Skoru": st.column_config.NumberColumn(format="%d"),
+                                 "Gelir büyümesi %": st.column_config.NumberColumn(format="%+.0f%%"),
+                                 "Brüt marj %": st.column_config.NumberColumn(format="%.0f%%"),
+                                 "Analist hedef potansiyeli %": st.column_config.NumberColumn(
+                                     "Analist hedefi", format="%+.0f%%"),
+                                 "Piyasa değeri ($B)": st.column_config.NumberColumn(format="%.1f"),
+                                 "Gerekçe": st.column_config.TextColumn(width="large")})
+
+    # ------------------------------------------------ biotech
+    with t_bio:
+        bw = _wl().get("biotech_watch", [])
+        b1, b2 = st.columns([3, 1])
+        add = b1.text_input("⭐ Özel ilgi listeme sembol ekle (virgülle)", key="bio_add",
+                            placeholder="ör. RXRX, CRSP, VKTX")
+        if b2.button("Ekle", key="bio_add_b", width="stretch") and add.strip():
+            new = [x.strip().upper() for x in add.split(",") if x.strip()]
+            _wl()["biotech_watch"] = sorted(set(bw) | set(new))
+            _save_wl("Biotech listesi güncellendi")
+            load_hype.clear()
+            st.rerun()
+        if bw:
+            r1, r2 = st.columns([3, 1])
+            rm = r1.multiselect("⭐ Özel ilgi listem", bw, key="bio_rm",
+                                help="Seçip 'Çıkar'a basarak listeden çıkarın")
+            if r2.button("Çıkar", key="bio_rm_b", width="stretch") and rm:
+                _wl()["biotech_watch"] = [x for x in bw if x not in rm]
+                _save_wl("Biotech listesi güncellendi")
+                st.rerun()
+        only_mine = st.toggle("Yalnızca özel ilgi listem", bool(bw), key="bio_mine")
+        bio_syms = (bw if (only_mine and bw) else sorted(set(hyp.BIOTECH) | set(bw)))
+        bio_syms = [x for x in bio_syms if x not in ("XBI", "IBB")]
+        with st.spinner("Biotech hisseleri: plan, nakit ömrü ve katalizör haberleri…"):
+            TBb, _ = syms_stock_table(bio_syms, 0.0)
+            Pb = load_plans(tuple(bio_syms), st.session_state.nonce_scan)
+            PTb = trade_plan_table(TBb, Pb, True)
+            items, _ = load_query_news(nws.FEEDS["Biyoteknoloji"], st.session_state.nonce_news)
+            Fb = FUND[FUND["Sembol"].isin(bio_syms)] if not FUND.empty else pd.DataFrame()
+            extra = st.session_state.get("bio_fund")
+            if extra is not None and not extra.empty:
+                Fb = pd.concat([Fb, extra[extra["Sembol"].isin(bio_syms)
+                                          & ~extra["Sembol"].isin(Fb["Sembol"] if not Fb.empty
+                                                                  else [])]],
+                               ignore_index=True)
+            names = dict(zip(Fb["Sembol"], Fb["Ad"].fillna(""))) if not Fb.empty else {}
+            NM = hyp.match_news(items, bio_syms, names)
+        have_f = set(Fb["Sembol"]) if not Fb.empty else set()
+        if len(have_f) < 0.5 * len(bio_syms):
+            if st.button(f"💵 Nakit ömrü / short / analist verilerini şimdi çek "
+                         f"({len(bio_syms) - len(have_f)} hisse, ~1 dk)", key="bio_fund_b"):
+                with st.spinner("Yahoo'dan şirket verileri çekiliyor…"):
+                    st.session_state["bio_fund"] = hyp.fundamentals(
+                        [x for x in bio_syms if x not in have_f], dta.yf_info)
+                st.rerun()
+        if PTb.empty:
+            st.info("Biotech fiyat verisi yok.")
+        else:
+            B = PTb.rename(columns={"Hisse": "Sembol"})
+            if not Fb.empty:
+                B = B.merge(Fb[["Sembol", "Nakit ($M)", "Çeyreklik yakım ($M)",
+                                "Nakit ömrü (çeyrek)", "Short % float",
+                                "Analist hedef potansiyeli %", "Piyasa değeri ($B)"]],
+                            on="Sembol", how="left")
+            if not TBb.empty and "Kalan Gün" in TBb.columns:
+                B = B.merge(TBb[["Sembol", "Kalan Gün"]], on="Sembol", how="left")
+            B["Katalizör"] = [(hyp.catalyst_tag(NM[s_][0]["Başlık"]) + " " + NM[s_][0]["Başlık"][:90])
+                              if s_ in NM else "—" for s_ in B["Sembol"]]
+            B["⭐"] = B["Sembol"].isin(bw).map({True: "⭐", False: ""})
+            cols = [c for c in ["⭐", "Karar", "Sembol", "Fiyat", "Giriş bölgesi", "Stop",
+                                "Kâr al 1", "R:R", "Nakit ömrü (çeyrek)", "Nakit ($M)",
+                                "Çeyreklik yakım ($M)", "Short % float",
+                                "Analist hedef potansiyeli %", "Kalan Gün", "Katalizör",
+                                "Sebep"] if c in B.columns]
+            st.dataframe(B[cols], width="stretch", hide_index=True, column_config={
+                "R:R": st.column_config.NumberColumn(format="%.1f"),
+                "Nakit ömrü (çeyrek)": st.column_config.NumberColumn(
+                    format="%.0f", help="Nakit ÷ çeyreklik nakit yakımı. 4'ün altı: yakında "
+                                        "sermaye artırımı (hisse ihracı) riski"),
+                "Nakit ($M)": st.column_config.NumberColumn(format="%,.0f"),
+                "Çeyreklik yakım ($M)": st.column_config.NumberColumn(format="%,.0f"),
+                "Short % float": st.column_config.NumberColumn(format="%.1f%%"),
+                "Analist hedef potansiyeli %": st.column_config.NumberColumn(
+                    "Analist hedefi", format="%+.0f%%"),
+                "Kalan Gün": st.column_config.NumberColumn("Bilançoya gün", format="%d"),
+                "Katalizör": st.column_config.TextColumn(width="large"),
+                "Sebep": st.column_config.TextColumn(width="large")})
+            st.caption("Biotech'e özel: **nakit ömrü** (kaç çeyrek dayanır) ve **katalizör** "
+                       "(FDA onayı/ret, PDUFA tarihi, faz 3 sonucu, satın alma, hisse ihracı) "
+                       "fiyatı teknikten daha sert hareket ettirir. Katalizör öncesi pozisyonu "
+                       "küçük tutun; gap riski stopu anlamsız kılar.")
+            bs = st.selectbox("🔍 İncele", B["Sembol"].tolist(), key="bio_pick")
+            c1, c2 = st.columns(2)
+            if bs not in bw:
+                if c1.button(f"⭐ {bs} özel ilgi listeme ekle", key="bio_star", width="stretch"):
+                    _wl()["biotech_watch"] = sorted(set(bw) | {bs})
+                    _save_wl(f"{bs} özel ilgi listesine eklendi")
+                    st.rerun()
+            c2.button("🦅 Hisse Avcısı'nda aç", on_click=_go, args=(PAGES[3],),
+                      kwargs={"ha_sym": bs, "ha_tema": None}, key="bio_go", width="stretch")
+            show_triptych(bs, bs, f"bio_{_fname(bs)}")
+            st.markdown(f"#### 📰 {bs} haberleri")
+            it2, _ = load_query_news(f"{bs} stock OR {names.get(bs, bs)} FDA OR trial",
+                                     st.session_state.nonce_news)
+            for it in it2[:8]:
+                st.markdown(f"- {hyp.catalyst_tag(it['Başlık'])} [{it['Başlık']}]({it['Link']}) "
+                            f"· {it['Tarih'][:16]}")
+        with st.expander("🧬 Son biyoteknoloji haberleri (FDA, PDUFA, faz 3)"):
+            for it in items[:15]:
+                st.markdown(f"- {hyp.catalyst_tag(it['Başlık'])} [{it['Başlık']}]({it['Link']}) "
+                            f"· {it['Tarih'][:16]}")
 
 # ======================================================================= 6
 elif PAGE == "🔔 Takip & Portföy":
