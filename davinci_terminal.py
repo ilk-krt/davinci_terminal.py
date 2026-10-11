@@ -1030,8 +1030,9 @@ def load_robot_data(sym: str, nonce: str):
 def _rparams(cfg: dict) -> "rbt.Params":
     keys = rbt.Params.__dataclass_fields__
     kw = {k: v for k, v in cfg.items() if k in keys}
-    if "zone" in kw:
-        kw["zone"] = tuple(kw["zone"])
+    for k_ in ("zone", "tp_r"):
+        if k_ in kw:
+            kw[k_] = tuple(kw[k_])
     return rbt.Params(**kw)
 
 
@@ -1048,6 +1049,14 @@ def robot_run(sym: str, cfg_json: str, start: str, nonce: str) -> dict:
     tvc.close(f)
     R["ok"] = True
     return R
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def robot_optimize(sym: str, start: str, budget: float, nonce: str) -> pd.DataFrame:
+    h1, d = load_robot_data(sym, nonce)
+    if h1 is None or d is None or len(h1) < 50:
+        return pd.DataFrame()
+    return rbt.optimize(h1, d, start, budget or 10_000.0)
 
 
 def show_robot(R: dict, key: str) -> None:
@@ -2095,15 +2104,41 @@ elif PAGE == "🤖 Robot (simülasyon)":
         else:
             budget_r = st.number_input("Bütçe ($)", 100.0, 1e8, 10_000.0, 500.0, key="rb_b")
             q_r = cost_r = stop_r = 0.0
-    with st.expander("⚙️ Akıllı kontrol ayarları"):
+    prof_keys = list(rbt.PROFILES)
+    prof_r = st.radio("Agresiflik", prof_keys,
+                      index=prof_keys.index(st.session_state.get("rb_prof", "agresif"))
+                      if st.session_state.get("rb_prof", "agresif") in prof_keys else 2,
+                      horizontal=True, key="rb_prof_in",
+                      format_func=lambda k: {"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
+                                             "agresif": "🔥 Agresif"}[k])
+    st.caption(rbt.PROFILE_TXT[prof_r])
+    P0 = rbt.PROFILES[prof_r]
+    zone_names = list(rbt.ZONES)
+    z_default = next((k for k, v in rbt.ZONES.items() if tuple(v) == tuple(P0["zone"])),
+                     zone_names[0])
+    with st.expander("⚙️ Ayarları elle değiştir (profilin varsayılanları yüklü)"):
         a1, a2, a3, a4 = st.columns(4)
-        zone_r = a1.selectbox("Fib giriş bölgesi", list(rbt.ZONES), key="rb_zone")
-        vol_r = a2.slider("Hacim eşiği (× ortalama)", 1.0, 3.0, 1.5, 0.1, key="rb_vol")
-        radar_r = a3.slider("Radar eşiği", 0.70, 0.95, 0.85, 0.01, key="rb_radar")
-        trend_r = a4.toggle("Günlük EMA200 filtresi", True, key="rb_trend")
-        loop_r = a4.toggle("İşlem bitince yeniden giriş ara", True, key="rb_loop")
-    cfg = {"plan": plan_r, "budget": budget_r, "zone": list(rbt.ZONES[zone_r]),
-           "vol_mult": vol_r, "radar": radar_r, "trend_filter": trend_r, "loop": loop_r,
+        zone_r = a1.selectbox("Fib giriş bölgesi", zone_names, index=zone_names.index(z_default),
+                              key=f"rb_zone_{prof_r}")
+        vol_r = a2.slider("Hacim eşiği (× ortalama)", 1.0, 3.0, float(P0["vol_mult"]), 0.1,
+                          key=f"rb_vol_{prof_r}")
+        radar_r = a3.slider("Radar eşiği", 0.70, 0.95, 0.85, 0.01, key=f"rb_radar_{prof_r}")
+        stopm_r = a3.slider("Stop en fazla (× günlük ATR)", 1.0, 4.0, float(P0["stop_atr_max"]),
+                            0.25, key=f"rb_stopm_{prof_r}")
+        trend_r = a4.toggle(f"Günlük EMA{P0['trend_ma']} filtresi", True, key=f"rb_trend_{prof_r}")
+        loop_r = a4.toggle("İşlem bitince yeniden giriş ara", True, key=f"rb_loop_{prof_r}")
+        a5, a6, a7 = st.columns(3)
+        brk_r = a5.toggle("20 saatlik zirve kırılımıyla gir", bool(P0["breakout"]),
+                          key=f"rb_brk_{prof_r}")
+        bnc_r = a6.toggle("1s EMA21 sekmesiyle gir", bool(P0["ema_bounce"]),
+                          key=f"rb_bnc_{prof_r}")
+        tr_r = a7.slider("İz süren stop (× 1s ATR)", 1.5, 4.0, float(P0["trail_atr"]), 0.25,
+                         key=f"rb_trail_{prof_r}")
+    cfg = {**{k: (list(v) if isinstance(v, tuple) else v) for k, v in P0.items()},
+           "profile": prof_r, "plan": plan_r, "budget": budget_r,
+           "zone": list(rbt.ZONES[zone_r]), "vol_mult": vol_r, "radar": radar_r,
+           "stop_atr_max": stopm_r, "trend_filter": trend_r, "loop": loop_r,
+           "breakout": brk_r, "ema_bounce": bnc_r, "trail_atr": tr_r,
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
     period = b1.selectbox("Geçmişte dene: dönem", ["Son 3 ay", "Son 6 ay", "Son 12 ay",
@@ -2115,7 +2150,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                          .normalize().isoformat())
     if b2.button("▶️ Robotu başlat (bugünden itibaren)", key="rb_start", type="primary",
                  width="stretch", disabled=not sym_r):
-        rid = f"{sym_r}-{plan_r}-{dt.datetime.now():%Y%m%d%H%M%S}"
+        rid = f"{sym_r}-{prof_r}-{plan_r}-{dt.datetime.now():%Y%m%d%H%M%S}"
         start_ = (pd.Timestamp.now(tz="America/New_York").tz_localize(None)
                   if plan_r != "yonet" else
                   pd.Timestamp(pf_map.get(sym_r, {}).get("tarih") or pd.Timestamp.today()))
@@ -2124,9 +2159,40 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                 "olusturma": dt.datetime.now().isoformat(timespec="minutes")})
         _save_wl(f"🤖 {sym_r} robotu başlatıldı")
         st.rerun()
+    if b3.button("🔬 En iyi ayarı bul (3 profil × 3 plan, ~20 sn)", key="rb_opt",
+                 width="stretch", disabled=not sym_r or plan_r == "yonet"):
+        st.session_state["rb_opt_res"] = (sym_r, (pd.Timestamp.today() - pd.DateOffset(
+            months=months)).normalize().isoformat(), budget_r)
     b3.caption("**Geçmişte dene:** aynı kurallar seçilen dönemde çalıştırılır (sonuç kaydedilmez). "
                "**Robotu başlat:** bugünden itibaren ileriye doğru simüle eder ve listeye eklenir; "
                "'sadece yönet' planında başlangıç portföydeki alış tarihidir.")
+    if st.session_state.get("rb_opt_res"):
+        sy_, st_, bu_ = st.session_state["rb_opt_res"]
+        st.markdown(f"##### 🔬 {sy_} · {pd.Timestamp(st_):%d.%m.%Y}'den bugüne · hangi ayar "
+                    "daha iyi çalıştı?")
+        with st.spinner("9 kombinasyon geçmiş veride deneniyor…"):
+            O = robot_optimize(sy_, st_, bu_, st.session_state.nonce_scan)
+        if O.empty:
+            st.error("Veri alınamadı.")
+        else:
+            O2 = O.copy()
+            O2["Profil"] = O2["Profil"].map({"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
+                                             "agresif": "🔥 Agresif"})
+            O2["Plan"] = O2["Plan"].map(lambda k: rbt.PLANS[k].split(" —")[0])
+            st.dataframe(O2, width="stretch", hide_index=True, column_config={
+                "Getiri %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "Al-tut %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "Maks. düşüş %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Getiri / düşüş": st.column_config.NumberColumn(format="%.2f"),
+                "Kazanan %": st.column_config.NumberColumn(format="%.0f%%"),
+                "Ort. R": st.column_config.NumberColumn(format="%+.2f")})
+            best = O.iloc[0]
+            st.success(f"En yüksek getiri: **{best['Profil']} · {rbt.PLANS[best['Plan']].split(' —')[0]}**"
+                       f" ({best['Getiri %']:+.1f}%, maks. düşüş {best['Maks. düşüş %']:.1f}%, "
+                       f"al-tut {best['Al-tut %']:+.1f}%). Yukarıdan bu profili ve planı seçip "
+                       "başlatabilirsiniz.")
+            st.caption("⚠️ Geçmişte en iyi çalışan ayar gelecekte de en iyisi olmayabilir "
+                       "(aşırı uydurma riski). Getiri / düşüş oranı yüksek olanlar daha sağlamdır.")
     if st.session_state.get("rb_bt_res"):
         sy_, cj_, st_ = st.session_state["rb_bt_res"]
         st.markdown(f"##### 🧪 {sy_} · {rbt.PLANS[json.loads(cj_)['plan']]} · "
@@ -2156,7 +2222,8 @@ elif PAGE == "🤖 Robot (simülasyon)":
                 E = R["events"]
                 rows.append({
                     "Robot": rb_["id"], "Sembol": rb_["sym"],
-                    "Plan": rbt.PLANS[rb_["cfg"]["plan"]].split(" —")[0],
+                    "Plan": rbt.PLANS[rb_["cfg"]["plan"]].split(" —")[0]
+                    + f" · {rb_['cfg'].get('profile', 'temkinli')}",
                     "Başlangıç": rb_["start"][:16].replace("T", " "),
                     "Durum": ("📡 radar açık" if stt.get("radar") else "📈 pozisyonda")
                     if stt["pozisyonda"] else "💤 giriş bekliyor",
