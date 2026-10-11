@@ -1085,7 +1085,24 @@ def show_robot(R: dict, key: str) -> None:
     img_downloads(R, f"robot_{key}", f"rbdl_{key}")
     if stt.get("radar"):
         st.warning("📡 Radar açık — fiyat hedefe giden yolun %85'ini geçti; dönüşte giyotin iner.")
-    t1, t2, t3 = st.tabs(["📜 Olay günlüğü", "💱 İşlemler", "🧠 Akıllı kontrol teşhisi"])
+    tabs_ = ["📜 Olay günlüğü", "💱 İşlemler", "🔎 Giriş teşhisi"]
+    if R.get("council") is not None:
+        tabs_.append("🧠 Konseyin öğrendiği ağırlıklar")
+    TT_ = st.tabs(tabs_)
+    t1, t2, t3 = TT_[:3]
+    if len(TT_) > 3:
+        with TT_[3]:
+            WT = R["council"]["weights"]
+            st.caption("Son eğitimde her sinyalin bu hissede ileri getiriyi ne kadar öngördüğü. "
+                       "|t| < 1 olanlar 'gürültü' sayılıp susturulur. Ağırlıklar her ~5 günde bir, "
+                       "yalnızca o ana kadarki veriyle yeniden öğrenilir.")
+            if WT is None or WT.empty:
+                st.caption("Eğitim için yeterli geçmiş yok (en az ~400 saatlik mum).")
+            else:
+                st.dataframe(WT, width="stretch", hide_index=True, column_config={
+                    "Ağırlık": st.column_config.ProgressColumn(format="%+.2f", min_value=-1,
+                                                               max_value=1),
+                    "t-istatistiği": st.column_config.NumberColumn(format="%+.2f")})
     with t1:
         E = R["events"]
         if E.empty:
@@ -2106,11 +2123,12 @@ elif PAGE == "🤖 Robot (simülasyon)":
             q_r = cost_r = stop_r = 0.0
     prof_keys = list(rbt.PROFILES)
     prof_r = st.radio("Agresiflik", prof_keys,
-                      index=prof_keys.index(st.session_state.get("rb_prof", "agresif"))
-                      if st.session_state.get("rb_prof", "agresif") in prof_keys else 2,
+                      index=prof_keys.index(st.session_state.get("rb_prof", "akilli"))
+                      if st.session_state.get("rb_prof", "akilli") in prof_keys else 0,
                       horizontal=True, key="rb_prof_in",
                       format_func=lambda k: {"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
-                                             "agresif": "🔥 Agresif"}[k])
+                                             "agresif": "🔥 Agresif",
+                                             "akilli": "🧠 Akıllı (sinyal konseyi)"}[k])
     st.caption(rbt.PROFILE_TXT[prof_r])
     P0 = rbt.PROFILES[prof_r]
     zone_names = list(rbt.ZONES)
@@ -2159,7 +2177,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                 "olusturma": dt.datetime.now().isoformat(timespec="minutes")})
         _save_wl(f"🤖 {sym_r} robotu başlatıldı")
         st.rerun()
-    if b3.button("🔬 En iyi ayarı bul (3 profil × 3 plan, ~20 sn)", key="rb_opt",
+    if b3.button("🔬 En iyi ayarı bul (4 profil × 3 plan, ~30 sn)", key="rb_opt",
                  width="stretch", disabled=not sym_r or plan_r == "yonet"):
         st.session_state["rb_opt_res"] = (sym_r, (pd.Timestamp.today() - pd.DateOffset(
             months=months)).normalize().isoformat(), budget_r)
@@ -2170,14 +2188,14 @@ elif PAGE == "🤖 Robot (simülasyon)":
         sy_, st_, bu_ = st.session_state["rb_opt_res"]
         st.markdown(f"##### 🔬 {sy_} · {pd.Timestamp(st_):%d.%m.%Y}'den bugüne · hangi ayar "
                     "daha iyi çalıştı?")
-        with st.spinner("9 kombinasyon geçmiş veride deneniyor…"):
+        with st.spinner("12 kombinasyon geçmiş veride deneniyor…"):
             O = robot_optimize(sy_, st_, bu_, st.session_state.nonce_scan)
         if O.empty:
             st.error("Veri alınamadı.")
         else:
             O2 = O.copy()
             O2["Profil"] = O2["Profil"].map({"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
-                                             "agresif": "🔥 Agresif"})
+                                             "agresif": "🔥 Agresif", "akilli": "🧠 Akıllı"})
             O2["Plan"] = O2["Plan"].map(lambda k: rbt.PLANS[k].split(" —")[0])
             st.dataframe(O2, width="stretch", hide_index=True, column_config={
                 "Getiri %": st.column_config.NumberColumn(format="%+.1f%%"),
