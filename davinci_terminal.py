@@ -36,6 +36,7 @@ from apex import reading as rdg
 from apex import seasonal as sea
 from apex import tfview as tfv
 from apex import tvchart as tvc
+from apex import tracking as trk
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -426,6 +427,10 @@ def _init_state() -> None:
             # P/S adil değer çarpan tablosu (kaydedilmişse)
             **({"ps_multiples": saved["ps_multiples"]}
                if isinstance(saved.get("ps_multiples"), dict) else {}),
+            # takip & portföy (Aşama 2)
+            "sector_watch": saved.get("sector_watch") or [],
+            "stock_watch": saved.get("stock_watch") or [],
+            "portfolio": saved.get("portfolio") or [],
         }
 
 
@@ -784,7 +789,7 @@ def stock_fundamentals(sym: str, basis: str) -> None:
 # ve yalnızca seçili sayfa hesaplanır (uygulama hızlanır).
 # ==========================================================================
 PAGES = ["🌊 Para Akışı", "🧭 Endeksler & Risk", "🎯 Tema Avcısı",
-         "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🗂️ Araçlar"]
+         "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🔔 Takip & Portföy", "🗂️ Araçlar"]
 for _k, _v in {"nav": PAGES[0], "nonce_chart": "0", "nonce_flow": "0",
                "mk_sel": "S&P 500", "ta_index": "Nasdaq", "ha_tema": None,
                "ha_sym": None}.items():
@@ -794,7 +799,7 @@ for _k, _v in {"nav": PAGES[0], "nonce_chart": "0", "nonce_flow": "0",
 def _go(page: str, **ctx) -> None:
     """Düğme geri çağrısı: sayfayı değiştirir ve bağlamı taşır."""
     st.session_state["nav"] = page
-    for w_ in ("ta_index_radio", "ha_tema_sel", "ha_sym_sel"):
+    for w_ in ("ta_index_radio", "ha_tema_sel", "ha_sym_sel", "ha_free"):
         st.session_state.pop(w_, None)          # eski widget seçimi yeni bağlamı ezmesin
     for k_, v_ in ctx.items():
         st.session_state[k_] = v_
@@ -977,6 +982,99 @@ THEME_GROUPS = {**pln.INDEX_THEMES,
                 "Petrol (Brent)": ["Petrol & Gaz", "Nükleer & Uranyum", "Temiz Enerji"]}
 
 
+# ---------------------------------------------------------------- takip & alarm
+def _wl() -> dict:
+    return st.session_state.watchlist
+
+
+def _save_wl(msg: str) -> None:
+    if save_watchlist():
+        st.toast(msg, icon="✅")
+    tracking_digest.clear()
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def tracking_digest(wl_json: str, n_funnel: str, n_scan: str, n_earn: str) -> dict:
+    """Takip listeleri + portföy için durumlar ve uygulama içi alarmlar."""
+    wl = json.loads(wl_json)
+    sw = [x["tema"] for x in wl.get("sector_watch", [])]
+    kw = wl.get("stock_watch", [])
+    pf = wl.get("portfolio", [])
+    out = {"sector": {}, "watch": [], "port": [], "alarms": [], "suggest": []}
+    syms = sorted({x["sym"] for x in kw} | {x["sym"] for x in pf})
+    kg_map = {}
+    if syms:
+        try:
+            E = load_earnings(tuple(syms), n_earn)
+            if not E.empty and "Hisse" in E.columns:
+                kg_map = dict(zip(E["Hisse"], E.get("Kalan Gün")))
+        except Exception:                      # noqa: BLE001
+            pass
+    if sw:
+        T, TAILS, _, _, _ = load_theme_rotation(n_funnel)
+        etfs = sorted({e for t in sw for e in uni.THEME_TRACKER.get(t, [])})
+        S = scan(tuple(etfs), "1d", n_scan) if etfs else pd.DataFrame()
+        rows = S.to_dict("records") if not S.empty else []
+        for t in sw:
+            er = [r for r in rows if r.get("Sembol") in uni.THEME_TRACKER.get(t, [])]
+            st_ = trk.sector_status(t, T, TAILS, er)
+            out["sector"][t] = st_
+            if st_["alarm"]:
+                out["alarms"].append({"Tür": "📌 Sektör", "Konu": t, "Durum": st_["durum"],
+                                      "Mesaj": st_["tavsiye"]})
+        out["suggest"] = trk.rotation_suggestion(sw, T, out["sector"])
+    if kw:
+        P = load_plans(tuple(sorted({x["sym"] for x in kw})), n_scan)
+        pm = {r["Sembol"]: r for r in P.to_dict("records")} if not P.empty else {}
+        for it in kw:
+            pl = pm.get(it["sym"])
+            if pl is not None and not (pl.get("ok") is True or pl.get("ok") == True):  # noqa: E712
+                pl = None
+            durum, al = trk.watch_alarms(it, pl, kg_map.get(it["sym"]))
+            out["watch"].append({**it, "durum": durum, "fiyat": (pl or {}).get("Fiyat"),
+                                 "alarmlar": al})
+            for a in al:
+                out["alarms"].append({"Tür": "👁️ Takip", "Konu": it["sym"], "Durum": durum,
+                                      "Mesaj": a})
+    if pf:
+        prices, _ = dta.fetch(sorted({x["sym"] for x in pf}), "1d")
+        for it in pf:
+            lv = trk.position_levels(prices.get(it["sym"]), float(it["maliyet"]),
+                                     it.get("tarih"), it.get("ilk_stop"))
+            durum, al = trk.position_alarms(it, lv, kg_map.get(it["sym"]))
+            out["port"].append({**it, "lv": lv, "durum": durum, "alarmlar": al})
+            for a in al:
+                out["alarms"].append({"Tür": "💼 Portföy", "Konu": it["sym"], "Durum": durum,
+                                      "Mesaj": a})
+    return out
+
+
+def _digest() -> dict:
+    wl = _wl()
+    if not (wl.get("sector_watch") or wl.get("stock_watch") or wl.get("portfolio")):
+        return {"sector": {}, "watch": [], "port": [], "alarms": [], "suggest": []}
+    return tracking_digest(json.dumps({k: wl.get(k, []) for k in
+                                       ("sector_watch", "stock_watch", "portfolio")},
+                                      sort_keys=True, default=str),
+                           st.session_state.nonce_funnel, st.session_state.nonce_scan,
+                           st.session_state.nonce_earn)
+
+
+if PAGE != PAGES[-1] and PAGE != "🔔 Takip & Portföy":
+    try:
+        _DG = _digest()
+    except Exception as _exc:                  # noqa: BLE001
+        _DG = {"alarms": []}
+        _log.info("alarm özeti: %s", _exc)
+    if _DG["alarms"]:
+        _b1, _b2 = st.columns([5, 1])
+        _b1.warning(f"🔔 **{len(_DG['alarms'])} alarm:** "
+                    + " · ".join(f"{a['Konu']} {a['Durum']}" for a in _DG["alarms"][:5])
+                    + (" …" if len(_DG["alarms"]) > 5 else ""))
+        _b2.button("Alarmları aç", on_click=_go, args=("🔔 Takip & Portföy",),
+                   key="alarm_go", width="stretch")
+
+
 # ---------------------------------------------------------------- ortak veriler
 if PAGE != PAGES[-1]:
     ROT_, SER_, ROT_FAILED_, FILES_ = load_rotation(st.session_state.nonce_funnel)
@@ -1150,6 +1248,18 @@ elif PAGE == PAGES[1]:
 # ======================================================================= 3
 elif PAGE == PAGES[2]:
     st.markdown("### 🎯 Tema Avcısı")
+    _sw = [x["tema"] for x in _wl().get("sector_watch", [])]
+    if _sw:
+        with st.expander(f"📌 Takip ettiğim sektörler ({len(_sw)})", expanded=True):
+            DG = _digest()
+            for t_ in _sw:
+                ss = DG["sector"].get(t_, {})
+                st.markdown(f"**{t_}** — {ss.get('durum', '—')}: {ss.get('tavsiye', '')}  \n"
+                            f"<span style='color:#7a8394;font-size:0.85em'>"
+                            f"{' · '.join(ss.get('neden', []))}</span>",
+                            unsafe_allow_html=True)
+            for sg in DG.get("suggest", []):
+                st.info("🔀 " + sg)
     idx_opts = [k for k in THEME_GROUPS if k in mkt.MARKETS]
     cur = st.session_state.ta_index if st.session_state.ta_index in idx_opts else "Nasdaq"
     t1, t2 = st.columns([3, 1])
@@ -1206,6 +1316,22 @@ elif PAGE == PAGES[2]:
         st.markdown(f"**{tema}** · {row['Para']} · erken skor {row['Erken Skor']} · "
                     f"1H {row['1H %']:+.1f}% · 1A {row['1A %']:+.1f}% · ETF'ler: "
                     + ", ".join(f"`{e}`" for e in etfs))
+        _tracked = tema in [x["tema"] for x in _wl().get("sector_watch", [])]
+        if st.button(("📌 Sektör takipten çıkar" if _tracked else "📌 Sektör takibe ekle"),
+                     key=f"ta_track_{tema}"):
+            if _tracked:
+                _wl()["sector_watch"] = [x for x in _wl()["sector_watch"] if x["tema"] != tema]
+                _save_wl(f"{tema} takipten çıkarıldı")
+            else:
+                _wl()["sector_watch"].append({"tema": tema, "eklendi": trk.today(),
+                                              "endeks": ta_index})
+                _save_wl(f"{tema} sektör takibine eklendi")
+            st.rerun()
+        if _tracked:
+            ss = _digest()["sector"].get(tema, {})
+            if ss:
+                (st.success if ss["durum"].startswith(("🟢", "🌱")) else st.warning)(
+                    f"📌 **Takipte · {ss['durum']}** — {ss['tavsiye']}")
         b1, b2 = st.columns([1, 1])
         etf = b1.selectbox("Grafiği çizilecek ETF", etfs, key=f"ta_etf_{tema}") if etfs else None
         b2.button(f"🦅 {tema} hisselerine git (Hisse Avcısı)", on_click=_go,
@@ -1224,6 +1350,9 @@ elif PAGE == PAGES[2]:
 elif PAGE == PAGES[3]:
     st.markdown("### 🦅 Hisse Avcısı")
     all_themes = [t for t in uni.THEME_TRACKER if theme_holdings(t)]
+    if st.session_state.ha_tema not in all_themes and st.session_state.ha_sym:
+        st.session_state.ha_tema = next((t for t in all_themes
+                                         if st.session_state.ha_sym in theme_holdings(t)), None)
     cur = st.session_state.ha_tema if st.session_state.ha_tema in all_themes else all_themes[0]
     q1, q2, q3 = st.columns([2, 1, 1])
     tema = q1.selectbox("Tema", all_themes, index=all_themes.index(cur), key="ha_tema_sel")
@@ -1273,12 +1402,29 @@ elif PAGE == PAGES[3]:
                            key="ha_xl")
 
         syms = PT["Hisse"].tolist()
+        outside = (st.session_state.ha_sym if st.session_state.ha_sym
+                   and st.session_state.ha_sym not in syms else "")
+        s1_, s2_ = st.columns([2, 1])
         cur_s = st.session_state.ha_sym if st.session_state.ha_sym in syms else syms[0]
-        sym = st.selectbox("🔍 İncelenecek hisse", syms, index=syms.index(cur_s),
-                           key="ha_sym_sel",
-                           format_func=lambda s: f"{s} — " + PT.loc[PT['Hisse'] == s, 'Karar'].iloc[0])
+        sym = s1_.selectbox("🔍 İncelenecek hisse", syms, index=syms.index(cur_s),
+                            key="ha_sym_sel",
+                            format_func=lambda s: f"{s} — " + PT.loc[PT['Hisse'] == s, 'Karar'].iloc[0])
+        free = s2_.text_input("…veya listede olmayan bir sembol", value=outside,
+                              key="ha_free", placeholder="ör. NVDA").strip().upper()
+        if free:
+            sym = free
+            S1_ = scan((sym,), "1d", st.session_state.nonce_scan)
+            TBh = fnl.build_stock_table(S1_, None, None, None, None, liq,
+                                        swing_score=scr.swing_score)
+            Ph = load_plans((sym,), st.session_state.nonce_scan)
+            PT1 = trade_plan_table(TBh, Ph, index_ok and tema_ok)
+            if PT1.empty:
+                st.error(f"{sym} için fiyat verisi alınamadı.")
+                st.stop()
+            prow = PT1.iloc[0]
+        else:
+            prow = PT[PT["Hisse"] == sym].iloc[0]
         st.session_state.ha_sym = sym
-        prow = PT[PT["Hisse"] == sym].iloc[0]
         trow2 = TBh[TBh["Sembol"] == sym]
         with st.container(border=True):
             st.markdown(f"#### {sym} · {prow['Karar']}")
@@ -1291,6 +1437,56 @@ elif PAGE == PAGES[3]:
             k[4].markdown(kpi("R:R", f"{prow['R:R']:.1f}" if np.isfinite(prow["R:R"]) else "—",
                               "kâr al 1'e göre"), unsafe_allow_html=True)
             st.markdown(f"**Sebep:** {prow['Sebep']}")
+            _pl = Ph[Ph["Sembol"] == sym].to_dict("records") if not Ph.empty else []
+            _pl = _pl[0] if _pl else {}
+            _in_w = sym in [x["sym"] for x in _wl().get("stock_watch", [])]
+            _in_p = sym in [x["sym"] for x in _wl().get("portfolio", [])]
+            w1, w2 = st.columns(2)
+            if w1.button("👁️ Takipten çıkar" if _in_w else "👁️ Hisse takibe al",
+                         key=f"ha_w_{sym}", width="stretch"):
+                if _in_w:
+                    _wl()["stock_watch"] = [x for x in _wl()["stock_watch"] if x["sym"] != sym]
+                    _save_wl(f"{sym} takipten çıkarıldı")
+                elif _pl.get("ok") is True or _pl.get("ok") == True:  # noqa: E712
+                    _wl()["stock_watch"].append({
+                        "sym": sym, "tema": tema, "eklendi": trk.today(),
+                        "giris_alt": float(_pl["Giriş Alt"]), "giris_ust": float(_pl["Giriş Üst"]),
+                        "stop": float(_pl["Stop"]), "hedef1": float(_pl["Hedef 1"]),
+                        "hedef2": float(_pl["Hedef 2"])})
+                    _save_wl(f"{sym} takibe alındı — giriş bölgesine gelince alarm verir")
+                else:
+                    st.warning("Bu hisse için plan yok; takibe alınamadı.")
+                st.rerun()
+            with w2.popover("💼 Portföye ekle" if not _in_p else "💼 Portföyde ✓",
+                            width="stretch"):
+                def _fin(*xs):
+                    for x_ in xs:
+                        try:
+                            x_ = float(x_)
+                        except (TypeError, ValueError):
+                            continue
+                        if np.isfinite(x_) and x_ > 0:
+                            return x_
+                    return 0.0
+                _px0 = _fin(_pl.get("Fiyat"),
+                            trow2.iloc[0].get("Fiyat") if not trow2.empty else None)
+                _st0 = _fin(_pl.get("Stop"))
+                f_adet = st.number_input("Adet", 0.0, 1e7, 10.0, 1.0, key=f"pf_n_{sym}")
+                f_cost = st.number_input("Ortalama maliyet ($)", 0.0, 1e7,
+                                         round(_px0, 2), 0.01, key=f"pf_c_{sym}")
+                f_date = st.date_input("Alış tarihi", dt.date.today(), key=f"pf_d_{sym}")
+                f_stop = st.number_input("İlk stop ($)", 0.0, 1e7,
+                                         round(_st0, 2), 0.01,
+                                         key=f"pf_s_{sym}")
+                if st.button("Kaydet", key=f"pf_save_{sym}", type="primary"):
+                    _wl()["portfolio"] = [x for x in _wl()["portfolio"] if x["sym"] != sym]
+                    _wl()["portfolio"].append({
+                        "sym": sym, "tema": tema, "adet": f_adet, "maliyet": f_cost,
+                        "tarih": f_date.isoformat(),
+                        "ilk_stop": f_stop if f_stop and f_stop > 0 else None})
+                    _wl()["stock_watch"] = [x for x in _wl()["stock_watch"] if x["sym"] != sym]
+                    _save_wl(f"{sym} portföye eklendi")
+                    st.rerun()
             if not trow2.empty:
                 t_ = trow2.iloc[0]
                 bits = []
@@ -1346,6 +1542,161 @@ elif PAGE == PAGES[4]:
     it, _ = load_query_news(nws.FEEDS["Biyoteknoloji"], st.session_state.nonce_news)
     st.markdown("#### 🧬 Son biyoteknoloji haberleri")
     news_list(it, 10)
+
+# ======================================================================= 6
+elif PAGE == "🔔 Takip & Portföy":
+    h1, h2 = st.columns([4, 1])
+    h1.markdown("### 🔔 Takip & Portföy")
+    if h2.button("🔄 Yenile", key="tp_ref", width="stretch"):
+        tracking_digest.clear()
+        bump("nonce_scan")
+        st.rerun()
+    if not store.enabled:
+        st.warning("⚠️ Kalıcı kayıt kapalı: listeler yalnızca bu oturumda tutulur ve "
+                   "uygulama yeniden başlayınca silinir. **Araçlar → 🚀 Future Themes** "
+                   "altındaki '🔑 Kalıcılığı açmak için 3 adım' ile GitHub kaydını açın.")
+    DG = _digest()
+    st.markdown("#### 🔔 Alarmlar")
+    if DG["alarms"]:
+        st.dataframe(pd.DataFrame(DG["alarms"]), width="stretch", hide_index=True,
+                     column_config={"Mesaj": st.column_config.TextColumn(width="large")})
+    else:
+        st.success("Şu an alarm yok.")
+    st.caption("Alarmlar sayfa her açıldığında son kapanış verisiyle yeniden hesaplanır "
+               "(15 dakikalık önbellek). Uygulama kapalıyken bildirim gönderilmez.")
+
+    # ---- sektör takip
+    st.markdown("#### 📌 Sektör takip")
+    sw = _wl().get("sector_watch", [])
+    if not sw:
+        st.caption("Tema Avcısı'nda bir temayı açıp **📌 Sektör takibe ekle**'ye basın.")
+    else:
+        rows = []
+        for x in sw:
+            ss = DG["sector"].get(x["tema"], {})
+            rows.append({"Sektör": x["tema"], "Durum": ss.get("durum", "—"),
+                         "Ne yapmalı": ss.get("tavsiye", ""),
+                         "Gerekçe": " · ".join(ss.get("neden", [])),
+                         "Erken skor": ss.get("skor"), "Eklendi": x.get("eklendi", "")})
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                     column_config={"Ne yapmalı": st.column_config.TextColumn(width="large"),
+                                    "Gerekçe": st.column_config.TextColumn(width="medium")})
+        for sg in DG.get("suggest", []):
+            st.info("🔀 " + sg)
+        c1, c2 = st.columns([3, 1])
+        rm = c1.multiselect("Takipten çıkar", [x["tema"] for x in sw], key="tp_rm_sec")
+        if c2.button("Çıkar", key="tp_rm_sec_b", width="stretch") and rm:
+            _wl()["sector_watch"] = [x for x in sw if x["tema"] not in rm]
+            _save_wl("Sektör takibi güncellendi")
+            st.rerun()
+
+    # ---- hisse takip
+    st.markdown("#### 👁️ Hisse takip")
+    kw = DG.get("watch", [])
+    if not kw:
+        st.caption("Hisse Avcısı'nda bir hisse seçip **👁️ Hisse takibe al**'a basın. "
+                   "Kayıt anındaki giriş/stop/hedef seviyeleri saklanır.")
+    else:
+        rows = [{"Hisse": x["sym"], "Tema": x.get("tema", ""), "Durum": x["durum"],
+                 "Fiyat": _px(x.get("fiyat")),
+                 "Giriş bölgesi": f"{_px(x['giris_alt'])} – {_px(x['giris_ust'])}",
+                 "Stop": _px(x["stop"]), "Hedef 1": _px(x["hedef1"]),
+                 "Hedef 2": _px(x.get("hedef2")), "Alarm": " · ".join(x["alarmlar"]) or "—",
+                 "Eklendi": x.get("eklendi", "")} for x in kw]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                     column_config={"Alarm": st.column_config.TextColumn(width="large")})
+        c1, c2, c3 = st.columns([2, 1, 1])
+        pick = c1.selectbox("Hisse", [x["sym"] for x in kw], key="tp_w_pick")
+        c2.button("🔍 Grafik ve analiz", key="tp_w_go", width="stretch", on_click=_go,
+                  args=(PAGES[3],), kwargs={"ha_sym": pick, "ha_tema": next(
+                      (x.get("tema") for x in kw if x["sym"] == pick), None)})
+        if c3.button("Takipten çıkar", key="tp_w_rm", width="stretch"):
+            _wl()["stock_watch"] = [x for x in _wl()["stock_watch"] if x["sym"] != pick]
+            _save_wl(f"{pick} takipten çıkarıldı")
+            st.rerun()
+
+    # ---- portföy
+    st.markdown("#### 💼 Portföy")
+    pf = DG.get("port", [])
+    if not pf:
+        st.caption("Hisse Avcısı'nda bir hisse seçip **💼 Portföye ekle** ile adet, maliyet "
+                   "ve alış tarihini girin.")
+    else:
+        rows, tot_v, tot_c = [], 0.0, 0.0
+        for x in pf:
+            lv = x["lv"]
+            ok = lv.get("ok")
+            px_ = lv.get("Fiyat", np.nan) if ok else np.nan
+            if np.isfinite(px_):
+                tot_v += px_ * float(x["adet"])
+                tot_c += float(x["maliyet"]) * float(x["adet"])
+            rows.append({
+                "Hisse": x["sym"], "Durum": x["durum"], "Adet": x["adet"],
+                "Maliyet": _px(x["maliyet"]), "Fiyat": _px(px_),
+                "K/Z %": lv.get("K/Z %", np.nan) if ok else np.nan,
+                "R": lv.get("R", np.nan) if ok else np.nan,
+                "İz süren stop": _px(lv.get("Stop")) if ok else "—",
+                "Kâr al 1": _px(lv.get("Kâr al 1")) if ok else "—",
+                "Kâr al 2": _px(lv.get("Kâr al 2")) if ok else "—",
+                "Ekle / maliyet düşür": ", ".join(_px(e) for e in lv.get("Ekle", [])) or
+                ("—" if lv.get("Trend sağlam") else "trend zayıf — ekleme yok"),
+                "Doygunluk": " · ".join(lv.get("Doygunluk", [])) or "—",
+                "Alarm": " · ".join(x["alarmlar"]) or "—"})
+        k1, k2, k3 = st.columns(3)
+        k1.markdown(kpi("Portföy değeri", f"${tot_v:,.0f}", f"{len(pf)} pozisyon"),
+                    unsafe_allow_html=True)
+        k2.markdown(kpi("Maliyet", f"${tot_c:,.0f}", ""), unsafe_allow_html=True)
+        pl_ = (tot_v / tot_c - 1) * 100 if tot_c else np.nan
+        k3.markdown(kpi("Toplam K/Z", f"{pl_:+.1f}%" if np.isfinite(pl_) else "—",
+                        f"${tot_v - tot_c:+,.0f}", "pos" if pl_ >= 0 else "neg"),
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                     column_config={
+                         "K/Z %": st.column_config.NumberColumn(format="%+.1f%%"),
+                         "R": st.column_config.NumberColumn(format="%+.1f",
+                                                            help="Kâr ÷ ilk risk (maliyet − ilk stop)"),
+                         "Doygunluk": st.column_config.TextColumn(width="medium"),
+                         "Alarm": st.column_config.TextColumn(width="large")})
+        with st.expander("Seviyeler nasıl hesaplanıyor?"):
+            st.markdown(
+                "- **İz süren stop:** şu üçünün en yükseği — alıştan beri en yüksek "
+                "kapanış − 3 ATR, en yakın S/R desteği − 1 ATR, girdiğiniz ilk stop. "
+                "Stop yalnızca yukarı gider.\n"
+                "- **Kâr al 1 / 2:** fiyatın üstündeki ilk iki S/R direnci (yoksa 2 ve 3,5 "
+                "ATR). Kâr al 1'de pozisyonun bir kısmını satıp stopu maliyete çekmek "
+                "klasik swing yönetimidir.\n"
+                "- **Doygunluk:** EMA21'den 3 ATR'den fazla uzama, RSI ≥ 75, hacimsiz "
+                "yükseliş, alım doruğu, satıcı baskınlığına geçiş, dirence dayanma. "
+                "İkisi birlikte gelirse kısmi satış alarmı.\n"
+                "- **Ekle / maliyet düşür:** yalnızca trend sağlamsa (fiyat > EMA50 > "
+                "EMA200) stopun üstündeki destekler ve EMA21.")
+        st.markdown("**Pozisyonları düzenle**")
+        ED = pd.DataFrame([{k: x.get(k) for k in ("sym", "tema", "adet", "maliyet", "tarih",
+                                                   "ilk_stop")} for x in _wl()["portfolio"]])
+        ED = st.data_editor(ED, num_rows="dynamic", width="stretch", key="tp_pf_ed",
+                            column_config={"sym": "Hisse", "tema": "Tema", "adet": "Adet",
+                                           "maliyet": "Maliyet", "tarih": "Alış tarihi",
+                                           "ilk_stop": "İlk stop"})
+        e1, e2 = st.columns([1, 3])
+        if e1.button("💾 Kaydet", key="tp_pf_save", type="primary", width="stretch"):
+            new = []
+            for r in ED.to_dict("records"):
+                if r.get("sym"):
+                    new.append({"sym": str(r["sym"]).upper().strip(), "tema": r.get("tema") or "",
+                                "adet": float(r.get("adet") or 0),
+                                "maliyet": float(r.get("maliyet") or 0),
+                                "tarih": str(r.get("tarih") or trk.today())[:10],
+                                "ilk_stop": float(r["ilk_stop"]) if r.get("ilk_stop") not in
+                                (None, "") and r.get("ilk_stop") == r.get("ilk_stop") else None})
+            _wl()["portfolio"] = new
+            _save_wl("Portföy kaydedildi")
+            st.rerun()
+        pick = e2.selectbox("Grafik ve analiz için hisse", [x["sym"] for x in pf],
+                            key="tp_p_pick")
+        e2.button("🔍 Hisse Avcısı'nda aç", key="tp_p_go", on_click=_go,
+                  args=(PAGES[3],), kwargs={"ha_sym": pick, "ha_tema": next(
+                      (x.get("tema") for x in pf if x["sym"] == pick), None)})
+
 
 # ---------------------------------------------------------------- Araçlar
 if PAGE != PAGES[-1]:
