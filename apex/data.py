@@ -20,6 +20,7 @@ INTERVAL_PLAN: dict[str, tuple[int, str]] = {
     "1wk": (1500, "1wk"),
     "4h": (170, "1h"),      # 1h çekip 4h'e yeniden örnekliyoruz
     "1h": (60, "1h"),
+    "1h_long": (720, "1h"),   # Robot simülasyonu: Yahoo 1 saatlikte ~730 gün verir
 }
 
 
