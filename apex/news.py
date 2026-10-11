@@ -19,6 +19,9 @@ FEEDS: dict[str, str] = {
     "Enerji & Nükleer": "nuclear power OR uranium OR grid OR utilities data center",
     "Savunma & Uzay": "defense contract OR space launch OR satellite",
     "Kripto": "bitcoin OR crypto ETF OR SEC crypto",
+    "Altın & Faiz": "gold price OR Treasury yields OR real yields OR dollar index",
+    "Fon akışları": "ETF inflows OR fund flows OR outflows stocks bonds",
+    "Biyoteknoloji": "biotech FDA approval OR phase 3 trial OR PDUFA",
 }
 
 BASE = ("https://news.google.com/rss/search?q={q}"
@@ -109,3 +112,16 @@ def _parse_date(s: str) -> datetime:
         except Exception:
             continue
     return datetime.min
+
+
+def fetch_query(query: str, label: str = "Arama", per_feed: int = 10,
+                timeout: int = 12) -> tuple[list[dict], list[str]]:
+    """Serbest arama (sembol, tema, emtia) — aynı Google News RSS kaynağı."""
+    FEEDS_TMP = {label: query}
+    old = dict(FEEDS)
+    try:
+        FEEDS.update(FEEDS_TMP)
+        return fetch_news([], [label], per_feed=per_feed, timeout=timeout)
+    finally:
+        FEEDS.clear()
+        FEEDS.update(old)

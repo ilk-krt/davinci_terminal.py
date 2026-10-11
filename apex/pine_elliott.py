@@ -97,6 +97,7 @@ def count(df: pd.DataFrame, last_frac: float | None = None) -> dict[str, Any]:
                 last_count_bar = B[i0 + 5]
     return {"B": B, "P": P, "T": T, "abc_left": abc_left, "last_conf": last_conf,
             "last_dir": last_dir, "counts": counts, "last_count_bar": last_count_bar,
+            "last_end": last_end,
             "h": h, "l": l, "c": c, "n": n}
 
 
@@ -163,7 +164,8 @@ def live(df: pd.DataFrame, last_frac: float | None = None) -> dict[str, Any]:
 
 
 def _f(x: float) -> str:
-    return f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}"
+    return (f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}" if abs(x) >= 1
+            else f"{x:.4g}")
 
 
 def modules(df: pd.DataFrame, tf: str, last_frac: float | None = None) -> list[dict[str, Any]]:

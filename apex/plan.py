@@ -29,7 +29,8 @@ ZONE_ATR = 0.5           # giriş bölgesinin kalınlığı
 
 
 def _f(x: float) -> str:
-    return f"{x:,.0f}" if x >= 1000 else f"{x:.2f}"
+    return (f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}" if abs(x) >= 1
+            else f"{x:.4g}")
 
 
 def stock_plan(df: pd.DataFrame) -> dict[str, Any]:

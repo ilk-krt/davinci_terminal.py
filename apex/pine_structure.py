@@ -377,7 +377,8 @@ def _m(modul, durum, notu, grup):
 
 
 def _fmt(x: float) -> str:
-    return f"{x:,.0f}" if x >= 1000 else f"{x:.2f}"
+    return (f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}" if abs(x) >= 1
+            else f"{x:.4g}")
 
 
 def modules(df: pd.DataFrame, bench: pd.Series | None, tf: str,

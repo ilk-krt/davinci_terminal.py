@@ -256,3 +256,24 @@ def plans(tickers) -> pd.DataFrame:
         return pd.DataFrame()
     prices, _ = dta.fetch(tickers, "1d")
     return pln.plans(prices, tickers)
+
+
+def flows():
+    """Para Akışı sayfası: varlık sınıfları akış tablosu."""
+    from apex import flows as flw
+    prices, failed = dta.fetch(flw.TICKERS, "1d")
+    return flw.table(prices), failed
+
+
+def markets():
+    """Endeksler & Risk sayfası: varlık skorları + teknik okumalar."""
+    from apex import markets as mkt
+    prices, failed = dta.fetch(mkt.underlying(), "1d_long")
+    return mkt.evaluate(prices), failed
+
+
+def gold():
+    """Altın sürücüleri tablosu."""
+    from apex import gold as gld
+    prices, failed = dta.fetch(list(gld.TICKERS.values()), "1d")
+    return gld.drivers(prices), failed

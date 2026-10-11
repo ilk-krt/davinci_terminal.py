@@ -450,6 +450,12 @@ ASSET_EXTRA: dict[str, list[str]] = {
     "S&P 500": ["RSP/SPY", "SPY/TLT", "HYG/TLT"],
     "Nasdaq": ["QQQ/SPY", "^IXIC/^GSPC", "SMH/SPY"],
     "Kripto (BTC)": ["NET_LIQ", "BTC.D", "OTHERS/BTC", "DX-Y.NYB"],
+    "Russell 2000": ["IWM/SPY", "RSP/SPY", "HYG/TLT"],
+    "Dow Jones": ["RSP/SPY", "SPY/TLT"],
+    "Altın": ["GC=F/SPY"],
+    "Gümüş": ["SI=F/GC=F", "GC=F/SPY"],
+    "Bakır/Altın": ["HG=F/GC=F"],
+    "Petrol (Brent)": ["BZ=F"],
 }
 
 
