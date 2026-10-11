@@ -75,21 +75,31 @@ class Params:
     horizon: int = 14              # konseyin öğrendiği ileri getiri ufku (1s mum)
     q_in: float = 0.85             # giriş eşiği: eğitim skorlarının yüzdeliği
     q_out: float = 0.35            # çıkış eşiği
+    regime_gate: bool = False      # yalnızca günlük yükselen trendde (fiyat>EMA50>EMA200) gir
+    max_losses: int = 0            # art arda bu kadar zararlı işlemden sonra mola (0 = kapalı)
+    pause_days: int = 10           # mola süresi (işlem günü)
+    risk_pct: float = 0.0          # işlem başına riske edilecek sermaye (0 = bütçenin tamamı)
+    edge_gate: bool = False        # konsey: öğrenilen sinyallerin geçmişte kâr ettirdiği kanıtlanmalı
+    trend_ride: bool = False       # güçlü trendde hedef tavanı kalkar, radar susar → kâr koşar
 
 
 PROFILES: dict[str, dict] = {
     "temkinli": {"zone": (0.5, 0.618), "vol_mult": 1.5, "trend_ma": 200, "breakout": False,
                  "ema_bounce": False, "stop_atr_max": 3.0, "be_r": 1.0, "trail_r": 1.5,
-                 "trail_atr": 2.5, "tp_r": (), "cooldown": 5},
+                 "trail_atr": 2.5, "tp_r": (), "cooldown": 5, "trend_ride": True},
     "dengeli": {"zone": (0.382, 0.618), "vol_mult": 1.3, "trend_ma": 50, "breakout": False,
                 "ema_bounce": True, "stop_atr_max": 2.5, "be_r": 1.0, "trail_r": 1.2,
-                "trail_atr": 2.5, "tp_r": (), "cooldown": 3},
+                "trail_atr": 2.5, "tp_r": (), "cooldown": 3, "regime_gate": True,
+                "max_losses": 2, "pause_days": 10, "risk_pct": 0.04, "trend_ride": True},
     "agresif": {"zone": (0.236, 0.618), "vol_mult": 1.2, "trend_ma": 50, "breakout": True,
                 "ema_bounce": True, "stop_atr_max": 2.0, "be_r": 0.8, "trail_r": 1.0,
-                "trail_atr": 3.0, "tp_r": (1.5, 3.0, 5.0), "cooldown": 2},
+                "trail_atr": 3.0, "tp_r": (1.5, 3.0, 5.0), "cooldown": 2, "regime_gate": True,
+                "max_losses": 2, "pause_days": 10, "risk_pct": 0.05, "trend_ride": True},
     "akilli": {"zone": (0.236, 0.618), "vol_mult": 1.2, "trend_ma": 50, "breakout": False,
                "ema_bounce": False, "stop_atr_max": 2.0, "be_r": 1.0, "trail_r": 1.5,
-               "trail_atr": 3.0, "tp_r": (2.0, 4.0, 6.0), "cooldown": 3, "smart": True},
+               "trail_atr": 3.0, "tp_r": (2.0, 4.0, 6.0), "cooldown": 3, "smart": True,
+               "regime_gate": True, "max_losses": 2, "pause_days": 10, "risk_pct": 0.05,
+               "edge_gate": True, "trend_ride": True},
 }
 PROFILE_TXT = {
     "temkinli": "🐢 Temkinli — yalnızca 0.5–0.618 Fib + güçlü hacim (1.5×), EMA200 üstü. Az ama "
@@ -100,10 +110,13 @@ PROFILE_TXT = {
               "ağırlığını bu hissenin GEÇMİŞİNDEN öğrenir (yalnızca o ana kadarki veriyle, her "
               "~5 günde yeniden); işe yaramayan sinyaller kendiliğinden susar. Skor eğitim "
               "döneminin en iyi %15'ine çıkınca girer, en zayıf %35'ine düşünce 'sinyal bozuldu' "
-              "diye çıkar. Stop/hedef/radar/giyotin kuralları aynen geçerli.",
+              "diye çıkar. Yalnızca yükselen trend rejiminde ve öğrenilen sinyaller geçmişte "
+              "gerçekten kâr ettirdiyse işlem açar. İşlem başına risk %5, art arda 2 zararda "
+              "10 gün mola, güçlü trendde 🏄 trend modu.",
     "agresif": "🔥 Agresif — Fib 0.236–0.618 + EMA21 sekmesi + 20 saatlik zirve KIRILIMI, hacim "
                "1.2×, EMA50 üstü; daha sıkı stop (≤2 ATR), hedefler 1.5R / 3R / 5R, stop +0.8R'de "
-               "maliyete, trend sürerken geniş iz süren stop (3 ATR) ile kâr koşturur.",
+               "maliyete, trend sürerken geniş iz süren stop (3 ATR) ile kâr koşturur. Yalnızca yükselen "
+               "trendde girer, işlem başına risk %5, art arda 2 zararda 10 gün mola.",
 }
 
 
@@ -226,6 +239,9 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                 return ""
             return cnl.top_contrib(FALL.iloc[i], w_, CL["mu"], CL["sd"], CL["cols"])
     t_in_pos = 0
+    loss_streak = 0
+    pause_until = -1
+    trend_on = False
 
     n = len(h1)
     sl_line = np.full(n, np.nan)
@@ -277,7 +293,8 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
         return q
 
     def close_trade(i, why):
-        nonlocal tr_open, radar_on, tps, tp_i, cool, free_done
+        nonlocal tr_open, radar_on, tps, tp_i, cool, free_done, loss_streak, pause_until, trend_on
+        trend_on = False
         if tr_open is None:
             return
         pnl = tr_open["sold"] - tr_open["cost"]
@@ -287,6 +304,12 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                        "R": pnl / (tr_open["risk"] * tr_open["q"]) if tr_open["risk"] > 0 else np.nan,
                        "Son çıkış": why, "Satışlar": " · ".join(tr_open["parts"])})
         tr_open, radar_on, tps, tp_i, cool, free_done = None, False, [], 0, p.cooldown, False
+        loss_streak = loss_streak + 1 if pnl < 0 else 0
+        if p.max_losses and loss_streak >= p.max_losses:
+            pause_until = i + p.pause_days * 7
+            ev(i, "⏸️ Mola", f"art arda {loss_streak} zararlı işlem — {p.pause_days} işlem günü "
+               "yeni giriş yok (devre kesici)")
+            loss_streak = 0
 
     def targets(lg: Leg, ent: float, risk: float) -> list[float]:
         if p.tp_r:
@@ -403,9 +426,23 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                     if stop > prev + 0.25 * atr_d:
                         ev(i, "🛡️ Stop yukarı", f"{prev:.2f} → {stop:.2f}")
                     # 4) dinamik hedef (gün başında)
-                    if new_day and tp_i < len(tps):
+                    ax, pdi, mdi, rs = cr["adx"], cr["pdi"], cr["mdi"], cr["rsi"]
+                    strong = bool(p.trend_ride and ax >= p.adx_strong and pdi > mdi
+                                  and cr["close"] > cr["ema50"] > cr["ema200"])
+                    if strong and new_day and tp_i < len(tps):
                         t = tps[tp_i]
-                        ax, pdi, mdi, rs = cr["adx"], cr["pdi"], cr["mdi"], cr["rsi"]
+                        nt = max(t, c[i] + 1.0 * atr_d)        # tavan yok: hedef fiyatın 1 ATR önünde
+                        if nt > t + 0.25 * atr_d:
+                            tps[tp_i] = nt
+                            if not trend_on:
+                                ev(i, "🏄 Trend modu", f"güçlü trend (ADX {ax:.0f}, fiyat>EMA50>EMA200): "
+                                   "hedef tavanı kalktı, radar sustu — kâr iz süren stopla koşturuluyor")
+                    if strong != trend_on:
+                        if trend_on and not strong:
+                            ev(i, "🏁 Trend modu bitti", f"ADX {ax:.0f} — normal hedef/radar kuralları")
+                        trend_on = strong
+                    if (not strong) and new_day and tp_i < len(tps):
+                        t = tps[tp_i]
                         base = tps0[tp_i] if tp_i < len(tps0) else t
                         cap = next((x for x in exts if x > base + 1e-9), base + 1.5 * atr_d)
                         if ax >= p.adx_strong and pdi > mdi and rs > 55:
@@ -420,8 +457,8 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                                 tps[tp_i] = nt
                                 ev(i, "📉 Hedef daraltıldı", f"yatay piyasa (ADX {ax:.0f}): "
                                    f"TP{tp_i + 1} {t:.2f} → {nt:.2f}")
-                    # 5) %85 radar & giyotin
-                    if tp_i < len(tps):
+                    # 5) %85 radar & giyotin (trend modunda susar)
+                    if tp_i < len(tps) and not trend_on:
                         t = tps[tp_i]
                         prog = (c[i] - entry) / (t - entry) if t > entry else 0
                         if not radar_on and prog >= p.radar:
@@ -438,9 +475,14 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                                    f"{c[i]:.2f}'den satıldı, kâr kilitlendi", c[i])
                                 close_trade(i, "giyotin")
         # ------------------------------------------------ düzken: akıllı kontrol
-        elif p.plan != "yonet" and (p.loop or not trades) and cool <= 0:
+        elif p.plan != "yonet" and (p.loop or not trades) and cool <= 0 and i >= pause_until:
             ma = cr["ema200"] if p.trend_ma >= 200 else cr["ema50"]
             ok_trend = (not p.trend_filter) or (np.isfinite(ma) and cr["close"] > ma)
+            if p.regime_gate:
+                reg = bool(np.isfinite(cr["ema50"]) and np.isfinite(cr["ema200"])
+                           and cr["close"] > cr["ema50"] > cr["ema200"])
+                diag["yükselen trend rejimi"] = diag.get("yükselen trend rejimi", 0) + int(reg)
+                ok_trend = ok_trend and reg
             diag["bar"] += 1
             up_ok = lg.ok and lg.up and np.isfinite(zt[i])
             touched = up_ok and np.nanmin(lo[max(0, i - 6):i + 1]) <= zt[i]
@@ -468,6 +510,11 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                    "1s EMA21 sekmesi" if bounce else "")
             if p.smart:
                 smart_ok = bool(np.isfinite(sc_[i]) and np.isfinite(ti_[i]) and sc_[i] >= ti_[i])
+                if p.edge_gate:
+                    e_, b_ = CL["edge"][i], CL["base"][i]
+                    edge_ok = bool(np.isfinite(e_) and e_ > 0 and e_ > b_)
+                    diag["öğrenilen avantaj > 0"] = diag.get("öğrenilen avantaj > 0", 0) + int(edge_ok)
+                    smart_ok = smart_ok and edge_ok
                 diag["konsey skoru ≥ eşik"] = diag.get("konsey skoru ≥ eşik", 0) + int(smart_ok)
                 why = (f"🧠 konsey skoru {sc_[i]:+.2f} ≥ eşik {ti_[i]:+.2f} · {_why(i)}"
                        if smart_ok else "")
@@ -483,6 +530,9 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                 sl0 = max(sl0, px - p.stop_atr_max * atr_d)
                 risk = px - sl0
                 q = math.floor(cash / px) if px > 0 else 0
+                if p.risk_pct and risk > 0:
+                    eq_now = cash + qty * px
+                    q = min(q, math.floor(eq_now * p.risk_pct / risk))
                 if risk > 0 and q > 0:
                     fill(i, "AL", q, px, "akıllı kontrol")
                     entry, stop, r0, hh = px, sl0, risk, px

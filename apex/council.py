@@ -185,6 +185,8 @@ def learn_scores(F: pd.DataFrame, close: np.ndarray, horizon: int = 14, retrain:
     score = np.full(n, np.nan)
     thr_in = np.full(n, np.nan)
     thr_out = np.full(n, np.nan)
+    edge = np.full(n, np.nan)          # eğitimde skor ≥ giriş eşiğiyken ortalama ileri getiri
+    base = np.full(n, np.nan)          # eğitimde tüm barların ortalama ileri getirisi
     W_hist: list[tuple[int, np.ndarray, np.ndarray]] = []
     w = mu = sd = None
     for t in range(min_train + horizon, n):
@@ -207,13 +209,18 @@ def learn_scores(F: pd.DataFrame, close: np.ndarray, horizon: int = 14, retrain:
             w = np.where(np.abs(tstat) >= t_cut, np.clip(tstat / 4, -1, 1), 0.0)
             S_tr = np.nansum(np.nan_to_num((Xt - mu) / sd) * w, axis=1)
             qi, qo = np.quantile(S_tr, q_in), np.quantile(S_tr, q_out)
+            top = yt[S_tr >= qi]
+            e_top = float(top.mean()) if len(top) >= 20 else np.nan
+            e_base = float(yt.mean())
             W_hist.append((t, w.copy(), tstat.copy()))
         if w is None:
             continue
         z = np.nan_to_num((X[t] - mu) / sd)
         score[t] = float(np.sum(z * w))
         thr_in[t], thr_out[t] = qi, qo
+        edge[t], base[t] = e_top, e_base
     return {"score": score, "thr_in": thr_in, "thr_out": thr_out, "W": W_hist,
+            "edge": edge, "base": base,
             "cols": list(F.columns), "mu": mu, "sd": sd}
 
 
