@@ -77,6 +77,22 @@ def main(only: list[str]) -> int:
                                  for a, v in d["assets"].items())
         step("decision", f)
 
+    if want("akis") or want("karar"):
+        def f():
+            t, failed = cmp.flows()
+            return (t, failed), f"{len(t)} varlık"
+        step("flows", f)
+
+        def f():
+            m, failed = cmp.markets()
+            return (m, failed), f"{len(m)} varlık · çekilemeyen: {len(failed)}"
+        step("markets", f)
+
+        def f():
+            g, failed = cmp.gold()
+            return (g, failed), f"{len(g[0])} gösterge"
+        step("gold", f)
+
     if want("tema"):
         def f():
             r = cmp.theme_rotation()
