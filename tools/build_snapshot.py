@@ -125,6 +125,22 @@ def main(only: list[str]) -> int:
             return p, f"{ok}/{len(pu)} hisse"
         step("plans", f)
 
+    if want("hype"):
+        def f():
+            h = cmp.hype()
+            if h["social"].empty and h["fund"].empty:
+                raise RuntimeError("; ".join(h["errs"]) or "veri yok")
+            return h, (f"{len(h['social'])} sosyal sembol · {len(h['fund'])} temel veri"
+                       + (f" · hata: {'; '.join(h['errs'])}" if h["errs"] else ""))
+        step("hype", f)
+
+        def f():
+            h = snap.load("hype", max_age_h=6) or {}
+            syms = sorted(set(h.get("top", [])) | set(h.get("bio", [])))
+            p = cmp.plans(syms)
+            return p, f"{len(syms)} hype/biotech hissesi"
+        step("plans_hype", f)
+
     if want("bilanco"):
         def f():
             e = dta.fetch_earnings_calendar(stocks)
