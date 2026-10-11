@@ -1,74 +1,92 @@
 {
  "short hacim (FINRA)": {
   "ok": true,
-  "ts": "2026-10-10T19:51:20+00:00",
+  "ts": "2026-10-11T18:48:34+00:00",
   "sure_sn": 0.0,
   "not": "30 gün, son 20261009"
  },
  "kripto (CoinGecko)": {
   "ok": true,
-  "ts": "2026-10-10T19:51:37+00:00",
+  "ts": "2026-10-11T18:48:56+00:00",
   "sure_sn": 0.0,
   "not": ""
  },
  "likidite (FRED)": {
   "ok": true,
-  "ts": "2026-10-10T19:59:16+00:00",
+  "ts": "2026-10-11T18:56:35+00:00",
   "sure_sn": 0.0,
   "not": "3072 gün, eksik seri: yok"
  },
  "macro_frames": {
   "ok": true,
-  "ts": "2026-10-10T19:59:17+00:00",
-  "sure_sn": 1.2,
+  "ts": "2026-10-11T18:56:37+00:00",
+  "sure_sn": 1.8,
   "not": "18 seri, 0 çekilemedi"
  },
  "rotation": {
   "ok": true,
-  "ts": "2026-10-10T19:59:19+00:00",
-  "sure_sn": 1.7,
+  "ts": "2026-10-11T18:56:40+00:00",
+  "sure_sn": 2.3,
   "not": "23 gösterge, çekilemeyen: 0"
  },
  "decision": {
   "ok": true,
-  "ts": "2026-10-10T19:59:23+00:00",
+  "ts": "2026-10-11T18:56:43+00:00",
   "sure_sn": 3.5,
   "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
  },
  "theme_rotation": {
   "ok": true,
-  "ts": "2026-10-10T19:59:28+00:00",
-  "sure_sn": 5.5,
+  "ts": "2026-10-11T18:57:04+00:00",
+  "sure_sn": 8.7,
   "not": "52 tema, 92 ETF"
  },
  "theme_perf": {
   "ok": true,
-  "ts": "2026-10-10T19:59:31+00:00",
-  "sure_sn": 3.1,
+  "ts": "2026-10-11T18:57:09+00:00",
+  "sure_sn": 4.9,
   "not": "52 tema"
  },
  "scan_1d": {
   "ok": true,
-  "ts": "2026-10-10T20:01:19+00:00",
-  "sure_sn": 107.5,
+  "ts": "2026-10-11T18:58:59+00:00",
+  "sure_sn": 110.6,
   "not": "544 sembol"
  },
  "scan_1wk": {
   "ok": true,
-  "ts": "2026-10-10T20:02:33+00:00",
-  "sure_sn": 74.8,
+  "ts": "2026-10-11T19:00:01+00:00",
+  "sure_sn": 61.5,
   "not": "544 sembol"
  },
  "earnings": {
   "ok": true,
-  "ts": "2026-10-10T20:05:45+00:00",
-  "sure_sn": 166.4,
-  "not": "429/455 hisse"
+  "ts": "2026-10-11T19:03:13+00:00",
+  "sure_sn": 159.3,
+  "not": "431/455 hisse"
  },
  "plans": {
   "ok": true,
-  "ts": "2026-10-10T20:02:59+00:00",
-  "sure_sn": 25.2,
+  "ts": "2026-10-11T19:00:34+00:00",
+  "sure_sn": 33.1,
   "not": "403/454 hisse"
+ },
+ "flows": {
+  "ok": true,
+  "ts": "2026-10-11T18:56:44+00:00",
+  "sure_sn": 0.9,
+  "not": "12 varlık"
+ },
+ "markets": {
+  "ok": true,
+  "ts": "2026-10-11T18:56:54+00:00",
+  "sure_sn": 10.2,
+  "not": "12 varlık · çekilemeyen: 0"
+ },
+ "gold": {
+  "ok": true,
+  "ts": "2026-10-11T18:56:55+00:00",
+  "sure_sn": 0.8,
+  "not": "11 gösterge"
  }
 }
