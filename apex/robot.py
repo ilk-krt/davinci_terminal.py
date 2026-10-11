@@ -71,6 +71,10 @@ class Params:
     trail_atr: float = 2.5         # iz süren stop: zirve − k × 1s ATR
     tp_r: tuple = ()               # boş değilse hedefler R katı (ör. 1.5, 3, 5)
     cooldown: int = 5              # çıkıştan sonra kaç mum bekle
+    smart: bool = False            # 🧠 sinyal konseyi (öğrenen skor) ile giriş/çıkış
+    horizon: int = 14              # konseyin öğrendiği ileri getiri ufku (1s mum)
+    q_in: float = 0.85             # giriş eşiği: eğitim skorlarının yüzdeliği
+    q_out: float = 0.35            # çıkış eşiği
 
 
 PROFILES: dict[str, dict] = {
@@ -83,11 +87,20 @@ PROFILES: dict[str, dict] = {
     "agresif": {"zone": (0.236, 0.618), "vol_mult": 1.2, "trend_ma": 50, "breakout": True,
                 "ema_bounce": True, "stop_atr_max": 2.0, "be_r": 0.8, "trail_r": 1.0,
                 "trail_atr": 3.0, "tp_r": (1.5, 3.0, 5.0), "cooldown": 2},
+    "akilli": {"zone": (0.236, 0.618), "vol_mult": 1.2, "trend_ma": 50, "breakout": False,
+               "ema_bounce": False, "stop_atr_max": 2.0, "be_r": 1.0, "trail_r": 1.5,
+               "trail_atr": 3.0, "tp_r": (2.0, 4.0, 6.0), "cooldown": 3, "smart": True},
 }
 PROFILE_TXT = {
     "temkinli": "🐢 Temkinli — yalnızca 0.5–0.618 Fib + güçlü hacim (1.5×), EMA200 üstü. Az ama "
                 "seçici işlem.",
     "dengeli": "⚖️ Dengeli — 0.382–0.618 Fib + 1s EMA21 sekmesi, hacim 1.3×, EMA50 üstü.",
+    "akilli": "🧠 Akıllı (sinyal konseyi) — APEX core, OMNI, Şahane, Konfluans, V710 (Q-dry, ODI, "
+              "efor), VSA & Delta ve Mum Gücü'nden ~50 sinyali BİRLİKTE oylatır. Her sinyalin "
+              "ağırlığını bu hissenin GEÇMİŞİNDEN öğrenir (yalnızca o ana kadarki veriyle, her "
+              "~5 günde yeniden); işe yaramayan sinyaller kendiliğinden susar. Skor eğitim "
+              "döneminin en iyi %15'ine çıkınca girer, en zayıf %35'ine düşünce 'sinyal bozuldu' "
+              "diye çıkar. Stop/hedef/radar/giyotin kuralları aynen geçerli.",
     "agresif": "🔥 Agresif — Fib 0.236–0.618 + EMA21 sekmesi + 20 saatlik zirve KIRILIMI, hacim "
                "1.2×, EMA50 üstü; daha sıkı stop (≤2 ATR), hedefler 1.5R / 3R / 5R, stop +0.8R'de "
                "maliyete, trend sürerken geniş iz süren stop (3 ATR) ile kâr koşturur.",
@@ -190,6 +203,29 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
     first = int(np.searchsorted(idx.values, np.datetime64(st_ts)))
+    CL = None
+    if p.smart:
+        from apex import council as cnl
+        FH = cnl.engine_features(h1)
+        FD = cnl.align_daily(idx, cnl.daily_features(d))
+        FALL = pd.concat([FH, FD], axis=1).fillna(0.0)
+        CL = cnl.learn_scores(FALL, c, horizon=p.horizon, q_in=p.q_in, q_out=p.q_out)
+        CL["F"] = FALL
+        sc_, ti_, to_ = CL["score"], CL["thr_in"], CL["thr_out"]
+        w_ptr = [0]
+
+        def _w_at(i):
+            Wh = CL["W"]
+            while w_ptr[0] + 1 < len(Wh) and Wh[w_ptr[0] + 1][0] <= i:
+                w_ptr[0] += 1
+            return Wh[w_ptr[0]][1] if Wh else None
+
+        def _why(i):
+            w_ = _w_at(i)
+            if w_ is None:
+                return ""
+            return cnl.top_contrib(FALL.iloc[i], w_, CL["mu"], CL["sd"], CL["cols"])
+    t_in_pos = 0
 
     n = len(h1)
     sl_line = np.full(n, np.nan)
@@ -313,6 +349,17 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
 
         # ------------------------------------------------ pozisyondayken
         if qty > 0:
+            t_in_pos += 1
+            # 0) 🧠 konsey: sinyal bozulduysa çık
+            if (p.smart and t_in_pos >= 4 and np.isfinite(sc_[i]) and np.isfinite(to_[i])
+                    and sc_[i] <= to_[i] and lo[i] > stop
+                    and np.isfinite(e21h[i]) and c[i] < e21h[i]):     # fiyat da 1s EMA21 altında
+                q_ = qty
+                fill(i, "SAT", q_, c[i], "sinyal bozuldu")
+                ev(i, "🧠 Sinyal bozuldu", f"konsey skoru {sc_[i]:+.2f} ≤ çıkış eşiği {to_[i]:+.2f} "
+                   f"— {q_:g} adet {c[i]:.2f}'den satıldı. Ağırlıklı etkenler: {_why(i)}", c[i])
+                close_trade(i, "sinyal bozuldu")
+        if qty > 0:
             # 1) gap/stop
             if lo[i] <= stop:
                 px = min(o[i], stop) if o[i] < stop else stop
@@ -419,6 +466,12 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
             why = ("Fib bölgesi + hacimli yeşil 1s mum" if fib_sig else
                    "20 saatlik zirve kırılımı (hacimli)" if brk else
                    "1s EMA21 sekmesi" if bounce else "")
+            if p.smart:
+                smart_ok = bool(np.isfinite(sc_[i]) and np.isfinite(ti_[i]) and sc_[i] >= ti_[i])
+                diag["konsey skoru ≥ eşik"] = diag.get("konsey skoru ≥ eşik", 0) + int(smart_ok)
+                why = (f"🧠 konsey skoru {sc_[i]:+.2f} ≥ eşik {ti_[i]:+.2f} · {_why(i)}"
+                       if smart_ok else "")
+                fib_sig = False
             if ok_trend and why:
                 diag["hepsi birden"] += 1
                 px = c[i]
@@ -433,6 +486,7 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                 if risk > 0 and q > 0:
                     fill(i, "AL", q, px, "akıllı kontrol")
                     entry, stop, r0, hh = px, sl0, risk, px
+                    t_in_pos = 0
                     exts = sorted(x for x in (lg.levels.get(k) for k in (0.0, 1.272, 1.618, 2.618))
                                   if x is not None) if lg.ok else []
                     tps, tp_i, radar_on, free_done = targets(lg if lg.ok else Leg(True, True, {}),
@@ -470,7 +524,12 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                           "zt": zt, "zb": zb}, index=idx)
     return {"events": pd.DataFrame(events), "fills": pd.DataFrame(fills), "trades": T,
             "equity": eq, "stats": stats, "state": state, "lines": lines, "h1": h1,
-            "start": st_ts, "diag": diag}
+            "start": st_ts, "diag": diag,
+            "council": ({"score": pd.Series(CL["score"], index=idx),
+                         "thr_in": pd.Series(CL["thr_in"], index=idx),
+                         "thr_out": pd.Series(CL["thr_out"], index=idx),
+                         "weights": __import__("apex.council", fromlist=["x"]).weights_table(CL)}
+                        if CL is not None else None)}
 
 
 def optimize(df1h: pd.DataFrame, dfd: pd.DataFrame, start, budget: float = 10_000.0,

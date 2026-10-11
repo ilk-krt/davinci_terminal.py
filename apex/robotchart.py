@@ -34,10 +34,18 @@ def draw(R: dict[str, Any], label: str, bars: int = 220, width: float = 12, heig
     n = len(d)
     x = np.arange(n)
     o, hi, lo, c = (d[k].to_numpy() for k in ("Open", "High", "Low", "Close"))
-    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.1], hspace=0.05, left=0.015, right=0.86,
-                          top=0.90, bottom=0.08)
-    ax, axe = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
-    for a in (ax, axe):
+    CN = R.get("council")
+    if CN is not None:
+        gs = fig.add_gridspec(3, 1, height_ratios=[4, 1.0, 1.0], hspace=0.06, left=0.015,
+                              right=0.86, top=0.90, bottom=0.08)
+        ax, axs, axe = fig.add_subplot(gs[0]), fig.add_subplot(gs[1]), fig.add_subplot(gs[2])
+        axes = (ax, axs, axe)
+    else:
+        gs = fig.add_gridspec(2, 1, height_ratios=[4, 1.1], hspace=0.05, left=0.015, right=0.86,
+                              top=0.90, bottom=0.08)
+        ax, axe = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
+        axs, axes = None, (ax, axe)
+    for a in axes:
         a.set_facecolor(PANEL)
         a.grid(color=GRID, lw=0.6)
         a.tick_params(colors=MUTED, labelsize=7)
@@ -121,6 +129,21 @@ def draw(R: dict[str, Any], label: str, bars: int = 220, width: float = 12, heig
     leg = ax.legend(loc="upper left", fontsize=6.5, facecolor=PANEL, edgecolor=GRID)
     for t in leg.get_texts():
         t.set_color(TXT)
+    # konsey skoru
+    if axs is not None:
+        scv = CN["score"].iloc[s0:end].to_numpy()
+        axs.plot(x, scv, color="#b39dff", lw=1.0, label="konsey skoru")
+        axs.plot(x, CN["thr_in"].iloc[s0:end].to_numpy(), color="#00e676", lw=0.8, ls="--",
+                 label="giriş eşiği")
+        axs.plot(x, CN["thr_out"].iloc[s0:end].to_numpy(), color="#ff5252", lw=0.8, ls="--",
+                 label="çıkış eşiği")
+        axs.axhline(0, color=GRID, lw=0.8)
+        axs.set_xlim(-1, n + 3)
+        axs.set_yticklabels([])
+        plt.setp(axs.get_xticklabels(), visible=False)
+        lg2 = axs.legend(loc="upper left", fontsize=6, facecolor=PANEL, edgecolor=GRID, ncol=3)
+        for t in lg2.get_texts():
+            t.set_color(TXT)
     # sermaye eğrisi
     eq = R["equity"].reindex(d.index).ffill()
     axe.plot(x, eq.to_numpy(), color="#29b6f6", lw=1.2)
