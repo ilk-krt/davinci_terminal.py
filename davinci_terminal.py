@@ -2152,11 +2152,24 @@ elif PAGE == "🤖 Robot (simülasyon)":
                           key=f"rb_bnc_{prof_r}")
         tr_r = a7.slider("İz süren stop (× 1s ATR)", 1.5, 4.0, float(P0["trail_atr"]), 0.25,
                          key=f"rb_trail_{prof_r}")
+        a8, a9, a10 = st.columns(3)
+        risk_r = a8.slider("İşlem başına risk (% sermaye, 0 = bütçenin tamamı)", 0.0, 10.0,
+                           float(P0.get("risk_pct", 0.0)) * 100, 0.5, key=f"rb_risk_{prof_r}",
+                           help="Stopa gelirse kaybedilecek tutar. Pozisyon büyüklüğü buna göre "
+                                "hesaplanır; giriş yine tek seferde yapılır.")
+        reg_r = a9.toggle("Yalnızca yükselen trendde gir (fiyat > EMA50 > EMA200)",
+                          bool(P0.get("regime_gate", False)), key=f"rb_reg_{prof_r}")
+        ride_r = a9.toggle("🏄 Trend modu (güçlü trendde hedef tavanı kalkar)",
+                           bool(P0.get("trend_ride", False)), key=f"rb_ride_{prof_r}")
+        ml_r = a10.number_input("Devre kesici: art arda kaç zarardan sonra mola (0 = kapalı)",
+                                0, 5, int(P0.get("max_losses", 0)), 1, key=f"rb_ml_{prof_r}")
     cfg = {**{k: (list(v) if isinstance(v, tuple) else v) for k, v in P0.items()},
            "profile": prof_r, "plan": plan_r, "budget": budget_r,
            "zone": list(rbt.ZONES[zone_r]), "vol_mult": vol_r, "radar": radar_r,
            "stop_atr_max": stopm_r, "trend_filter": trend_r, "loop": loop_r,
            "breakout": brk_r, "ema_bounce": bnc_r, "trail_atr": tr_r,
+           "risk_pct": risk_r / 100, "regime_gate": reg_r, "trend_ride": ride_r,
+           "max_losses": int(ml_r),
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
     period = b1.selectbox("Geçmişte dene: dönem", ["Son 3 ay", "Son 6 ay", "Son 12 ay",
