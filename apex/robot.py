@@ -43,6 +43,7 @@ PLANS = {
 }
 MAX_STOP_ATR = 3.0
 ZONES = {"0.5–0.618 (altın bölge)": (0.5, 0.618), "0.382–0.618": (0.382, 0.618),
+         "0.236–0.618 (geniş)": (0.236, 0.618),
          "0.618–0.786 (derin)": (0.618, 0.786)}
 
 
@@ -60,6 +61,44 @@ class Params:
     qty: float = 0.0               # yonet
     cost: float = 0.0              # yonet
     user_stop: float = 0.0         # yonet (0 = otomatik)
+    profile: str = "temkinli"
+    breakout: bool = False         # 20 saatlik zirve kırılımı ile giriş
+    ema_bounce: bool = False       # 1s EMA21'den sekme ile giriş
+    trend_ma: int = 200            # günlük trend filtresi ortalaması (200 / 50)
+    stop_atr_max: float = 3.0      # stop en fazla kaç günlük ATR uzakta
+    be_r: float = 1.0              # kaç R kârda stop maliyete
+    trail_r: float = 1.5           # kaç R'den sonra iz süren stop
+    trail_atr: float = 2.5         # iz süren stop: zirve − k × 1s ATR
+    tp_r: tuple = ()               # boş değilse hedefler R katı (ör. 1.5, 3, 5)
+    cooldown: int = 5              # çıkıştan sonra kaç mum bekle
+
+
+PROFILES: dict[str, dict] = {
+    "temkinli": {"zone": (0.5, 0.618), "vol_mult": 1.5, "trend_ma": 200, "breakout": False,
+                 "ema_bounce": False, "stop_atr_max": 3.0, "be_r": 1.0, "trail_r": 1.5,
+                 "trail_atr": 2.5, "tp_r": (), "cooldown": 5},
+    "dengeli": {"zone": (0.382, 0.618), "vol_mult": 1.3, "trend_ma": 50, "breakout": False,
+                "ema_bounce": True, "stop_atr_max": 2.5, "be_r": 1.0, "trail_r": 1.2,
+                "trail_atr": 2.5, "tp_r": (), "cooldown": 3},
+    "agresif": {"zone": (0.236, 0.618), "vol_mult": 1.2, "trend_ma": 50, "breakout": True,
+                "ema_bounce": True, "stop_atr_max": 2.0, "be_r": 0.8, "trail_r": 1.0,
+                "trail_atr": 3.0, "tp_r": (1.5, 3.0, 5.0), "cooldown": 2},
+}
+PROFILE_TXT = {
+    "temkinli": "🐢 Temkinli — yalnızca 0.5–0.618 Fib + güçlü hacim (1.5×), EMA200 üstü. Az ama "
+                "seçici işlem.",
+    "dengeli": "⚖️ Dengeli — 0.382–0.618 Fib + 1s EMA21 sekmesi, hacim 1.3×, EMA50 üstü.",
+    "agresif": "🔥 Agresif — Fib 0.236–0.618 + EMA21 sekmesi + 20 saatlik zirve KIRILIMI, hacim "
+               "1.2×, EMA50 üstü; daha sıkı stop (≤2 ATR), hedefler 1.5R / 3R / 5R, stop +0.8R'de "
+               "maliyete, trend sürerken geniş iz süren stop (3 ATR) ile kâr koşturur.",
+}
+
+
+def params_for(profile: str, **over) -> "Params":
+    kw = dict(PROFILES.get(profile, PROFILES["temkinli"]))
+    kw.update({k: v for k, v in over.items() if v is not None})
+    kw["profile"] = profile
+    return Params(**kw)
 
 
 # ------------------------------------------------------------------ göstergeler
@@ -98,6 +137,7 @@ def daily_context(dfd: pd.DataFrame) -> pd.DataFrame:
     ctx = pd.DataFrame(index=d.index)
     ctx["atr"] = pfib.atr_rma(d, 14)
     ctx["ema200"] = ema(d["Close"], 200)
+    ctx["ema50"] = ema(d["Close"], 50)
     ctx["rsi"] = rsi(d["Close"], 14)
     ctx["close"] = d["Close"]
     ctx = ctx.join(adx(d))
@@ -144,6 +184,8 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     # 1 saatlik göstergeler (tüm geçmişle ısıtılır)
     atr1 = pfib.atr_rma(h1, 14)
     vma = h1["Volume"].rolling(20).mean()
+    e21h = ema(h1["Close"], 21).to_numpy()
+    e50h = ema(h1["Close"], 50).to_numpy()
     o, hi, lo, c, v = (h1[k].to_numpy() for k in ("Open", "High", "Low", "Close", "Volume"))
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
@@ -174,7 +216,7 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     free_done = False
     exts: list[float] = []
     tps0: list[float] = []
-    diag = {"bar": 0, "yükselen bacak": 0, "trend (EMA200)": 0, "Fib bölgesinde": 0,
+    diag = {"bar": 0, "yükselen bacak": 0, "Fib bölgesinde": 0,
             "yeşil mum": 0, "hacim ≥ eşik": 0, "hepsi birden": 0}
 
     def ev(i, kind, msg, px=None):
@@ -208,9 +250,16 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                        "K/Z $": pnl, "K/Z %": pnl / tr_open["cost"] * 100 if tr_open["cost"] else np.nan,
                        "R": pnl / (tr_open["risk"] * tr_open["q"]) if tr_open["risk"] > 0 else np.nan,
                        "Son çıkış": why, "Satışlar": " · ".join(tr_open["parts"])})
-        tr_open, radar_on, tps, tp_i, cool, free_done = None, False, [], 0, 5, False
+        tr_open, radar_on, tps, tp_i, cool, free_done = None, False, [], 0, p.cooldown, False
 
     def targets(lg: Leg, ent: float, risk: float) -> list[float]:
+        if p.tp_r:
+            rr = [ent + k * risk for k in p.tp_r]
+            if p.plan == "vurkac":
+                return [rr[1] if len(rr) > 1 else rr[0]]
+            if p.plan == "bedava":
+                return [rr[0], rr[-1]]
+            return rr[:3]
         L = lg.levels
         cands = sorted(x for x in (L.get(0.0), L.get(1.272), L.get(1.618), L.get(2.618))
                        if x is not None and x > ent)
@@ -300,10 +349,10 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                     hh = max(hh, c[i])
                     # 3) stop asla aşağı inmez
                     prev = stop
-                    if c[i] >= entry + r0:
+                    if c[i] >= entry + p.be_r * r0:
                         stop = max(stop, entry)
-                    if c[i] >= entry + 1.5 * r0 and np.isfinite(a1[i]):
-                        stop = max(stop, hh - 2.5 * a1[i])
+                    if c[i] >= entry + p.trail_r * r0 and np.isfinite(a1[i]):
+                        stop = max(stop, hh - p.trail_atr * a1[i])
                     if stop > prev + 0.25 * atr_d:
                         ev(i, "🛡️ Stop yukarı", f"{prev:.2f} → {stop:.2f}")
                     # 4) dinamik hedef (gün başında)
@@ -343,7 +392,8 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                                 close_trade(i, "giyotin")
         # ------------------------------------------------ düzken: akıllı kontrol
         elif p.plan != "yonet" and (p.loop or not trades) and cool <= 0:
-            ok_trend = (not p.trend_filter) or (np.isfinite(cr["ema200"]) and cr["close"] > cr["ema200"])
+            ma = cr["ema200"] if p.trend_ma >= 200 else cr["ema50"]
+            ok_trend = (not p.trend_filter) or (np.isfinite(ma) and cr["close"] > ma)
             diag["bar"] += 1
             up_ok = lg.ok and lg.up and np.isfinite(zt[i])
             touched = up_ok and np.nanmin(lo[max(0, i - 6):i + 1]) <= zt[i]
@@ -351,31 +401,47 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
             rng = hi[i] - lo[i]
             green = c[i] > o[i] and rng > 0 and (c[i] - lo[i]) / rng >= 0.5
             vol_ok = bool(np.isfinite(vm[i]) and vm[i] > 0 and v[i] >= p.vol_mult * vm[i])
+            vol_lite = bool(np.isfinite(vm[i]) and vm[i] > 0 and v[i] >= 1.0 * vm[i])
+            brk = bool(p.breakout and i > 20 and c[i] > np.max(hi[i - 20:i]) and green and vol_ok)
+            bounce = bool(p.ema_bounce and np.isfinite(e21h[i]) and lo[i] <= e21h[i] < c[i]
+                          and e21h[i] > e50h[i] and green and vol_lite)
+            fib_sig = bool(up_ok and in_zone and green and vol_ok)
             diag["yükselen bacak"] += int(up_ok)
-            diag["trend (EMA200)"] += int(ok_trend)
+            diag["trend (EMA200)" if p.trend_ma >= 200 else "trend (EMA50)"] = \
+                diag.get("trend (EMA200)" if p.trend_ma >= 200 else "trend (EMA50)", 0) + int(ok_trend)
             diag["Fib bölgesinde"] += int(in_zone)
             diag["yeşil mum"] += int(green)
             diag["hacim ≥ eşik"] += int(vol_ok)
-            if up_ok and ok_trend:
-                if in_zone and green and vol_ok:
-                    diag["hepsi birden"] += 1
-                    sl0 = min(lg.levels.get(0.786, zb[i]), float(np.min(lo[max(0, i - 10):i + 1]))) - 0.25 * atr_d
-                    px = c[i]
-                    sl0 = max(sl0, px - MAX_STOP_ATR * atr_d)     # stop en fazla 3 günlük ATR uzakta
-                    risk = px - sl0
-                    q = math.floor(cash / px) if px > 0 else 0
-                    if risk > 0 and q > 0:
-                        fill(i, "AL", q, px, "akıllı kontrol")
-                        entry, stop, r0, hh = px, sl0, risk, px
-                        exts = sorted(x for x in (lg.levels.get(k) for k in (0.0, 1.272, 1.618, 2.618))
-                                      if x is not None)
-                        tps, tp_i, radar_on, free_done = targets(lg, px, risk), 0, False, False
-                        tps0 = list(tps)
-                        tr_open = {"t": idx[i], "px": px, "q": q, "cost": q * px, "sold": 0.0,
-                                   "risk": risk, "parts": []}
-                        ev(i, "✅ Giriş", f"Fib bölgesi + hacimli yeşil 1s mum (hacim "
-                           f"{v[i] / vm[i]:.1f}×): {q:g} adet @ {px:.2f} · stop {sl0:.2f} · "
-                           f"hedefler {', '.join(f'{x:.2f}' for x in tps)}", px)
+            if p.breakout:
+                diag["zirve kırılımı"] = diag.get("zirve kırılımı", 0) + int(brk)
+            if p.ema_bounce:
+                diag["EMA21 sekmesi"] = diag.get("EMA21 sekmesi", 0) + int(bounce)
+            why = ("Fib bölgesi + hacimli yeşil 1s mum" if fib_sig else
+                   "20 saatlik zirve kırılımı (hacimli)" if brk else
+                   "1s EMA21 sekmesi" if bounce else "")
+            if ok_trend and why:
+                diag["hepsi birden"] += 1
+                px = c[i]
+                swing_lo = float(np.min(lo[max(0, i - 10):i + 1]))
+                if fib_sig:
+                    sl0 = min(lg.levels.get(0.786, zb[i]), swing_lo) - 0.25 * atr_d
+                else:
+                    sl0 = min(swing_lo, e50h[i] if np.isfinite(e50h[i]) else swing_lo) - 0.25 * atr_d
+                sl0 = max(sl0, px - p.stop_atr_max * atr_d)
+                risk = px - sl0
+                q = math.floor(cash / px) if px > 0 else 0
+                if risk > 0 and q > 0:
+                    fill(i, "AL", q, px, "akıllı kontrol")
+                    entry, stop, r0, hh = px, sl0, risk, px
+                    exts = sorted(x for x in (lg.levels.get(k) for k in (0.0, 1.272, 1.618, 2.618))
+                                  if x is not None) if lg.ok else []
+                    tps, tp_i, radar_on, free_done = targets(lg if lg.ok else Leg(True, True, {}),
+                                                             px, risk), 0, False, False
+                    tps0 = list(tps)
+                    tr_open = {"t": idx[i], "px": px, "q": q, "cost": q * px, "sold": 0.0,
+                               "risk": risk, "parts": []}
+                    ev(i, "✅ Giriş", f"{why} (hacim {v[i] / vm[i]:.1f}×): {q:g} adet @ {px:.2f} · "
+                       f"stop {sl0:.2f} · hedefler {', '.join(f'{x:.2f}' for x in tps)}", px)
         cool -= 1
         if qty > 0:
             sl_line[i], cost_line[i] = stop, entry
@@ -405,3 +471,28 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     return {"events": pd.DataFrame(events), "fills": pd.DataFrame(fills), "trades": T,
             "equity": eq, "stats": stats, "state": state, "lines": lines, "h1": h1,
             "start": st_ts, "diag": diag}
+
+
+def optimize(df1h: pd.DataFrame, dfd: pd.DataFrame, start, budget: float = 10_000.0,
+             plans=("vurkac", "kademeli", "bedava")) -> pd.DataFrame:
+    """Aynı sembol ve dönemde 3 profil × planları dener; getiri ve düşüşe göre sıralar."""
+    rows = []
+    for prof in PROFILES:
+        for pl in plans:
+            try:
+                R = run(df1h, dfd, params_for(prof, plan=pl, budget=budget), start=start)
+            except Exception as exc:                 # noqa: BLE001
+                rows.append({"Profil": prof, "Plan": pl, "Hata": str(exc)})
+                continue
+            s_ = R["stats"]
+            dd = s_["Maks. düşüş %"]
+            rows.append({"Profil": prof, "Plan": pl, "Getiri %": s_["Getiri %"],
+                         "Al-tut %": s_["Al-tut %"], "Maks. düşüş %": dd,
+                         "Getiri / düşüş": (s_["Getiri %"] / abs(dd)) if dd and dd < 0 else np.nan,
+                         "İşlem": s_["İşlem"] + (1 if R["state"]["pozisyonda"] else 0),
+                         "Kazanan %": s_["Kazanan %"], "Ort. R": s_["Ort. R"],
+                         "Şu an": "pozisyonda" if R["state"]["pozisyonda"] else "nakitte"})
+    out = pd.DataFrame(rows)
+    if "Getiri %" in out:
+        out = out.sort_values("Getiri %", ascending=False).reset_index(drop=True)
+    return out
