@@ -38,6 +38,8 @@ from apex import tfview as tfv
 from apex import tvchart as tvc
 from apex import tracking as trk
 from apex import hype as hyp
+from apex import robot as rbt
+from apex import robotchart as rbc
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -441,6 +443,7 @@ def _init_state() -> None:
             "stock_watch": saved.get("stock_watch") or [],
             "portfolio": saved.get("portfolio") or [],
             "biotech_watch": saved.get("biotech_watch") or [],
+            "robots": saved.get("robots") or [],
         }
 
 
@@ -799,17 +802,19 @@ def stock_fundamentals(sym: str, basis: str) -> None:
 # ve yalnızca seçili sayfa hesaplanır (uygulama hızlanır).
 # ==========================================================================
 PAGES = ["🌊 Para Akışı", "🧭 Endeksler & Risk", "🎯 Tema Avcısı",
-         "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🔔 Takip & Portföy", "🗂️ Araçlar"]
+         "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🔔 Takip & Portföy",
+         "🤖 Robot (simülasyon)", "🗂️ Araçlar"]
 for _k, _v in {"nav": PAGES[0], "nonce_chart": "0", "nonce_flow": "0",
                "mk_sel": "S&P 500", "ta_index": "Nasdaq", "ha_tema": None,
-               "ha_sym": None}.items():
+               "ha_sym": None, "rb_sym": "", "rb_plan": "kademeli"}.items():
     st.session_state.setdefault(_k, _v)
 
 
 def _go(page: str, **ctx) -> None:
     """Düğme geri çağrısı: sayfayı değiştirir ve bağlamı taşır."""
     st.session_state["nav"] = page
-    for w_ in ("ta_index_radio", "ha_tema_sel", "ha_sym_sel", "ha_free"):
+    for w_ in ("ta_index_radio", "ha_tema_sel", "ha_sym_sel", "ha_free", "rb_sym_in",
+               "rb_plan_in"):
         st.session_state.pop(w_, None)          # eski widget seçimi yeni bağlamı ezmesin
     for k_, v_ in ctx.items():
         st.session_state[k_] = v_
@@ -1015,6 +1020,96 @@ THEME_GROUPS = {**pln.INDEX_THEMES,
                 "Petrol (Brent)": ["Petrol & Gaz", "Nükleer & Uranyum", "Temiz Enerji"]}
 
 
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_robot_data(sym: str, nonce: str):
+    h, _ = dta.fetch([sym], "1h_long")
+    d, _ = dta.fetch([sym], "1d_long")
+    return h.get(sym), d.get(sym)
+
+
+def _rparams(cfg: dict) -> "rbt.Params":
+    keys = rbt.Params.__dataclass_fields__
+    kw = {k: v for k, v in cfg.items() if k in keys}
+    if "zone" in kw:
+        kw["zone"] = tuple(kw["zone"])
+    return rbt.Params(**kw)
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def robot_run(sym: str, cfg_json: str, start: str, nonce: str) -> dict:
+    h1, d = load_robot_data(sym, nonce)
+    if h1 is None or d is None or len(h1) < 50:
+        return {"ok": False, "neden": f"{sym} için 1 saatlik veri alınamadı"}
+    R = rbt.run(h1, d, _rparams(json.loads(cfg_json)), start=start)
+    f = rbc.draw(R, sym)
+    R["png"] = tvc.to_bytes(f, "png")
+    R["jpeg"] = tvc.to_bytes(f, "jpeg")
+    R["pdf"] = tvc.to_bytes(f, "pdf")
+    tvc.close(f)
+    R["ok"] = True
+    return R
+
+
+def show_robot(R: dict, key: str) -> None:
+    if not R.get("ok"):
+        st.error(R.get("neden", "çalıştırılamadı"))
+        return
+    s_, stt = R["stats"], R["state"]
+    k = st.columns(6)
+    k[0].markdown(kpi("Durum", "POZİSYONDA" if stt["pozisyonda"] else "NAKİTTE",
+                      f"fiyat {stt['fiyat']:.2f}"), unsafe_allow_html=True)
+    k[1].markdown(kpi("Açık K/Z", f"{stt['K/Z % (açık)']:+.1f}%" if stt["pozisyonda"] else "—",
+                      f"maliyet {stt['maliyet']:.2f}" if stt["pozisyonda"] else "",
+                      "pos" if stt["pozisyonda"] and stt["K/Z % (açık)"] >= 0 else
+                      "neg" if stt["pozisyonda"] else ""), unsafe_allow_html=True)
+    k[2].markdown(kpi("Hedefe", f"{stt['hedefe %']:+.1f}%" if stt["pozisyonda"]
+                      and np.isfinite(stt["hedefe %"]) else "—",
+                      f"stop {stt['stop']:.2f}" if stt["pozisyonda"] else ""), unsafe_allow_html=True)
+    k[3].markdown(kpi("Getiri", f"{s_['Getiri %']:+.1f}%", f"al-tut {s_['Al-tut %']:+.1f}%",
+                      "pos" if s_["Getiri %"] >= 0 else "neg"), unsafe_allow_html=True)
+    k[4].markdown(kpi("İşlem", f"{s_['İşlem']}", f"kazanan %{s_['Kazanan %']:.0f}"
+                      if np.isfinite(s_["Kazanan %"]) else ""), unsafe_allow_html=True)
+    k[5].markdown(kpi("Maks. düşüş", f"{s_['Maks. düşüş %']:.1f}%",
+                      f"ort. R {s_['Ort. R']:+.2f}" if np.isfinite(s_["Ort. R"]) else ""),
+                  unsafe_allow_html=True)
+    st.image(R["png"], width="stretch")
+    img_downloads(R, f"robot_{key}", f"rbdl_{key}")
+    if stt.get("radar"):
+        st.warning("📡 Radar açık — fiyat hedefe giden yolun %85'ini geçti; dönüşte giyotin iner.")
+    t1, t2, t3 = st.tabs(["📜 Olay günlüğü", "💱 İşlemler", "🧠 Akıllı kontrol teşhisi"])
+    with t1:
+        E = R["events"]
+        if E.empty:
+            st.caption("Henüz olay yok — robot giriş şartlarını bekliyor.")
+        else:
+            st.dataframe(E.iloc[::-1], width="stretch", hide_index=True,
+                         column_config={"Mesaj": st.column_config.TextColumn(width="large"),
+                                        "Fiyat": st.column_config.NumberColumn(format="%.2f")})
+    with t2:
+        T_ = R["trades"]
+        if T_.empty:
+            st.caption("Kapanmış işlem yok.")
+        else:
+            st.dataframe(T_, width="stretch", hide_index=True, column_config={
+                "Giriş fiyatı": st.column_config.NumberColumn(format="%.2f"),
+                "K/Z $": st.column_config.NumberColumn(format="%+,.0f"),
+                "K/Z %": st.column_config.NumberColumn(format="%+.1f%%"),
+                "R": st.column_config.NumberColumn(format="%+.2f"),
+                "Satışlar": st.column_config.TextColumn(width="large")})
+    with t3:
+        dg = R.get("diag", {})
+        if dg and dg.get("bar"):
+            st.caption("Nakitte geçen 1 saatlik mumların kaçında her şart sağlandı — robot neden "
+                       "girmediyse en düşük sayı darboğazdır.")
+            st.dataframe(pd.DataFrame([{"Şart": k_, "Mum sayısı": v_,
+                                        "Oran %": v_ / dg["bar"] * 100}
+                                       for k_, v_ in dg.items() if k_ != "bar"]),
+                         hide_index=True, column_config={"Oran %": st.column_config.NumberColumn(
+                             format="%.1f%%")})
+        else:
+            st.caption("Bu robot giriş aramıyor (sadece yönet) ya da hep pozisyondaydı.")
+
+
 # ---------------------------------------------------------------- takip & alarm
 def _wl() -> dict:
     return st.session_state.watchlist
@@ -1079,15 +1174,32 @@ def tracking_digest(wl_json: str, n_funnel: str, n_scan: str, n_earn: str) -> di
             for a in al:
                 out["alarms"].append({"Tür": "💼 Portföy", "Konu": it["sym"], "Durum": durum,
                                       "Mesaj": a})
+    for rb_ in wl.get("robots", []):
+        try:
+            R = robot_run(rb_["sym"], json.dumps(rb_["cfg"], sort_keys=True), rb_["start"], n_scan)
+        except Exception:                      # noqa: BLE001
+            continue
+        if not R.get("ok") or R["events"].empty:
+            continue
+        E = R["events"]
+        last_t = E["Zaman"].max()
+        recent = E[E["Zaman"] >= last_t.normalize() - pd.Timedelta(days=1)]
+        for _, e in recent.tail(3).iterrows():
+            if e["Olay"] in ("✅ Giriş", "⛔ Stop", "⚔️ Giyotin", "📡 Radar", "🎁 Bedava lot") \
+                    or str(e["Olay"]).startswith("🎯 TP"):
+                out["alarms"].append({"Tür": "🤖 Robot", "Konu": rb_["sym"], "Durum": e["Olay"],
+                                      "Mesaj": f"{e['Zaman']:%d.%m %H:%M} · {e['Mesaj']}"})
     return out
 
 
 def _digest() -> dict:
     wl = _wl()
-    if not (wl.get("sector_watch") or wl.get("stock_watch") or wl.get("portfolio")):
+    if not (wl.get("sector_watch") or wl.get("stock_watch") or wl.get("portfolio")
+            or wl.get("robots")):
         return {"sector": {}, "watch": [], "port": [], "alarms": [], "suggest": []}
     return tracking_digest(json.dumps({k: wl.get(k, []) for k in
-                                       ("sector_watch", "stock_watch", "portfolio")},
+                                       ("sector_watch", "stock_watch", "portfolio",
+                                        "robots")},
                                       sort_keys=True, default=str),
                            st.session_state.nonce_funnel, st.session_state.nonce_scan,
                            st.session_state.nonce_earn)
@@ -1474,7 +1586,10 @@ elif PAGE == PAGES[3]:
             _pl = _pl[0] if _pl else {}
             _in_w = sym in [x["sym"] for x in _wl().get("stock_watch", [])]
             _in_p = sym in [x["sym"] for x in _wl().get("portfolio", [])]
-            w1, w2 = st.columns(2)
+            w1, w2, w3 = st.columns(3)
+            w3.button("🤖 Robot kur (simülasyon)", key=f"ha_rb_{sym}", width="stretch",
+                      on_click=_go, args=("🤖 Robot (simülasyon)",),
+                      kwargs={"rb_sym": sym, "rb_plan": "yonet" if _in_p else "kademeli"})
             if w1.button("👁️ Takipten çıkar" if _in_w else "👁️ Hisse takibe al",
                          key=f"ha_w_{sym}", width="stretch"):
                 if _in_w:
@@ -1919,9 +2034,148 @@ elif PAGE == "🔔 Takip & Portföy":
             st.rerun()
         pick = e2.selectbox("Grafik ve analiz için hisse", [x["sym"] for x in pf],
                             key="tp_p_pick")
+        e2.button("🤖 Bu pozisyonu robota emanet et (sadece yönet)", key="tp_p_rb",
+                  on_click=_go, args=("🤖 Robot (simülasyon)",),
+                  kwargs={"rb_sym": pick, "rb_plan": "yonet"})
         e2.button("🔍 Hisse Avcısı'nda aç", key="tp_p_go", on_click=_go,
                   args=(PAGES[3],), kwargs={"ha_sym": pick, "ha_tema": next(
                       (x.get("tema") for x in pf if x["sym"] == pick), None)})
+
+
+# ======================================================================= 7
+elif PAGE == "🤖 Robot (simülasyon)":
+    h1, h2 = st.columns([4, 1])
+    h1.markdown("### 🤖 İşlem robotu — simülasyon")
+    if h2.button("🔄 Yenile", key="rb_ref", width="stretch"):
+        robot_run.clear()
+        load_robot_data.clear()
+        st.rerun()
+    st.info("Bu robot **gerçek emir göndermez**; 1 saatlik mumlarda bar bar ilerleyip ne "
+            "yapacağını kaydeder. Her açılışta başlangıç anından bugüne kadar yeniden oynatılır, "
+            "yani sonuçlar her zaman günceldir. Uygulama kapalıyken 'çalışmaz' ama açınca "
+            "aradaki her saati geriye dönük işler.")
+    with st.expander("Robot nasıl karar veriyor?"):
+        st.markdown(
+            "**🧠 Akıllı kontrol (giriş):** günlük ana Fibonacci bacağı yükselişte olmalı, fiyat "
+            "seçtiğiniz güvenli Fib bölgesine (varsayılan 0.5–0.618) son 6 saatte değmiş olmalı, "
+            "ve 1 saatlik **hacimli yeşil mum** gelmeli (hacim ≥ eşik × 20 saatlik ortalama, "
+            "kapanış mumun üst yarısında). İsteğe bağlı: günlük kapanış EMA200 üstünde. Bütçe "
+            "bölünmez, tek seferde tam giriş.\n\n"
+            "**🛡️ Stop:** 0.786 seviyesi / son 10 saatin dibi − 0.25 günlük ATR (en fazla 3 günlük "
+            "ATR). +1R'de maliyete, +1.5R'den sonra zirve − 2.5 saatlik ATR ile iz sürer. "
+            "**Asla aşağı inmez.**\n\n"
+            "**🎯 Hedefler:** bacağın tepesi ve Fib 1.272 / 1.618 / 2.618 uzantıları (ilk hedef "
+            "en az 1R). **Dinamik:** her gün başında ADX ≥ 25, +DI > −DI ve RSI > 55 ise aktif "
+            "hedef 0.5 günlük ATR yukarı çekilir (bir sonraki Fib uzantısına kadar); ADX < 18 "
+            "(yatay) ise hedef daraltılır.\n\n"
+            "**📡 %85 Radar & ⚔️ Giyotin:** fiyat hedefe giden yolun %85'ini geçince radar açılır, "
+            "zirveyi izler. 1 saatlik kapanış önceki mumun dibini kırar ve zirveden ≥ 1 saatlik "
+            "ATR gerilerse kalan pozisyon kapatılır.\n\n"
+            "**Planlar:** " + " · ".join(rbt.PLANS.values()))
+
+    # ---------------------------------------------- yeni robot / geçmişte dene
+    st.markdown("#### ➕ Yeni robot")
+    pf_map = {x["sym"]: x for x in _wl().get("portfolio", [])}
+    c1, c2, c3 = st.columns([1, 2, 1])
+    sym_r = c1.text_input("Sembol", value=st.session_state.rb_sym or "", key="rb_sym_in",
+                          placeholder="ör. NVDA").strip().upper()
+    plan_keys = list(rbt.PLANS)
+    plan_r = c2.radio("Plan", plan_keys, index=plan_keys.index(st.session_state.rb_plan)
+                      if st.session_state.rb_plan in plan_keys else 1,
+                      format_func=lambda k: rbt.PLANS[k], key="rb_plan_in")
+    with c3:
+        if plan_r == "yonet":
+            pp = pf_map.get(sym_r, {})
+            q_r = st.number_input("Adet", 0.0, 1e7, float(pp.get("adet", 10.0)), 1.0, key="rb_q")
+            cost_r = st.number_input("Maliyet", 0.0, 1e7, float(pp.get("maliyet", 0.0)), 0.01,
+                                     key="rb_c")
+            stop_r = st.number_input("Stop (0 = otomatik)", 0.0, 1e7,
+                                     float(pp.get("ilk_stop") or 0.0), 0.01, key="rb_s")
+            budget_r = 0.0
+        else:
+            budget_r = st.number_input("Bütçe ($)", 100.0, 1e8, 10_000.0, 500.0, key="rb_b")
+            q_r = cost_r = stop_r = 0.0
+    with st.expander("⚙️ Akıllı kontrol ayarları"):
+        a1, a2, a3, a4 = st.columns(4)
+        zone_r = a1.selectbox("Fib giriş bölgesi", list(rbt.ZONES), key="rb_zone")
+        vol_r = a2.slider("Hacim eşiği (× ortalama)", 1.0, 3.0, 1.5, 0.1, key="rb_vol")
+        radar_r = a3.slider("Radar eşiği", 0.70, 0.95, 0.85, 0.01, key="rb_radar")
+        trend_r = a4.toggle("Günlük EMA200 filtresi", True, key="rb_trend")
+        loop_r = a4.toggle("İşlem bitince yeniden giriş ara", True, key="rb_loop")
+    cfg = {"plan": plan_r, "budget": budget_r, "zone": list(rbt.ZONES[zone_r]),
+           "vol_mult": vol_r, "radar": radar_r, "trend_filter": trend_r, "loop": loop_r,
+           "qty": q_r, "cost": cost_r, "user_stop": stop_r}
+    b1, b2, b3 = st.columns([1, 1, 2])
+    period = b1.selectbox("Geçmişte dene: dönem", ["Son 3 ay", "Son 6 ay", "Son 12 ay",
+                                                    "Son 24 ay"], index=2, key="rb_per")
+    months = int(period.split()[1])
+    if b1.button("🧪 Geçmişte dene", key="rb_bt", width="stretch", disabled=not sym_r):
+        st.session_state["rb_bt_res"] = (sym_r, json.dumps(cfg, sort_keys=True),
+                                         (pd.Timestamp.today() - pd.DateOffset(months=months))
+                                         .normalize().isoformat())
+    if b2.button("▶️ Robotu başlat (bugünden itibaren)", key="rb_start", type="primary",
+                 width="stretch", disabled=not sym_r):
+        rid = f"{sym_r}-{plan_r}-{dt.datetime.now():%Y%m%d%H%M%S}"
+        start_ = (pd.Timestamp.now(tz="America/New_York").tz_localize(None)
+                  if plan_r != "yonet" else
+                  pd.Timestamp(pf_map.get(sym_r, {}).get("tarih") or pd.Timestamp.today()))
+        _wl()["robots"].append({"id": rid, "sym": sym_r, "cfg": cfg,
+                                "start": pd.Timestamp(start_).isoformat(),
+                                "olusturma": dt.datetime.now().isoformat(timespec="minutes")})
+        _save_wl(f"🤖 {sym_r} robotu başlatıldı")
+        st.rerun()
+    b3.caption("**Geçmişte dene:** aynı kurallar seçilen dönemde çalıştırılır (sonuç kaydedilmez). "
+               "**Robotu başlat:** bugünden itibaren ileriye doğru simüle eder ve listeye eklenir; "
+               "'sadece yönet' planında başlangıç portföydeki alış tarihidir.")
+    if st.session_state.get("rb_bt_res"):
+        sy_, cj_, st_ = st.session_state["rb_bt_res"]
+        st.markdown(f"##### 🧪 {sy_} · {rbt.PLANS[json.loads(cj_)['plan']]} · "
+                    f"{pd.Timestamp(st_):%d.%m.%Y}'den bugüne")
+        with st.spinner("Geçmiş 1 saatlik mumlar üzerinde oynatılıyor…"):
+            show_robot(robot_run(sy_, cj_, st_, st.session_state.nonce_scan), "bt")
+
+    # ---------------------------------------------- robotlarım
+    st.markdown("---")
+    st.markdown("#### 🤖 Robotlarım")
+    RB = _wl().get("robots", [])
+    if not store.enabled:
+        st.caption("⚠️ Kalıcı kayıt kapalı — robot listesi uygulama uyuyunca silinir.")
+    if not RB:
+        st.caption("Henüz robot yok. Yukarıdan bir sembol seçip **▶️ Robotu başlat**'a basın.")
+    else:
+        rows, results = [], {}
+        with st.spinner("Robotlar güncelleniyor…"):
+            for rb_ in RB:
+                R = robot_run(rb_["sym"], json.dumps(rb_["cfg"], sort_keys=True), rb_["start"],
+                              st.session_state.nonce_scan)
+                results[rb_["id"]] = R
+                if not R.get("ok"):
+                    rows.append({"Robot": rb_["id"], "Sembol": rb_["sym"], "Durum": "⚠️ veri yok"})
+                    continue
+                stt, s_ = R["state"], R["stats"]
+                E = R["events"]
+                rows.append({
+                    "Robot": rb_["id"], "Sembol": rb_["sym"],
+                    "Plan": rbt.PLANS[rb_["cfg"]["plan"]].split(" —")[0],
+                    "Başlangıç": rb_["start"][:16].replace("T", " "),
+                    "Durum": ("📡 radar açık" if stt.get("radar") else "📈 pozisyonda")
+                    if stt["pozisyonda"] else "💤 giriş bekliyor",
+                    "Açık K/Z %": stt["K/Z % (açık)"] if stt["pozisyonda"] else np.nan,
+                    "Hedefe %": stt["hedefe %"] if stt["pozisyonda"] else np.nan,
+                    "Getiri %": s_["Getiri %"], "İşlem": s_["İşlem"],
+                    "Son olay": (f"{E['Zaman'].iloc[-1]:%d.%m %H:%M} {E['Olay'].iloc[-1]}"
+                                 if len(E) else "—")})
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, column_config={
+            "Açık K/Z %": st.column_config.NumberColumn(format="%+.1f%%"),
+            "Hedefe %": st.column_config.NumberColumn(format="%+.1f%%"),
+            "Getiri %": st.column_config.NumberColumn(format="%+.1f%%")})
+        r1, r2 = st.columns([3, 1])
+        pick = r1.selectbox("Robot", [x["id"] for x in RB], key="rb_pick")
+        if r2.button("🗑️ Robotu durdur ve sil", key="rb_del", width="stretch"):
+            _wl()["robots"] = [x for x in RB if x["id"] != pick]
+            _save_wl(f"{pick} silindi")
+            st.rerun()
+        show_robot(results[pick], _fname(pick))
 
 
 # ---------------------------------------------------------------- Araçlar
