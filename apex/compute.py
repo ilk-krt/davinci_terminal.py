@@ -277,3 +277,13 @@ def gold():
     from apex import gold as gld
     prices, failed = dta.fetch(list(gld.TICKERS.values()), "1d")
     return gld.drivers(prices), failed
+
+
+def hype(n_fund: int = 40, biotech_extra: list[str] | None = None):
+    """Hype & Biotech: sosyal listeler + temel veriler (gelecek değer, nakit ömrü)."""
+    from apex import hype as hyp
+    soc, errs = hyp.social(pages=2)
+    top = soc.head(n_fund)["Sembol"].tolist() if not soc.empty else []
+    bio = sorted(set(hyp.BIOTECH) | set(biotech_extra or []))
+    fund = hyp.fundamentals(sorted(set(top) | set(bio)), dta.yf_info)
+    return {"social": soc, "errs": errs, "fund": fund, "top": top, "bio": bio}
