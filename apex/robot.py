@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from apex import pine_fib as pfib
+from apex import structure_ctx as sctx
 from apex.indicators import ema, rsi
 
 PLANS = {
@@ -81,6 +82,10 @@ class Params:
     risk_pct: float = 0.0          # işlem başına riske edilecek sermaye (0 = bütçenin tamamı)
     edge_gate: bool = False        # konsey: öğrenilen sinyallerin geçmişte kâr ettirdiği kanıtlanmalı
     trend_ride: bool = False       # güçlü trendde hedef tavanı kalkar, radar susar → kâr koşar
+    structure: bool = True         # 🏛️ yapı katmanı: S/R, gap/FVG, Wyckoff, likidite, Elliott,
+                                   #    Mum Gücü, haftalık trend → veto + stop + hedef + konsey
+    struct_entry: bool = False     # 🏛️ yapısal destekten (S/R, boğa gap, talep, süpürme) giriş
+    room_r: float = 1.2            # en yakın dirence en az kaç R mesafe olmalı
 
 
 PROFILES: dict[str, dict] = {
@@ -100,6 +105,11 @@ PROFILES: dict[str, dict] = {
                "trail_atr": 3.0, "tp_r": (2.0, 4.0, 6.0), "cooldown": 3, "smart": True,
                "regime_gate": True, "max_losses": 2, "pause_days": 10, "risk_pct": 0.05,
                "edge_gate": True, "trend_ride": True},
+    "yapisal": {"zone": (0.382, 0.618), "vol_mult": 1.3, "trend_ma": 50, "breakout": False,
+                "ema_bounce": False, "stop_atr_max": 2.5, "be_r": 1.0, "trail_r": 1.5,
+                "trail_atr": 2.5, "tp_r": (), "cooldown": 3, "struct_entry": True,
+                "max_losses": 2, "pause_days": 10, "risk_pct": 0.05, "trend_ride": True,
+                "room_r": 1.5},
 }
 PROFILE_TXT = {
     "temkinli": "🐢 Temkinli — yalnızca 0.5–0.618 Fib + güçlü hacim (1.5×), EMA200 üstü. Az ama "
@@ -117,7 +127,18 @@ PROFILE_TXT = {
                "1.2×, EMA50 üstü; daha sıkı stop (≤2 ATR), hedefler 1.5R / 3R / 5R, stop +0.8R'de "
                "maliyete, trend sürerken geniş iz süren stop (3 ATR) ile kâr koşturur. Yalnızca yükselen "
                "trendde girer, işlem başına risk %5, art arda 2 zararda 10 gün mola.",
+    "yapisal": "🏛️ Yapısal — TradingView'de çizdiğimiz seviyelerle işlem yapar: fiyat S1/S2 "
+               "desteğine, boğa FVG/GAP/KURUMSAL kutusuna, Wyckoff talep bölgesine ya da dip "
+               "likidite süpürmesine değip hacimli yeşil 1s mumla dönünce (veya Fib 0.382–0.618 "
+               "bölgesinde) girer. Stop en yakın anlamlı yapının altına, hedefler sıradaki direnç / "
+               "açık gap dolumu / arz bölgesi / Elliott hedef kutusuna konur. Elliott ayı itkisi, "
+               "haftalık düşüş trendi, dağıtım mumu ya da dirence çok yakınken girmez.",
 }
+STRUCT_TXT = ("🏛️ Yapı katmanı (bütün profillerde açık): girişten önce Elliott ayı itkisi, haftalık "
+              "trend, Mum Gücü (dağıtım/fake) ve en yakın dirence mesafe kontrol edilir; stop en "
+              "yakın S/R, gap kutusu, Wyckoff bölgesi ya da Elliott teyit seviyesinin altına; hedefler "
+              "direnç, açık gap, arz bölgesi, likidite havuzu ve Elliott hedef kutusuna konur. "
+              "Akıllı profilde bu seviyeler konseye ek sinyal olarak da girer.")
 
 
 def params_for(profile: str, **over) -> "Params":
@@ -216,12 +237,27 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
     first = int(np.searchsorted(idx.values, np.datetime64(st_ts)))
+    A = None
+    if p.structure:
+        try:
+            TL = sctx.timeline(d, since=idx[0])
+            A = sctx.align(idx, TL)
+        except Exception:                        # noqa: BLE001
+            A = None
+    Acol = {k: A[k].to_numpy(float) for k in A.columns} if A is not None else {}
+
+    def srow(i):
+        return {k: v[i] for k, v in Acol.items()}
     CL = None
     if p.smart:
         from apex import council as cnl
         FH = cnl.engine_features(h1)
         FD = cnl.align_daily(idx, cnl.daily_features(d))
-        FALL = pd.concat([FH, FD], axis=1).fillna(0.0)
+        parts = [FH, FD]
+        if A is not None:
+            parts.append(sctx.hourly_features(c, A))
+            cnl.LABELS.update(sctx.LABELS)
+        FALL = pd.concat(parts, axis=1).fillna(0.0)
         CL = cnl.learn_scores(FALL, c, horizon=p.horizon, q_in=p.q_in, q_out=p.q_out)
         CL["F"] = FALL
         sc_, ti_, to_ = CL["score"], CL["thr_in"], CL["thr_out"]
@@ -268,6 +304,7 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     free_done = False
     exts: list[float] = []
     tps0: list[float] = []
+    tp_lbl: list[str] = []
     diag = {"bar": 0, "yükselen bacak": 0, "Fib bölgesinde": 0,
             "yeşil mum": 0, "hacim ≥ eşik": 0, "hepsi birden": 0}
 
@@ -311,7 +348,11 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                "yeni giriş yok (devre kesici)")
             loss_streak = 0
 
-    def targets(lg: Leg, ent: float, risk: float) -> list[float]:
+    def targets(lg: Leg, ent: float, risk: float, s: dict | None = None,
+                atr_d: float = 0.0) -> list[float]:
+        tp_lbl.clear()
+        if s is not None and p.structure:
+            return _s_targets(lg, ent, risk, s, atr_d)
         if p.tp_r:
             rr = [ent + k * risk for k in p.tp_r]
             if p.plan == "vurkac":
@@ -333,6 +374,37 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
             return [cands[0], cands[min(2, len(cands) - 1)]]
         return cands[:3]
 
+    def _s_targets(lg, ent, risk, s, atr_d):
+        """Yapısal hedefler: direnç/gap/arz/likidite/Elliott (+ Fib uzantıları, R katları)."""
+        buf = 0.1 * atr_d
+        min_first = (p.tp_r[0] if p.tp_r else 1.2) * risk
+        cand = [(v - buf, nm) for v, nm in sctx.resistances(s, ent)]
+        if lg.ok:
+            for k in (0.0, 1.272, 1.618, 2.618):
+                v = lg.levels.get(k)
+                if v is not None and v > ent:
+                    cand.append((v - buf, "Fib tepe" if k == 0.0 else f"Fib {k}"))
+        cand = sorted(t for t in cand if t[0] - ent >= min_first)
+        merged: list[tuple[float, str]] = []
+        for v, nm in cand:                       # birbirine çok yakın seviyeleri birleştir
+            if merged and v - merged[-1][0] < max(0.3 * atr_d, 0.5 * risk):
+                continue
+            merged.append((v, nm))
+        rmult = [ent + k * risk for k in (p.tp_r or (2.0, 3.0, 4.5))]
+        for rv in rmult:
+            if not any(abs(v - rv) < 0.75 * risk for v, _ in merged):
+                merged.append((rv, f"{(rv - ent) / risk:.1f}R"))
+        merged.sort()
+        if p.plan == "vurkac":
+            t = next((x for x in merged if x[0] - ent >= 1.5 * risk), merged[0])
+            out = [t]
+        elif p.plan == "bedava":
+            out = [merged[0], merged[min(2, len(merged) - 1)]]
+        else:
+            out = merged[:3]
+        tp_lbl.extend(nm for _, nm in out)
+        return [v for v, _ in out]
+
     # "sadece yönet": başlangıçta pozisyonda
     if p.plan == "yonet" and first < n:
         i0 = first
@@ -344,7 +416,8 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
         stop = float(p.user_stop) if p.user_stop else float(c[i0]) - 2 * atr_d
         r0 = max(entry - stop, 0.5 * atr_d)
         lg = leg_at(day)
-        tps = targets(lg if lg.ok else Leg(True, True, {}), max(entry, float(c[i0])), r0)
+        tps = targets(lg if lg.ok else Leg(True, True, {}), max(entry, float(c[i0])), r0,
+                      srow(i0) if A is not None else None, atr_d)
         tr_open = {"t": idx[i0], "px": entry, "q": qty, "cost": qty * entry, "sold": 0.0,
                    "risk": r0, "parts": []}
         tps0 = list(tps)
@@ -508,6 +581,14 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
             why = ("Fib bölgesi + hacimli yeşil 1s mum" if fib_sig else
                    "20 saatlik zirve kırılımı (hacimli)" if brk else
                    "1s EMA21 sekmesi" if bounce else "")
+            sname = ""
+            if A is not None and p.struct_entry:
+                sname = sctx.touched_support(srow(i), float(np.min(lo[max(0, i - 6):i + 1])),
+                                             c[i], atr_d)
+                s_sig = bool(sname and green and vol_lite)
+                diag["🏛️ yapısal destekten dönüş"] = diag.get("🏛️ yapısal destekten dönüş", 0) + int(s_sig)
+                if s_sig and not why:
+                    why = f"🏛️ {sname} üstünde hacimli yeşil 1s mum"
             if p.smart:
                 smart_ok = bool(np.isfinite(sc_[i]) and np.isfinite(ti_[i]) and sc_[i] >= ti_[i])
                 if p.edge_gate:
@@ -519,8 +600,13 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                 why = (f"🧠 konsey skoru {sc_[i]:+.2f} ≥ eşik {ti_[i]:+.2f} · {_why(i)}"
                        if smart_ok else "")
                 fib_sig = False
+            S = srow(i) if A is not None else None
+            if S is not None and why and ok_trend:
+                vts = sctx.vetoes(S)
+                if vts:
+                    diag["🏛️ yapı vetosu"] = diag.get("🏛️ yapı vetosu", 0) + 1
+                    why = ""
             if ok_trend and why:
-                diag["hepsi birden"] += 1
                 px = c[i]
                 swing_lo = float(np.min(lo[max(0, i - 10):i + 1]))
                 if fib_sig:
@@ -528,7 +614,25 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                 else:
                     sl0 = min(swing_lo, e50h[i] if np.isfinite(e50h[i]) else swing_lo) - 0.25 * atr_d
                 sl0 = max(sl0, px - p.stop_atr_max * atr_d)
+                stop_why = "salınım dibi" if not fib_sig else "Fib 0.786 / salınım dibi"
+                if S is not None:
+                    for lv, nm in sctx.supports(S, px):
+                        if 0.5 * atr_d <= px - lv <= p.stop_atr_max * atr_d:
+                            # Fib girişinde Fib stopu korunur; yapı yalnızca DAHA AŞAĞIDAYSA
+                            # (stop avı yapılan kümenin altına) stopu taşır
+                            if (not fib_sig) or lv - 0.25 * atr_d < sl0:
+                                sl0, stop_why = lv - 0.25 * atr_d, nm
+                            break
                 risk = px - sl0
+                # Fib geri çekilme girişi tasarım gereği ara direncin altından alır (hedef bacak
+                # tepesi) → mesafe kontrolü yalnızca diğer giriş türlerine uygulanır
+                if S is not None and risk > 0 and not fib_sig:
+                    blk = sctx.blockers(S, px * 1.001)
+                    if blk and blk[0][0] - px < min(p.room_r * risk, 2.5 * atr_d):
+                        diag["🏛️ dirence çok yakın"] = diag.get("🏛️ dirence çok yakın", 0) + 1
+                        risk = -1.0
+                if risk > 0:
+                    diag["hepsi birden"] += 1
                 q = math.floor(cash / px) if px > 0 else 0
                 if p.risk_pct and risk > 0:
                     eq_now = cash + qty * px
@@ -540,12 +644,16 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                     exts = sorted(x for x in (lg.levels.get(k) for k in (0.0, 1.272, 1.618, 2.618))
                                   if x is not None) if lg.ok else []
                     tps, tp_i, radar_on, free_done = targets(lg if lg.ok else Leg(True, True, {}),
-                                                             px, risk), 0, False, False
+                                                             px, risk, S, atr_d), 0, False, False
                     tps0 = list(tps)
                     tr_open = {"t": idx[i], "px": px, "q": q, "cost": q * px, "sold": 0.0,
                                "risk": risk, "parts": []}
+                    if tp_lbl:
+                        ht = ", ".join(f"{x:.2f} ({nm})" for x, nm in zip(tps, tp_lbl))
+                    else:
+                        ht = ", ".join(f"{x:.2f}" for x in tps)
                     ev(i, "✅ Giriş", f"{why} (hacim {v[i] / vm[i]:.1f}×): {q:g} adet @ {px:.2f} · "
-                       f"stop {sl0:.2f} · hedefler {', '.join(f'{x:.2f}' for x in tps)}", px)
+                       f"stop {sl0:.2f} ({stop_why} altı) · hedefler {ht}", px)
         cool -= 1
         if qty > 0:
             sl_line[i], cost_line[i] = stop, entry
@@ -572,6 +680,10 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
              "hedefe %": (tps[tp_i] / c[-1] - 1) * 100 if qty > 0 and tp_i < len(tps) else np.nan}
     lines = pd.DataFrame({"sl": sl_line, "tp": tp_line, "radar": rd_line, "cost": cost_line,
                           "zt": zt, "zb": zb}, index=idx)
+    if A is not None:
+        for k in ("s1", "r1", "gb_top", "gb_bot", "gr_bot", "gr_top", "dz_top", "dz_bot",
+                  "ell_zlo", "ell_zhi", "ell_sgn", "ell_kind", "ell_dead"):
+            lines[k] = A[k].to_numpy(float)
     return {"events": pd.DataFrame(events), "fills": pd.DataFrame(fills), "trades": T,
             "equity": eq, "stats": stats, "state": state, "lines": lines, "h1": h1,
             "start": st_ts, "diag": diag,
@@ -583,24 +695,28 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
 
 
 def optimize(df1h: pd.DataFrame, dfd: pd.DataFrame, start, budget: float = 10_000.0,
-             plans=("vurkac", "kademeli", "bedava")) -> pd.DataFrame:
-    """Aynı sembol ve dönemde 3 profil × planları dener; getiri ve düşüşe göre sıralar."""
+             plans=("vurkac", "kademeli", "bedava"), compare_structure: bool = True) -> pd.DataFrame:
+    """Aynı sembol ve dönemde profiller × planları dener; getiriye göre sıralar.
+    compare_structure: her profil bir kez de yapı katmanı KAPALI (kademeli) denenir."""
     rows = []
-    for prof in PROFILES:
-        for pl in plans:
-            try:
-                R = run(df1h, dfd, params_for(prof, plan=pl, budget=budget), start=start)
-            except Exception as exc:                 # noqa: BLE001
-                rows.append({"Profil": prof, "Plan": pl, "Hata": str(exc)})
-                continue
-            s_ = R["stats"]
-            dd = s_["Maks. düşüş %"]
-            rows.append({"Profil": prof, "Plan": pl, "Getiri %": s_["Getiri %"],
-                         "Al-tut %": s_["Al-tut %"], "Maks. düşüş %": dd,
-                         "Getiri / düşüş": (s_["Getiri %"] / abs(dd)) if dd and dd < 0 else np.nan,
-                         "İşlem": s_["İşlem"] + (1 if R["state"]["pozisyonda"] else 0),
-                         "Kazanan %": s_["Kazanan %"], "Ort. R": s_["Ort. R"],
-                         "Şu an": "pozisyonda" if R["state"]["pozisyonda"] else "nakitte"})
+    combos = [(prof, pl, True) for prof in PROFILES for pl in plans]
+    if compare_structure:
+        combos += [(prof, "kademeli", False) for prof in PROFILES if prof != "yapisal"]
+    for prof, pl, stc in combos:
+        try:
+            R = run(df1h, dfd, params_for(prof, plan=pl, budget=budget, structure=stc), start=start)
+        except Exception as exc:                 # noqa: BLE001
+            rows.append({"Profil": prof, "Plan": pl, "Yapı": "✅" if stc else "❌", "Hata": str(exc)})
+            continue
+        s_ = R["stats"]
+        dd = s_["Maks. düşüş %"]
+        rows.append({"Profil": prof, "Plan": pl, "Yapı": "✅" if stc else "❌",
+                     "Getiri %": s_["Getiri %"],
+                     "Al-tut %": s_["Al-tut %"], "Maks. düşüş %": dd,
+                     "Getiri / düşüş": (s_["Getiri %"] / abs(dd)) if dd and dd < 0 else np.nan,
+                     "İşlem": s_["İşlem"] + (1 if R["state"]["pozisyonda"] else 0),
+                     "Kazanan %": s_["Kazanan %"], "Ort. R": s_["Ort. R"],
+                     "Şu an": "pozisyonda" if R["state"]["pozisyonda"] else "nakitte"})
     out = pd.DataFrame(rows)
     if "Getiri %" in out:
         out = out.sort_values("Getiri %", ascending=False).reset_index(drop=True)

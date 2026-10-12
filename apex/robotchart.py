@@ -59,6 +59,30 @@ def draw(R: dict[str, Any], label: str, bars: int = 220, width: float = 12, heig
     # fib bölgesi
     ax.fill_between(x, Lv["zb"].to_numpy(), Lv["zt"].to_numpy(), color="#8d99ae", alpha=0.12,
                     step="mid", label="Fib giriş bölgesi")
+    # 🏛️ yapı katmanı: S1/R1, boğa/ayı gap kutuları, Wyckoff talep bölgesi (dünkü değerler)
+    if "s1" in Lv:
+        for k1, k2, colr, al, nm in (("gb_bot", "gb_top", "#26c6da", 0.10, "Boğa gap/FVG kutusu"),
+                                     ("gr_bot", "gr_top", "#ef5350", 0.09, "Açık gap (yukarıda)"),
+                                     ("dz_bot", "dz_top", "#66bb6a", 0.08, "Wyckoff talep")):
+            y1_, y2_ = Lv[k1].to_numpy(float), Lv[k2].to_numpy(float)
+            if np.isfinite(y1_).any():
+                ax.fill_between(x, y1_, y2_, color=colr, alpha=al, step="mid", label=nm,
+                                where=np.isfinite(y1_) & np.isfinite(y2_))
+        for key, colr, nm in (("s1", "#00c853", "S1 destek"), ("r1", "#ff5252", "R1 direnç")):
+            y = Lv[key].to_numpy(float).copy()
+            chg = np.r_[False, np.abs(np.diff(y)) > 1e-9]
+            y[chg] = np.nan                            # seviye değişince çizgiyi kopar (dikey çizgi yok)
+            if np.isfinite(y).any():
+                ax.plot(x, y, color=colr, ls=":", lw=1.0, alpha=0.9, label=nm, zorder=4)
+        sg, kd, dd_ = (float(Lv[k].iloc[-1]) if np.isfinite(Lv[k].iloc[-1]) else 0.0
+                       for k in ("ell_sgn", "ell_kind", "ell_dead"))
+        zl, zh = Lv["ell_zlo"].iloc[-1], Lv["ell_zhi"].iloc[-1]
+        if kd >= 3 and not dd_ and np.isfinite(zl) and np.isfinite(zh):
+            colr = "#b388ff" if sg > 0 else "#ff80ab"
+            ax.add_patch(plt.Rectangle((n - 30, zl), 32, zh - zl, fc=colr, alpha=0.15, ec=colr,
+                                       lw=0.8, zorder=3, clip_on=True))
+            ax.text(n - 29, zh, f"Elliott {'③' if kd == 3 else '⑤'} {'hedef' if sg > 0 else 'ayı hedefi'}",
+                    color=colr, fontsize=6.3, va="bottom", clip_on=True)
     for key, colr, ls, lw, nm in (("cost", "#ffffff", "-", 1.1, "Maliyet"),
                                   ("sl", "#ff1744", "-", 1.5, "Stop"),
                                   ("tp", "#00e676", "-", 1.5, "Hedef"),
@@ -126,7 +150,7 @@ def draw(R: dict[str, Any], label: str, bars: int = 220, width: float = 12, heig
     ax.set_xlim(-1, n + 3)
     ax.set_yticklabels([])
     plt.setp(ax.get_xticklabels(), visible=False)
-    leg = ax.legend(loc="upper left", fontsize=6.5, facecolor=PANEL, edgecolor=GRID)
+    leg = ax.legend(loc="upper left", fontsize=6.2, facecolor=PANEL, edgecolor=GRID, ncol=2)
     for t in leg.get_texts():
         t.set_color(TXT)
     # konsey skoru
