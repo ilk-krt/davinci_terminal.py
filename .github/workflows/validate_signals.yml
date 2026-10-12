@@ -8,9 +8,9 @@ on:
         required: false
         default: "12"
       bolum:
-        description: "Bölümler: akis,tema,endeks,hisse"
+        description: "Bölümler: balina,akis,tema,endeks,hisse"
         required: false
-        default: "akis,tema,endeks,hisse"
+        default: "balina,akis,tema,endeks,hisse"
 
 permissions:
   contents: write
