@@ -1,0 +1,51 @@
+name: Sinyal doğrulama
+
+on:
+  workflow_dispatch:
+    inputs:
+      ay:
+        description: "Geriye kaç ay test edilsin"
+        required: false
+        default: "12"
+      bolum:
+        description: "Bölümler: akis,tema,endeks,hisse"
+        required: false
+        default: "akis,tema,endeks,hisse"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sinyal-dogrulama
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Geçmişte doğrula
+        run: >
+          python tools/validate_signals.py
+          --ay "${{ github.event.inputs.ay }}"
+          --bolum "${{ github.event.inputs.bolum }}"
+        continue-on-error: true
+      - name: Sonuç dosyası (indirilebilir)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinyal_dogrulama
+          path: data/validation/
+          if-no-files-found: warn
+      - name: Sonuçları repoya kaydet
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/validation/ || true
+          git diff --cached --quiet || git commit -m "Sinyal doğrulama sonuçları"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
