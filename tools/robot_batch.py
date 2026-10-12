@@ -77,7 +77,13 @@ def _args():
     ap.add_argument("--ay", type=int, default=12, help="geriye kaç ay test edilsin")
     ap.add_argument("--profiller", default="", help="boşsa hepsi")
     ap.add_argument("--planlar", default="vurkac,kademeli,bedava")
-    ap.add_argument("--yapi", default="ikisi", choices=["ikisi", "acik", "kapali"])
+    ap.add_argument("--yapi", default="profil", choices=["profil", "ikisi", "acik", "kapali"],
+                    help="profil = her profilin varsayılanı")
+    ap.add_argument("--kapi", default="ikisi", choices=["ikisi", "acik", "kapali"],
+                    help="🔑 Fib kapısı + ADX filtresi")
+    ap.add_argument("--bitis", type=int, default=0,
+                    help="test kaç ay önce bitsin (0 = bugün). Örn. --ay 22 --bitis 12 → "
+                         "geçen yılın verisiyle örneklem DIŞI doğrulama")
     ap.add_argument("--butce", type=float, default=10_000.0)
     return ap.parse_args()
 
@@ -99,13 +105,16 @@ def main() -> int:
     syms = [s.strip().upper() for s in a.semboller.split(",") if s.strip()] or list(UNIVERSE)
     profs = [p.strip() for p in a.profiller.split(",") if p.strip()] or list(rbt.PROFILES)
     plans = [p.strip() for p in a.planlar.split(",") if p.strip()]
-    ystates = {"ikisi": (True, False), "acik": (True,), "kapali": (False,)}[a.yapi]
+    ystates = {"profil": (None,), "ikisi": (True, False), "acik": (True,), "kapali": (False,)}[a.yapi]
+    gstates = {"ikisi": (True, False), "acik": (True,), "kapali": (False,)}[a.kapi]
     start = (pd.Timestamp.today() - pd.DateOffset(months=a.ay)).normalize()
+    end = (pd.Timestamp.today() - pd.DateOffset(months=a.bitis)).normalize() if a.bitis else None
     t0 = time.time()
     meta = {"tarih": pd.Timestamp.now().isoformat(timespec="minutes"), "ay": a.ay,
-            "baslangic": start.date().isoformat(), "semboller": syms, "profiller": profs,
+            "baslangic": start.date().isoformat(),
+            "bitis": end.date().isoformat() if end is not None else "bugün", "semboller": syms, "profiller": profs,
             "planlar": plans, "yapi": a.yapi, "bitti": [], "cekilemeyen": [], "hata": {},
-            "surum": "robot v4 (yapı katmanı)"}
+            "surum": "robot v5 (Fib kapısı)", "kapi": a.kapi}
     ozet: list[dict] = []
     islem: list[dict] = []
     # veriyi 10'arlı paketlerle çek (Yahoo hız sınırı)
@@ -124,18 +133,27 @@ def main() -> int:
             meta["cekilemeyen"].append(sym)
             print(f"⚠️  {sym}: veri yok", flush=True)
             continue
+        if end is not None:
+            hi_ = pd.DatetimeIndex(h1.index)
+            hi_ = hi_.tz_localize(None) if hi_.tz is not None else hi_
+            h1 = h1[hi_ < end]
+            di_ = pd.DatetimeIndex(dd.index)
+            di_ = di_.tz_localize(None) if di_.tz is not None else di_
+            dd = dd[di_ < end]
         ts = time.time()
         try:
             for prof in profs:
                 for pl in plans:
-                    for ys in ystates:
-                        R = rbt.run(h1, dd, rbt.params_for(prof, plan=pl, budget=a.butce,
-                                                           structure=ys), start=start)
+                    for ys, gt in [(y, g) for y in ystates for g in gstates]:
+                        P = rbt.params_for(prof, plan=pl, budget=a.butce, structure=ys)
+                        if not gt:
+                            P.fib_gate, P.adx_min = (), 0.0
+                        R = rbt.run(h1, dd, P, start=start)
                         s_ = R["stats"]
                         dg = R["diag"]
                         mdd = s_["Maks. düşüş %"]
                         key = {"Sembol": sym, "Tür": UNIVERSE.get(sym, "diğer"), "Profil": prof,
-                               "Plan": pl, "Yapı": int(ys)}
+                               "Plan": pl, "Yapı": int(P.structure), "Kapı": int(gt)}
                         ozet.append({**key, "Getiri %": s_["Getiri %"], "Al-tut %": s_["Al-tut %"],
                                      "Maks. düşüş %": mdd,
                                      "Getiri/düşüş": s_["Getiri %"] / abs(mdd) if mdd and mdd < 0 else np.nan,
