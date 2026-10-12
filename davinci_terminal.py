@@ -957,13 +957,22 @@ def news_list(items: list, n: int = 8) -> None:
                     unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
-def flow_pack(nonce: str) -> dict:
-    FT, _ = load_flows(nonce)
-    f = flw.diagram(FT)
+def _flow_tab(obj, horizon: str) -> pd.DataFrame:
+    """Snapshot eski (tek tablo) ya da yeni ({dönem: tablo}) biçimde olabilir."""
+    if isinstance(obj, dict):
+        return obj.get(horizon) if obj.get(horizon) is not None else next(iter(obj.values()))
+    return obj
+
+
+def flow_pack(nonce: str, horizon: str = "1 ay") -> dict:
+    FT_, _ = load_flows(nonce)
+    f = flw.diagram(_flow_tab(FT_, horizon))
     out = {fmt: tvc.to_bytes(f, fmt) for fmt in ("png", "jpeg", "pdf")}
     tvc.close(f)
     return out
+
+
+flow_pack = st.cache_data(ttl=TTL_SLOW, show_spinner=False)(flow_pack)
 
 
 def rrg_fig(T: pd.DataFrame, TAILS: dict, names: list[str]):
@@ -1301,8 +1310,19 @@ if PAGE == PAGES[0]:
     if h2.button("🔄 Yenile", key="fl_ref", width="stretch"):
         bump("nonce_flow")
         st.rerun()
-    FT, FT_FAILED = load_flows(st.session_state.nonce_flow)
-    FP = flow_pack(st.session_state.nonce_flow)
+    FT_ALL, FT_FAILED = load_flows(st.session_state.nonce_flow)
+    hz = st.segmented_control("Dönem", list(flw.HORIZONS), default="1 ay", key="fl_hz",
+                              help="1 hafta: son 5 işlem günü (+2 günlük ivme) — her gün belirgin "
+                                   "değişir. 1 ay: 20 gün (+5) — 1–2 haftada bir yön değiştirir. "
+                                   "3 ay: 60 gün (+20) — büyük rotasyonlar, ayda bir değişir.") \
+        or "1 ay"
+    FT = _flow_tab(FT_ALL, hz)
+    FP = flow_pack(st.session_state.nonce_flow, hz)
+    if FT is not None and not FT.empty and "Veri tarihi" in FT.columns:
+        st.caption(f"📅 Veri tarihi: **{FT['Veri tarihi'].max()}** (son kapanış) · dönem: {hz} · "
+                   "akşam hesabı her iş günü ABD kapanışından sonra günceller. "
+                   "Skorlar oynaklığa göre düzeltilmiştir: BTC'nin %5'i ile nakdin %0.3'ü "
+                   "kendi normallerine göre karşılaştırılır.")
     g1, g2 = st.columns([3, 2])
     with g1:
         st.image(FP["png"], width="stretch")
@@ -1319,13 +1339,17 @@ if PAGE == PAGES[0]:
     if FT is None or FT.empty:
         st.warning("Akış verisi çekilemedi.")
     else:
-        st.dataframe(FT[["Varlık", "Sembol", "Akış", "Akış Skoru", "5G %", "20G %",
-                         "60G %", "Hacim trendi"]], width="stretch", hide_index=True,
+        cols_ = [c for c in ["Varlık", "Sembol", "Akış", "Akış Skoru", "5G %", "20G %",
+                             "60G %", "Oynaklık %", "Hacim trendi"] if c in FT.columns]
+        st.dataframe(FT[cols_], width="stretch", hide_index=True,
                      column_config={
                          "Akış Skoru": st.column_config.ProgressColumn(
                              format="%+.2f", min_value=-2.5, max_value=2.5,
-                             help="20 günlük göreli performans (ağırlık 0.6) + 5 günlük "
-                                  "ivme (0.4), dolar hacmi artışıyla güçlendirilir"),
+                             help="Seçilen dönemin oynaklığa göre düzeltilmiş göreli "
+                                  "performansı (0.6) + ivme (0.4), dolar hacmi artışıyla "
+                                  "güçlendirilir"),
+                         "Oynaklık %": st.column_config.NumberColumn(
+                             format="%.2f", help="Günlük getirilerin 60 günlük standart sapması"),
                          "5G %": st.column_config.NumberColumn(format="%+.1f%%"),
                          "20G %": st.column_config.NumberColumn(format="%+.1f%%"),
                          "60G %": st.column_config.NumberColumn(format="%+.1f%%"),
