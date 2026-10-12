@@ -290,13 +290,15 @@ def load_rotation(nonce: str):
     return cmp.rotation()
 
 @st.cache_data(ttl=TTL_SLOW, show_spinner=False)
-def load_theme_rotation(nonce: str):
-    """Karar Hunisi tema adımı: tema ve ETF'lerde göreli rotasyon (RRG)."""
+def load_theme_rotation(nonce: str, horizon: str = "orta"):
+    """Karar Hunisi tema adımı: tema ve ETF'lerde göreli rotasyon (RRG) — vadeye göre."""
     if _use_snap(nonce):
-        s = snap.load("theme_rotation")
+        name = {"orta": "theme_rotation", "kısa": "theme_rotation_kisa",
+                "uzun": "theme_rotation_uzun"}.get(horizon, "theme_rotation")
+        s = snap.load(name)
         if s is not None:
             return s
-    return cmp.theme_rotation()
+    return cmp.theme_rotation(horizon)
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def load_stock_raw(sym: str, nonce: str) -> dict:
@@ -326,12 +328,16 @@ def load_decision(nonce: str, rot: pd.DataFrame):
     return cmp.decision(rot)
 
 def theme_holdings(tema: str) -> list[str]:
-    return cmp.theme_holdings(tema)
+    ex = st.session_state.get("watchlist", {}).get("theme_extra", {}) or {}
+    return cmp.theme_holdings(tema, ex.get(tema, []))
 
 
 @st.cache_data(ttl=TTL_SLOW, show_spinner=False)
-def load_plans(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
-    """Giriş/stop/hedef planları — akşam hesabından, eksikler canlı."""
+def load_plans(tickers: tuple[str, ...], nonce: str, vade: str = "orta") -> pd.DataFrame:
+    """Giriş/stop/hedef planları — akşam hesabından (orta vade), eksikler canlı.
+    Kısa ve uzun vade planları canlı hesaplanır (uzun: haftalık mum)."""
+    if vade != "orta":
+        return cmp.plans(tickers, vade)
     if _use_snap(nonce):
         parts = [x for x in (snap.load("plans"), snap.load("plans_hype"))
                  if x is not None and not x.empty and "Sembol" in x.columns]
@@ -346,18 +352,20 @@ def load_plans(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
     return cmp.plans(tickers)
 
 
-def theme_stock_table(tema: str, min_liq: float, idx_close) -> tuple[pd.DataFrame, list[str]]:
+def theme_stock_table(tema: str, min_liq: float, idx_close, vade: str = "orta"
+                      ) -> tuple[pd.DataFrame, list[str]]:
     """Temanın hisseleri: tarama + bilanço + short → Durum sınıfı (Adım 3b ve 5)."""
-    return syms_stock_table(theme_holdings(tema), min_liq, idx_close)
+    return syms_stock_table(theme_holdings(tema), min_liq, idx_close, vade)
 
 
-def syms_stock_table(hold: list[str], min_liq: float, idx_close=None
+def syms_stock_table(hold: list[str], min_liq: float, idx_close=None, vade: str = "orta"
                      ) -> tuple[pd.DataFrame, list[str]]:
-    """Herhangi bir sembol listesi: tarama + bilanço + short → Durum sınıfı."""
+    """Herhangi bir sembol listesi: tarama + bilanço + short → Durum sınıfı.
+    Uzun vadede sinyaller HAFTALIK taramadan gelir."""
     hold = [h for h in dict.fromkeys(hold) if h]
     if not hold:
         return pd.DataFrame(), hold
-    S = scan(tuple(hold), "1d", st.session_state.nonce_scan)
+    S = scan(tuple(hold), "1wk" if vade == "uzun" else "1d", st.session_state.nonce_scan)
     if S.empty:
         return pd.DataFrame(), hold
     EARN_T = load_earnings(tuple(hold), st.session_state.nonce_earn)
@@ -367,8 +375,32 @@ def syms_stock_table(hold: list[str], min_liq: float, idx_close=None
     pchg = dict(zip(S["Sembol"], pd.to_numeric(S.get("1 Hafta %"), errors="coerce")))
     SVT_T = svm.short_table(SVRAW_T, hold, pchg)
     TB = fnl.build_stock_table(S, idx_close, None, EARN_T, SVT_T, min_liq,
-                               swing_score=scr.swing_score)
+                               swing_score=scr.swing_score, vade=vade)
     return TB, hold
+
+
+VADE_HELP = {"kısa": "Kısa vade (1–2 hafta): tema rotasyonu 20 gün / 5 gün momentum; hisse göreli "
+                     "gücü 1 hafta + 1 gün; plan günlük mumdan, sığ giriş (≤ 2 ATR) ve sıkı stop "
+                     "(0.75 ATR). Her gün belirgin değişir.",
+             "orta": "Orta vade (1–2 ay): tema rotasyonu 50 gün / 10 gün momentum; hisse göreli "
+                     "gücü 1 ay + 1 hafta; plan günlük mumdan (≤ 3 ATR giriş, 1 ATR stop). "
+                     "1–2 haftada bir değişir.",
+             "uzun": "Uzun vade (3–6 ay): tema rotasyonu 130 gün / 20 gün momentum; hisse "
+                     "sinyalleri ve plan HAFTALIK mumdan (haftalık ATR, haftalık destek/direnç); "
+                     "göreli güç ~5 ay + ~5 hafta. Ayda bir değişir."}
+
+
+def vade_picker(key: str) -> str:
+    """Tema ve Hisse Avcısı'nda ortak vade seçimi."""
+    opts = ["kısa", "orta", "uzun"]
+    cur = st.session_state.get("vade", "orta")
+    v = st.segmented_control("Vade", opts, default=cur if cur in opts else "orta", key=key,
+                             format_func=lambda x: {"kısa": "⚡ Kısa (1–2 hafta)",
+                                                    "orta": "📆 Orta (1–2 ay)",
+                                                    "uzun": "🏔️ Uzun (3–6 ay)"}[x]) or cur
+    st.session_state.vade = v
+    st.caption(VADE_HELP[v])
+    return v
 
 
 def _px(x) -> str:
@@ -445,6 +477,7 @@ def _init_state() -> None:
             "portfolio": saved.get("portfolio") or [],
             "biotech_watch": saved.get("biotech_watch") or [],
             "robots": saved.get("robots") or [],
+            "theme_extra": saved.get("theme_extra") or {},   # {tema: [kullanıcının eklediği]}
         }
 
 
@@ -896,7 +929,8 @@ def show_triptych(sym: str, label: str, key: str) -> None:
 def load_flows(nonce: str):
     if _use_snap(nonce):
         s = snap.load("flows")
-        if s is not None:
+        # eski akşam hesabı tek tablo (yalnız 1 ay) yazıyordu → dönem seçici için canlı hesapla
+        if s is not None and isinstance(s[0], dict):
             return s
     return cmp.flows()
 
@@ -1516,7 +1550,8 @@ elif PAGE == PAGES[2]:
         + ("temalarda alım fırsatı aranabilir." if index_ok else
            "endeks alım bölgesinde değil; temalar yalnızca izleme için."))
 
-    T3, TAILS3, E3, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel)
+    vade = vade_picker("vade_ta")
+    T3, TAILS3, E3, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel, vade)
     themes3 = [t for t in THEME_GROUPS.get(ta_index, []) if t in uni.THEME_TRACKER]
     TT = T3[T3["Tema"].isin(themes3)].copy() if not T3.empty else pd.DataFrame()
     if TT.empty:
@@ -1535,13 +1570,14 @@ elif PAGE == PAGES[2]:
             st.caption("Çizgiler son 6 haftanın izi, büyük nokta bugün. Geride → "
                        "İyileşiyor → Lider geçişi akıllı paranın erken izidir.")
         with r2:
-            st.dataframe(TT[["Tema", "Para", "Erken Skor", "1H %", "1A %"]],
+            st.dataframe(TT[["Tema", "Para", "Erken Skor", "1H %", "1A %", "3A %"]],
                          width="stretch", hide_index=True, height=480,
                          column_config={
                              "Erken Skor": st.column_config.ProgressColumn(
                                  format="%d", min_value=0, max_value=100),
                              "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
-                             "1A %": st.column_config.NumberColumn(format="%+.1f%%")})
+                             "1A %": st.column_config.NumberColumn(format="%+.1f%%"),
+                             "3A %": st.column_config.NumberColumn(format="%+.1f%%")})
         opts3 = good3 + [t for t in TT["Tema"] if t not in good3]
         st.session_state.setdefault("ta_tema", opts3[0])
         if st.session_state.ta_tema not in opts3:
@@ -1595,11 +1631,32 @@ elif PAGE == PAGES[3]:
     tema = q1.selectbox("Tema", all_themes, index=all_themes.index(cur), key="ha_tema_sel")
     st.session_state.ha_tema = tema
     liq = q2.number_input("Min. günlük hacim ($M)", 0.0, 500.0, 10.0, 1.0, key="ha_liq")
+    _ex = _wl().setdefault("theme_extra", {})
+    _mine = _ex.get(tema, [])
+    with st.expander(f"📋 {tema} hisse kadrosu ({len(theme_holdings(tema))} hisse) — ekle / çıkar"):
+        st.caption("Kadro = seçilmiş saf oyuncular + temanın ETF bileşenleri + sizin eklediğiniz "
+                   "hisseler. Fiyat verisi gelmeyen sembol tabloda görünmez.")
+        st.markdown(" ".join(f"`{x}`" for x in theme_holdings(tema)))
+        e1, e2 = st.columns([3, 1])
+        add_ = e1.text_input("Eklenecek semboller (virgülle)", key=f"ha_add_{tema}",
+                             placeholder="ör. ASTS, LUNR")
+        if e2.button("➕ Ekle", key=f"ha_addb_{tema}", width="stretch") and add_.strip():
+            new_ = [x.strip().upper() for x in add_.replace(" ", ",").split(",") if x.strip()]
+            _ex[tema] = sorted(set(_mine) | set(new_))
+            _save_wl(f"{tema}: {', '.join(new_)} eklendi")
+            st.rerun()
+        if _mine:
+            r_ = st.multiselect("Eklediklerinizden çıkar", _mine, key=f"ha_rm_{tema}")
+            if st.button("Çıkar", key=f"ha_rmb_{tema}") and r_:
+                _ex[tema] = [x for x in _mine if x not in r_]
+                _save_wl(f"{tema}: {', '.join(r_)} çıkarıldı")
+                st.rerun()
     if q3.button("🔄 Yenile", key="ha_ref", width="stretch"):
         bump("nonce_scan")
         bump("nonce_chart")
         st.rerun()
-    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel)
+    vade = vade_picker("vade_ha")
+    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel, vade)
     trow = T3[T3["Tema"] == tema] if not T3.empty else pd.DataFrame()
     tema_ok = not trow.empty and trow.iloc[0]["_q"] in ("lider", "iyilesen")
     MK, _ = load_markets(st.session_state.nonce_funnel)
@@ -1608,10 +1665,10 @@ elif PAGE == PAGES[3]:
     idx_name = st.session_state.ta_index
     index_ok = MV.get(idx_name, {}).get("etiket", "").startswith(("✅", "🟡"))
     st.caption(f"Endeks ({idx_name}): {MV.get(idx_name, {}).get('etiket', '—')} · "
-               f"Tema: {trow.iloc[0]['Bölge'] if not trow.empty else '—'}")
-    with st.spinner(f"{tema} hisseleri için plan hazırlanıyor…"):
-        TBh, holdh = theme_stock_table(tema, liq, IDX3.get(tema))
-        Ph = load_plans(tuple(holdh), st.session_state.nonce_scan) if holdh else pd.DataFrame()
+               f"Tema ({vade} vade): {trow.iloc[0]['Bölge'] if not trow.empty else '—'}")
+    with st.spinner(f"{tema} hisseleri için {vade} vade plan hazırlanıyor…"):
+        TBh, holdh = theme_stock_table(tema, liq, IDX3.get(tema), vade)
+        Ph = load_plans(tuple(holdh), st.session_state.nonce_scan, vade) if holdh else pd.DataFrame()
     PT = trade_plan_table(TBh, Ph, index_ok and tema_ok)
     if PT.empty:
         st.info("Bu tema için hisse listesi ya da fiyat verisi yok.")
@@ -1629,8 +1686,8 @@ elif PAGE == PAGES[3]:
         st.dataframe(view[pcols], width="stretch", hide_index=True,
                      column_config={"R:R": st.column_config.NumberColumn(format="%.1f"),
                                     "Sebep": st.column_config.TextColumn(width="large")})
-        xl = pln.excel_report(f"AETHER APEX · {tema} hisse planı",
-                              [("Tema", tema), ("Endeks", idx_name),
+        xl = pln.excel_report(f"AETHER APEX · {tema} hisse planı ({vade} vade)",
+                              [("Tema", tema), ("Endeks", idx_name), ("Vade", vade),
                                ("Hazırlanma", dt.datetime.now().strftime("%d.%m.%Y %H:%M"))],
                               pd.DataFrame(), {tema: PT})
         st.download_button("⬇️ Bu temanın planı (Excel)", xl,
@@ -1650,10 +1707,10 @@ elif PAGE == PAGES[3]:
                               key="ha_free", placeholder="ör. NVDA").strip().upper()
         if free:
             sym = free
-            S1_ = scan((sym,), "1d", st.session_state.nonce_scan)
+            S1_ = scan((sym,), "1wk" if vade == "uzun" else "1d", st.session_state.nonce_scan)
             TBh = fnl.build_stock_table(S1_, None, None, None, None, liq,
-                                        swing_score=scr.swing_score)
-            Ph = load_plans((sym,), st.session_state.nonce_scan)
+                                        swing_score=scr.swing_score, vade=vade)
+            Ph = load_plans((sym,), st.session_state.nonce_scan, vade)
             PT1 = trade_plan_table(TBh, Ph, index_ok and tema_ok)
             if PT1.empty:
                 st.error(f"{sym} için fiyat verisi alınamadı.")
