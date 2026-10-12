@@ -262,7 +262,7 @@ def flows():
     """Para Akışı sayfası: varlık sınıfları akış tablosu."""
     from apex import flows as flw
     prices, failed = dta.fetch(flw.TICKERS, "1d")
-    return flw.table(prices), failed
+    return flw.tables(prices), failed
 
 
 def markets():

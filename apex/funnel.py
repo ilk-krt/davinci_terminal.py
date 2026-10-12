@@ -629,19 +629,26 @@ def rrg_quadrant(r: float, m: float) -> str:
 
 def theme_index(prices: dict[str, pd.DataFrame], members: list[str]
                 ) -> tuple[pd.Series | None, pd.Series | None]:
-    """Eşit ağırlıklı tema endeksi (her ETF başlangıçta 1'e normalize) ve
-    toplam dolar hacmi."""
-    cl, dv = [], []
+    """Eşit ağırlıklı tema endeksi ve toplam dolar hacmi.
+
+    Zincirleme hesap: her gün, o gün verisi olan üyelerin GÜNLÜK getirilerinin ortalaması
+    alınır ve birikimli çarpılır. (Eski yöntem her ETF'yi kendi ilk gününde 1'e
+    normalize edip seviyeleri ortalıyordu; geçmişi kısa olan bir üye sonradan
+    katıldığında endeks — ve dolayısıyla RS-Oran — sahte bir sıçrama yapıyordu.)"""
+    rt, dv = [], []
     for t in members:
         df = prices.get(t)
         if df is None or df.empty or len(df) < 80:
             continue
         c = df["Close"].dropna()
-        cl.append(c / c.iloc[0])
+        c = c[~c.index.duplicated(keep="last")]
+        rt.append(c.pct_change().clip(-0.5, 1.0).rename(t))
         dv.append((df["Close"] * df["Volume"]).rename(t))
-    if not cl:
+    if not rt:
         return None, None
-    idx = pd.concat(cl, axis=1).ffill().mean(axis=1)
+    R = pd.concat(rt, axis=1).sort_index()
+    r = R.mean(axis=1, skipna=True).fillna(0.0)
+    idx = (1.0 + r).cumprod()
     vol = pd.concat(dv, axis=1).sum(axis=1, min_count=1)
     return idx, vol
 

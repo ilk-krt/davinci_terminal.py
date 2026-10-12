@@ -1,7 +1,9 @@
 # apex/flows.py — VARLIKLAR ARASI PARA AKIŞI (temsilî görsel + rakamlar + gerekçeler)
 #
-# Her varlık sınıfı likit bir ETF ile temsil edilir. "Akış" = son 20 günün göreli
-# performansı (bütün varlıkların ortalamasına göre) + dolar hacminin artışı.
+# Her varlık sınıfı likit bir ETF ile temsil edilir. "Akış" = seçilen dönemde (varsayılan
+# 20 işlem günü + 5 günlük ivme) OYNAKLIĞA GÖRE DÜZELTİLMİŞ göreli performans + dolar
+# hacminin artışı. Bütün seriler SPY işlem günlerine hizalanır (kripto hafta sonu dahil
+# işlem görür).
 # Para en çok geride kalanlardan en çok öne çıkanlara "akıyor" gibi çizilir —
 # bu gerçek fon akışı verisi değil, fiyat × hacimden çıkarılan bir TEMSİLDİR.
 from __future__ import annotations
@@ -29,37 +31,87 @@ ASSETS: dict[str, tuple[str, str]] = {      # ad: (sembol, kısa etiket)
 TICKERS = [v[0] for v in ASSETS.values()]
 
 
+HORIZONS = {"1 hafta": (2, 5), "1 ay": (5, 20), "3 ay": (20, 60)}   # (ivme, ana dönem) işlem günü
+
+
 def _ret(c: pd.Series, n: int) -> float:
     c = c.dropna()
     return float((c.iloc[-1] / c.iloc[-1 - n] - 1) * 100) if len(c) > n else np.nan
 
 
-def table(prices: dict[str, pd.DataFrame]) -> pd.DataFrame:
+def _calendar(prices: dict[str, pd.DataFrame]) -> pd.DatetimeIndex | None:
+    """Ortak işlem günü takvimi (SPY). Kripto 7/24 işlem gördüğü için '20 gün'ü diğerleriyle
+    aynı TAKVİM aralığına denk gelsin diye bu günlere hizalanır."""
+    spy = prices.get("SPY")
+    if spy is None or spy.empty:
+        return None
+    ix = pd.DatetimeIndex(spy.index)
+    return ix.tz_localize(None) if ix.tz is not None else ix
+
+
+def _align(df: pd.DataFrame, cal: pd.DatetimeIndex | None) -> pd.DataFrame:
+    d = df.copy()
+    ix = pd.DatetimeIndex(d.index)
+    d.index = (ix.tz_localize(None) if ix.tz is not None else ix).normalize()
+    d = d[~d.index.duplicated(keep="last")]
+    if cal is None:
+        return d
+    cal = cal.normalize()
+    out = d.reindex(cal, method="ffill")
+    return out[out.index >= d.index[0]]
+
+
+def table(prices: dict[str, pd.DataFrame], horizon: str = "1 ay") -> pd.DataFrame:
+    """Akış skoru = varlıkların OYNAKLIĞA GÖRE DÜZELTİLMİŞ getirilerinin kesitsel z-skoru
+    (ana dönem 0.6 + ivme 0.4) × dolar hacmi trendi.
+
+    Oynaklık düzeltmesi: BTC/gümüş gibi oynak varlıklar ham % değişimle her zaman en uçta
+    çıkardı; nakit (BIL) hiç kıpırdamadığı için hep 'nötr' görünürdü. Artık her getiri o
+    varlığın kendi 60 günlük oynaklığına bölünür (Sharpe benzeri) → 'normalinden ne kadar
+    farklı' ölçülür."""
+    n_s, n_l = HORIZONS.get(horizon, HORIZONS["1 ay"])
+    cal = _calendar(prices)
     rows = []
     for ad, (t, kisa) in ASSETS.items():
         df = prices.get(t)
         if df is None or df.empty or len(df) < 70:
             continue
+        df = _align(df, cal)
         c = df["Close"].dropna()
+        if len(c) < max(70, n_l + 5):
+            continue
         dv = (df["Close"] * df["Volume"]).fillna(0)
         v10, v60 = dv.tail(10).mean(), dv.tail(60).mean()
+        sig = float(np.log(c).diff().tail(60).std() * 100)        # günlük oynaklık %
+        r_s, r_l = _ret(c, n_s), _ret(c, n_l)
         rows.append({"Varlık": ad, "Kısa": kisa, "Sembol": t,
                      "5G %": _ret(c, 5), "20G %": _ret(c, 20), "60G %": _ret(c, 60),
-                     "Hacim trendi": (v10 / v60) if v60 > 0 else np.nan})
+                     "Kısa %": r_s, "Dönem %": r_l,
+                     "Oynaklık %": sig,
+                     "Düz. kısa": r_s / (sig * np.sqrt(n_s)) if sig > 0 else np.nan,
+                     "Düz. dönem": r_l / (sig * np.sqrt(n_l)) if sig > 0 else np.nan,
+                     "Hacim trendi": (v10 / v60) if v60 > 0 else np.nan,
+                     "Veri tarihi": c.index[-1].date().isoformat()})
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    m20, m5 = df["20G %"].mean(), df["5G %"].mean()
-    s20 = df["20G %"].std(ddof=0) or 1.0
-    s5 = df["5G %"].std(ddof=0) or 1.0
-    df["Göreli 20G"] = df["20G %"] - m20
-    # akış skoru: 20 gün (ağırlık 0.6) + 5 gün ivme (0.4), hacim artışıyla güçlenir
-    z = 0.6 * (df["20G %"] - m20) / s20 + 0.4 * (df["5G %"] - m5) / s5
+
+    def z(x):
+        sd = x.std(ddof=0)
+        return (x - x.mean()) / (sd if sd and np.isfinite(sd) else 1.0)
+    df["Göreli 20G"] = df["20G %"] - df["20G %"].mean()
+    zz = 0.6 * z(df["Düz. dönem"]) + 0.4 * z(df["Düz. kısa"])
     vol_boost = df["Hacim trendi"].clip(0.6, 1.6).fillna(1.0)
-    df["Akış Skoru"] = (z * vol_boost).round(2)
+    # hacim artışı yalnızca yönü güçlendirir (hem giriş hem çıkışta), işareti değiştirmez
+    df["Akış Skoru"] = (zz * vol_boost).round(2)
     df["Akış"] = np.select([df["Akış Skoru"] >= 0.6, df["Akış Skoru"] <= -0.6],
                            ["🟢 para giriyor", "🔴 para çıkıyor"], "⚪ nötr")
+    df.attrs["horizon"] = horizon
     return df.sort_values("Akış Skoru", ascending=False).reset_index(drop=True)
+
+
+def tables(prices: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    return {h: table(prices, h) for h in HORIZONS}
 
 
 def reasons(df: pd.DataFrame) -> list[str]:
@@ -68,17 +120,21 @@ def reasons(df: pd.DataFrame) -> list[str]:
         return []
     r = {row["Sembol"]: row for row in df.to_dict("records")}
 
-    def g(t, k="20G %"):
+    k0 = "Dönem %" if "Dönem %" in df.columns else "20G %"
+    hz = df.attrs.get("horizon", "1 ay")
+    f = float(np.sqrt(HORIZONS.get(hz, (5, 20))[1] / 20))   # eşikler dönem uzunluğuyla ölçeklenir
+
+    def g(t, k=k0):
         return r[t][k] if t in r and np.isfinite(r[t][k]) else np.nan
 
     out = []
     spy, tlt, gld, uup, btc = g("SPY"), g("TLT"), g("GLD"), g("UUP"), g("BTC-USD")
     qqq, iwm, xlp, eem, slv, dbc = g("QQQ"), g("IWM"), g("XLP"), g("EEM"), g("SLV"), g("DBC")
     if np.isfinite(spy) and np.isfinite(tlt):
-        if spy > tlt + 2:
+        if spy > tlt + 2 * f:
             out.append(f"📈 **Risk iştahı:** hisseler ({spy:+.1f}%) tahvili ({tlt:+.1f}%) "
                        "geçiyor — para güvenli limandan riskli varlıklara geçiyor.")
-        elif tlt > spy + 2:
+        elif tlt > spy + 2 * f:
             out.append(f"🛡️ **Riskten kaçış:** tahvil ({tlt:+.1f}%) hisseyi ({spy:+.1f}%) "
                        "geçiyor — para güvenli limana sığınıyor.")
     if np.isfinite(gld) and np.isfinite(uup):
@@ -91,36 +147,36 @@ def reasons(df: pd.DataFrame) -> list[str]:
         elif gld > 0 and uup > 0:
             out.append(f"⚠️ **Altın ve dolar birlikte yükseliyor** (altın {gld:+.1f}%, dolar "
                        f"{uup:+.1f}%) — genelde kriz/güvenli liman talebi işaretidir.")
-    if np.isfinite(slv) and np.isfinite(gld) and slv - gld > 3:
+    if np.isfinite(slv) and np.isfinite(gld) and slv - gld > 3 * f:
         out.append(f"🥈 **Gümüş altını geçiyor** ({slv:+.1f}% / {gld:+.1f}%) — sanayi "
                    "talebi ve risk iştahıyla uyumlu; değerli metallerde iştah yüksek.")
     if np.isfinite(iwm) and np.isfinite(spy):
-        if iwm > spy + 1.5:
+        if iwm > spy + 1.5 * f:
             out.append(f"🌱 **Yükseliş genişliyor:** küçük şirketler ({iwm:+.1f}%) büyükleri "
                        f"({spy:+.1f}%) geçiyor — sağlıklı katılım.")
-        elif spy > iwm + 1.5:
+        elif spy > iwm + 1.5 * f:
             out.append(f"🏰 **Para büyük şirketlere sığınıyor:** küçükler ({iwm:+.1f}%) "
                        f"S&P 500'ün ({spy:+.1f}%) gerisinde — dar katılım.")
-    if np.isfinite(xlp) and np.isfinite(spy) and xlp > spy + 1.5:
+    if np.isfinite(xlp) and np.isfinite(spy) and xlp > spy + 1.5 * f:
         out.append(f"🧺 **Defansife kaçış:** temel tüketim ({xlp:+.1f}%) endeksi ({spy:+.1f}%) "
                    "geçiyor — kurumsal para temkinli.")
-    if np.isfinite(qqq) and np.isfinite(btc) and qqq > spy and btc > 5:
+    if np.isfinite(qqq) and np.isfinite(btc) and qqq > spy and btc > 5 * f:
         out.append(f"🚀 **Spekülatif iştah:** teknoloji ({qqq:+.1f}%) ve kripto ({btc:+.1f}%) "
                    "birlikte güçlü.")
-    if np.isfinite(eem) and np.isfinite(spy) and np.isfinite(uup) and eem > spy + 1.5 and uup < 0:
+    if np.isfinite(eem) and np.isfinite(spy) and np.isfinite(uup) and eem > spy + 1.5 * f and uup < 0:
         out.append(f"🌍 **Gelişen piyasalara akış:** zayıf dolar ({uup:+.1f}%) gelişen "
                    f"piyasaları ({eem:+.1f}%) destekliyor.")
-    if np.isfinite(dbc) and dbc > 4:
+    if np.isfinite(dbc) and dbc > 4 * f:
         out.append(f"🛢️ **Emtia yükselişi** ({dbc:+.1f}%) — enflasyon beklentisi ve faiz "
                    "baskısı riski; altın için çift taraflı.")
     top = df.head(3)["Varlık"].tolist()
     bot = df.tail(3)["Varlık"].tolist()[::-1]
     out.insert(0, f"🔀 **Özet:** para en çok **{', '.join(bot)}** tarafından çıkıp "
-                  f"**{', '.join(top)}** tarafına yöneliyor (son 20 gün, göreli).")
+                  f"**{', '.join(top)}** tarafına yöneliyor (son {hz}, oynaklığa göre düzeltilmiş).")
     return out
 
 
-def diagram(df: pd.DataFrame, title: str = "Varlıklar arası para akışı (son 20 gün)"):
+def diagram(df: pd.DataFrame, title: str | None = None):
     """Varlıklar daire üzerinde; kalın oklar çıkıştan girişe."""
     import matplotlib
     matplotlib.use("Agg")
@@ -128,6 +184,8 @@ def diagram(df: pd.DataFrame, title: str = "Varlıklar arası para akışı (son
     from matplotlib.patches import Circle, FancyArrowPatch
 
     BG, TXT, MUT = "#0b0e11", "#d1d4dc", "#7a8394"
+    hz = df.attrs.get("horizon", "1 ay") if df is not None else "1 ay"
+    title = title or f"Varlıklar arası para akışı (son {hz})"
     fig, ax = plt.subplots(figsize=(9.5, 7.2), dpi=110, facecolor=BG)
     ax.set_facecolor(BG)
     ax.set_xlim(-1.55, 1.55)
@@ -169,7 +227,9 @@ def diagram(df: pd.DataFrame, title: str = "Varlıklar arası para akışı (son
         ax.add_patch(Circle((x, y), r, fill=False, ec="#ffffff", lw=0.6, alpha=0.4, zorder=4))
         ax.text(x, y + 0.012, row["Kısa"], color="#ffffff", fontsize=7.6,
                 fontweight="bold", ha="center", va="center", zorder=5)
-        ax.text(x, y - r - 0.055, f"{row['20G %']:+.1f}%  (5G {row['5G %']:+.1f}%)",
+        dp = row.get("Dönem %", row["20G %"])
+        kp = row.get("Kısa %", row["5G %"])
+        ax.text(x, y - r - 0.055, f"{dp:+.1f}%  (ivme {kp:+.1f}%)",
                 color=TXT, fontsize=7, ha="center", va="center", zorder=5)
     ax.text(0, 0.06, "PARA", color=MUT, fontsize=16, ha="center", va="center",
             fontweight="bold", alpha=0.35)
@@ -177,8 +237,10 @@ def diagram(df: pd.DataFrame, title: str = "Varlıklar arası para akışı (son
     ax.text(-1.52, 1.33, title, color=TXT, fontsize=11.5, fontweight="bold", va="top")
     ax.text(-1.52, 1.24, "yeşil: para giriyor · kırmızı: çıkıyor · daire büyüklüğü: akış gücü · "
             "ok kalınlığı: göreli fark", color=MUT, fontsize=7, va="top")
-    ax.text(-1.52, -1.27, "Temsilîdir: fiyat performansı × dolar hacmi trendinden çıkarılır; "
-            "gerçek fon akış verisi değildir.", color=MUT, fontsize=6.5)
+    vd = df["Veri tarihi"].max() if "Veri tarihi" in df.columns else ""
+    ax.text(-1.52, -1.27, "Temsilîdir: oynaklığa göre düzeltilmiş performans × dolar hacmi "
+            f"trendinden çıkarılır; gerçek fon akış verisi değildir. Veri: {vd}",
+            color=MUT, fontsize=6.5)
     return fig
 
 
