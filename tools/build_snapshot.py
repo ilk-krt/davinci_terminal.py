@@ -99,6 +99,12 @@ def main(only: list[str]) -> int:
             return r, f"{len(r[0])} tema, {len(r[2])} ETF"
         step("theme_rotation", f)
 
+        for hz in ("kısa", "uzun"):
+            def f(hz=hz):
+                r = cmp.theme_rotation(hz)
+                return r, f"{hz} vade · {len(r[0])} tema"
+            step("theme_rotation_" + {"kısa": "kisa", "uzun": "uzun"}[hz], f)
+
         def f():
             p = cmp.theme_performance()
             return p, f"{len(p)} tema"
