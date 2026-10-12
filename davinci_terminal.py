@@ -50,6 +50,7 @@ from apex import robotchart as rbc
 
 import datetime as dt
 import json
+from pathlib import Path
 import logging
 
 import numpy as np
@@ -1025,6 +1026,46 @@ def load_robot_data(sym: str, nonce: str):
     h, _ = dta.fetch([sym], "1h_long")
     d, _ = dta.fetch([sym], "1d_long")
     return h.get(sym), d.get(sym)
+
+
+def show_batch() -> None:
+    """data/robot_batch/ — 'Robot toplu test' iş akışının sonuçları."""
+    bd = Path(__file__).resolve().parent / "data" / "robot_batch"
+    st.markdown(
+        "**Nasıl çalıştırılır:** GitHub'da repo → **Actions** → soldan **Robot toplu test** → "
+        "**Run workflow**. Sembol kutusunu boş bırakırsanız 50 farklı türde hisse (teknoloji, "
+        "enerji, biyotek, Çin, spekülatif, ETF…) son 12 ayda, bütün profil × plan × yapı "
+        "(açık/kapalı) kombinasyonlarıyla denenir (~45–60 dk). Bitince sonuçlar buraya gelir "
+        "ve iş akışı sayfasının altında **robot_toplu_test** adıyla indirilebilir. "
+        "**robot_toplu_test.zip** dosyasını Claude'a verin.")
+    oz = bd / "ozet.csv"
+    if not oz.exists():
+        st.info("Henüz toplu test sonucu yok.")
+        return
+    try:
+        meta = json.loads((bd / "durum.json").read_text())
+    except Exception:                            # noqa: BLE001
+        meta = {}
+    O = pd.read_csv(oz)
+    st.caption(f"Son çalıştırma: {meta.get('tarih', '?')} · {meta.get('baslangic', '?')}'den bugüne · "
+               f"{len(meta.get('bitti', []))} sembol bitti · çekilemeyen: "
+               f"{', '.join(meta.get('cekilemeyen', [])) or '—'} · {meta.get('sure_dk', '?')} dk")
+    if len(O):
+        g = (O.assign(**{"Al-tutu geçti": O["Getiri %"] > O["Al-tut %"],
+                         "Kârlı": O["Getiri %"] > 0})
+             .groupby(["Profil", "Yapı"])
+             .agg(**{"Ort. getiri %": ("Getiri %", "mean"), "Medyan getiri %": ("Getiri %", "median"),
+                     "Ort. maks. düşüş %": ("Maks. düşüş %", "mean"), "Kârlı %": ("Kârlı", "mean"),
+                     "Al-tutu geçti %": ("Al-tutu geçti", "mean"), "Ort. işlem": ("İşlem", "mean")})
+             .reset_index())
+        g["Kârlı %"] *= 100
+        g["Al-tutu geçti %"] *= 100
+        g["Yapı"] = g["Yapı"].map({1: "✅", 0: "❌"})
+        st.dataframe(g.round(1), width="stretch", hide_index=True)
+    zp = bd / "robot_toplu_test.zip"
+    if zp.exists():
+        st.download_button("⬇️ robot_toplu_test.zip (Claude'a vermek için)", zp.read_bytes(),
+                           "robot_toplu_test.zip", "application/zip", key="rb_batch_dl")
 
 
 def _rparams(cfg: dict) -> "rbt.Params":
@@ -2246,6 +2287,10 @@ elif PAGE == "🤖 Robot (simülasyon)":
                     f"{pd.Timestamp(st_):%d.%m.%Y}'den bugüne")
         with st.spinner("Geçmiş 1 saatlik mumlar üzerinde oynatılıyor…"):
             show_robot(robot_run(sy_, cj_, st_, st.session_state.nonce_scan), "bt")
+
+    # ---------------------------------------------- toplu test
+    with st.expander("📦 Toplu test — robotu 50 hissede birden dene (GitHub Actions)"):
+        show_batch()
 
     # ---------------------------------------------- robotlarım
     st.markdown("---")
