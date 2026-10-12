@@ -11,8 +11,16 @@ on:
         description: "Geriye kaç ay (1 saatlik veri en fazla ~23 ay)"
         required: false
         default: "12"
+      bitis:
+        description: "Kaç ay önce bitsin (0 = bugün; örneklem dışı test için ay=22, bitis=12)"
+        required: false
+        default: "0"
       yapi:
-        description: "Yapı katmanı: ikisi / acik / kapali"
+        description: "Yapı katmanı: profil / ikisi / acik / kapali"
+        required: false
+        default: "profil"
+      kapi:
+        description: "Fib kapısı + ADX: ikisi / acik / kapali"
         required: false
         default: "ikisi"
 
@@ -38,7 +46,9 @@ jobs:
           python tools/robot_batch.py
           --semboller "${{ github.event.inputs.semboller }}"
           --ay "${{ github.event.inputs.ay }}"
+          --bitis "${{ github.event.inputs.bitis }}"
           --yapi "${{ github.event.inputs.yapi }}"
+          --kapi "${{ github.event.inputs.kapi }}"
         continue-on-error: true
       - name: Sonuç dosyası (indirilebilir)
         uses: actions/upload-artifact@v4
