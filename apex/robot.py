@@ -237,14 +237,13 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
     first = int(np.searchsorted(idx.values, np.datetime64(st_ts)))
-    A = None
-    if p.structure:
-        try:
-            TL = sctx.timeline(d, since=idx[0])
-            A = sctx.align(idx, TL)
-        except Exception:                        # noqa: BLE001
-            A = None
-    Acol = {k: A[k].to_numpy(float) for k in A.columns} if A is not None else {}
+    A_all = None                                 # yapı her zaman hesaplanır (işlem bağlamı için);
+    try:                                         # kurallarda yalnızca structure=True ise kullanılır
+        A_all = sctx.align(idx, sctx.timeline(d, since=idx[0]))
+    except Exception:                            # noqa: BLE001
+        A_all = None
+    A = A_all if p.structure else None
+    Acol = {k: A_all[k].to_numpy(float) for k in A_all.columns} if A_all is not None else {}
 
     def srow(i):
         return {k: v[i] for k, v in Acol.items()}
@@ -335,11 +334,16 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
         if tr_open is None:
             return
         pnl = tr_open["sold"] - tr_open["cost"]
+        rk = tr_open["risk"]
         trades.append({"Giriş": tr_open["t"], "Giriş fiyatı": tr_open["px"],
                        "Çıkış": idx[i], "Adet": tr_open["q"],
                        "K/Z $": pnl, "K/Z %": pnl / tr_open["cost"] * 100 if tr_open["cost"] else np.nan,
-                       "R": pnl / (tr_open["risk"] * tr_open["q"]) if tr_open["risk"] > 0 else np.nan,
-                       "Son çıkış": why, "Satışlar": " · ".join(tr_open["parts"])})
+                       "R": pnl / (rk * tr_open["q"]) if rk > 0 else np.nan,
+                       "Son çıkış": why, "Satışlar": " · ".join(tr_open["parts"]),
+                       "Süre (mum)": int(i - tr_open.get("i", i)),
+                       "MFE R": (tr_open.get("mx", tr_open["px"]) - tr_open["px"]) / rk if rk > 0 else np.nan,
+                       "MAE R": (tr_open.get("mn", tr_open["px"]) - tr_open["px"]) / rk if rk > 0 else np.nan,
+                       **tr_open.get("ctx", {})})
         tr_open, radar_on, tps, tp_i, cool, free_done = None, False, [], 0, p.cooldown, False
         loss_streak = loss_streak + 1 if pnl < 0 else 0
         if p.max_losses and loss_streak >= p.max_losses:
@@ -404,6 +408,36 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
             out = merged[:3]
         tp_lbl.extend(nm for _, nm in out)
         return [v for v, _ in out]
+
+    def _entry_ctx(i, why, stop_why, risk, atr_d, cr, S):
+        """Toplu test analizi için girişteki bağlam (CSV'ye yazılır)."""
+        x = {"Giriş nedeni": why.split(" · ")[0] if why.startswith("🧠") else why,
+             "Stop nedeni": stop_why, "Hedefler": " | ".join(tp_lbl) if tp_lbl else "",
+             "Risk ATR": risk / atr_d if atr_d else np.nan,
+             "Hacim x": v[i] / vm[i] if np.isfinite(vm[i]) and vm[i] > 0 else np.nan,
+             "ADX": float(cr["adx"]), "RSI": float(cr["rsi"]),
+             "EMA50>200": bool(cr["ema50"] > cr["ema200"]), "Fiyat>EMA50": bool(cr["close"] > cr["ema50"])}
+        if p.smart and CL is not None:
+            x["Konsey skoru"] = float(sc_[i]) if np.isfinite(sc_[i]) else np.nan
+            x["Konsey eşik"] = float(ti_[i]) if np.isfinite(ti_[i]) else np.nan
+        if S is not None:
+            a_ = S.get("atr") or atr_d
+            for k_, nm in (("s1", "S1 uzaklık ATR"), ("r1", "R1 uzaklık ATR"),
+                           ("gr_bot", "Açık gap uzaklık ATR")):
+                vv = S.get(k_, np.nan)
+                x[nm] = (vv - c[i]) / a_ if np.isfinite(vv) and a_ else np.nan
+            gt_, gb_ = S.get("gb_top", np.nan), S.get("gb_bot", np.nan)
+            x["Boğa gap içinde"] = bool(np.isfinite(gt_) and gb_ <= c[i] <= gt_ + 0.3 * a_)
+            dt_, db_ = S.get("dz_top", np.nan), S.get("dz_bot", np.nan)
+            x["Talep bölgesinde"] = bool(np.isfinite(dt_) and db_ <= c[i] <= dt_ + 0.5 * a_)
+            for k_, nm in (("ell_sgn", "Elliott yön"), ("ell_kind", "Elliott faz"),
+                           ("wk_trend", "Haftalık trend"), ("wk_fib_up", "Haftalık Fib"),
+                           ("wk_ell_sgn", "Haftalık Elliott"), ("mg_cls", "Mum Gücü sınıf"),
+                           ("mg_syn", "Mum Gücü sentez"), ("fib_r", "Fib r"), ("sweep", "Süpürme"),
+                           ("gfr_ready", "GFR hazır"), ("vsa_bias", "VSA bölge")):
+                vv = S.get(k_, np.nan)
+                x[nm] = float(vv) if vv is not None and np.isfinite(vv) else np.nan
+        return x
 
     # "sadece yönet": başlangıçta pozisyonda
     if p.plan == "yonet" and first < n:
@@ -490,6 +524,9 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                     radar_on = False
                 if qty > 0:
                     hh = max(hh, c[i])
+                    if tr_open is not None:
+                        tr_open["mx"] = max(tr_open.get("mx", hi[i]), hi[i])
+                        tr_open["mn"] = min(tr_open.get("mn", lo[i]), lo[i])
                     # 3) stop asla aşağı inmez
                     prev = stop
                     if c[i] >= entry + p.be_r * r0:
@@ -647,7 +684,9 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                                                              px, risk, S, atr_d), 0, False, False
                     tps0 = list(tps)
                     tr_open = {"t": idx[i], "px": px, "q": q, "cost": q * px, "sold": 0.0,
-                               "risk": risk, "parts": []}
+                               "risk": risk, "parts": [], "i": i,
+                               "ctx": _entry_ctx(i, why, stop_why, risk, atr_d, cr,
+                                                 srow(i) if Acol else None)}
                     if tp_lbl:
                         ht = ", ".join(f"{x:.2f} ({nm})" for x, nm in zip(tps, tp_lbl))
                     else:
