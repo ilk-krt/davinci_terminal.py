@@ -119,11 +119,26 @@ def _f_norm(src: pd.Series, norm_len: int) -> pd.Series:
         index=src.index)
 
 
+def bar_days(df: pd.DataFrame) -> float:
+    """Mumlar arası tipik gün sayısı (günlük ≈1, haftalık ≈7, aylık ≈30)."""
+    try:
+        ix = pd.DatetimeIndex(df.index[-60:])
+        d = np.diff(ix.values).astype("timedelta64[s]").astype(float) / 86400.0
+        return float(np.median(d)) if len(d) else 1.0
+    except Exception:                              # noqa: BLE001
+        return 1.0
+
+
 def apex_core(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame:
-    """APEX CORE v3'ün bant ve sinyal serilerini üretir."""
+    """APEX CORE v4'ün bant ve sinyal serilerini üretir (v4'ün hesap çekirdeği v3 ile
+    aynıdır; v4 değişiklikleri etiket/alarm tarafındadır)."""
+    explicit = bool(p and "normLen" in p)
     p = {**PARAMS, **(p or {})}
     o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
     n_len = p["normLen"]
+    if not explicit:                               # Pine i_autoLen: haftalık 78 · aylık 36
+        bd = bar_days(df)
+        n_len = 36 if bd >= 20 else 78 if bd >= 5 else n_len
     out = pd.DataFrame(index=df.index)
 
     # --- temel güç zinciri ---
@@ -273,7 +288,11 @@ def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame
     o, h, l, c, v = (df["Open"], df["High"], df["Low"], df["Close"], df["Volume"])
     out = pd.DataFrame(index=df.index)
     hlc3 = (h + l + c) / 3.0
-    len100, len20 = 100, 20
+    # Pine V670: haftalık/aylık grafikte (is_macro) pencereler kısalır
+    is_macro = bar_days(df) >= 5
+    len100, len20 = (24, 6) if is_macro else (100, 20)
+    len200 = 40 if is_macro else 200
+    dia_len = max(10, int(p["diaLen"] / 5)) if is_macro else p["diaLen"]
 
     # ---- Ağırlıklı konsensüs (7 bileşen) --------------------------------
     # V665 beş bileşen kullanıyor, yavaş RSI ile ROC'u hesaplayıp çöpe atıyordu.
@@ -360,9 +379,9 @@ def apex_omni(df: pd.DataFrame, p: dict[str, Any] | None = None) -> pd.DataFrame
     # V665'in koşulu ("60 barın dibi OL" ve "iki bardır EMA9 ÜSTÜNDE kapat")
     # birbirini dışlıyordu; 16.000 barlık sınamada sinyal sıfır kez yandı.
     ema_focus = ema(c, p["emaBreak"])
-    ema200 = ema(c, 200)
-    prior_low = lowest(l, p["diaLen"]).shift(1)
-    prior_high = highest(h, p["diaLen"]).shift(1)
+    ema200 = ema(c, len200)
+    prior_low = lowest(l, dia_len).shift(1)
+    prior_high = highest(h, dia_len).shift(1)
     sweep_low = (l < prior_low) & (c > prior_low)
     sweep_high = (h > prior_high) & (c < prior_high)
     since_low = barssince(sweep_low)
