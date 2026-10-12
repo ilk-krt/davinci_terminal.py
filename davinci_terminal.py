@@ -2234,7 +2234,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                 0, 5, int(P0.get("max_losses", 0)), 1, key=f"rb_ml_{prof_r}")
         a11, a12 = st.columns(2)
         a13, a14 = st.columns(2)
-        fg_r = a13.toggle("🔑 Fib kapısı: dün 0.382–0.618 bölgesinde olmalı", True,
+        fg_r = a13.toggle("🔑 Fib kapısı: dün 0.382–0.786 geri çekilme bölgesinde olmalı", True,
                           key=f"rb_fg_{prof_r}")
         adx_r = a14.slider("Günlük ADX alt sınırı (0 = kapalı)", 0, 30, 15, 1, key=f"rb_adx_{prof_r}")
         str_r = a11.toggle("🏛️ Yapı katmanı (S/R, gap/FVG, Wyckoff, likidite, Elliott, Mum Gücü, "
@@ -2249,7 +2249,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
            "breakout": brk_r, "ema_bounce": bnc_r, "trail_atr": tr_r,
            "risk_pct": risk_r / 100, "regime_gate": reg_r, "trend_ride": ride_r,
            "max_losses": int(ml_r), "structure": bool(str_r),
-           "fib_gate": [0.382, 0.618] if fg_r else [], "adx_min": float(adx_r),
+           "fib_gate": [0.382, 0.786] if fg_r else [], "adx_min": float(adx_r),
            "struct_entry": bool(sen_r and str_r),
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
@@ -2306,7 +2306,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                        f" ({best['Getiri %']:+.1f}%, maks. düşüş {best['Maks. düşüş %']:.1f}%, "
                        f"al-tut {best['Al-tut %']:+.1f}%). Yukarıdan bu profili ve planı seçip "
                        "başlatabilirsiniz.")
-            st.caption("**Kapı** sütunu: ✅ = profilin varsayılanı (🔑 Fib kapısı 0.382–0.618 + ADX > 15 "
+            st.caption("**Kapı** sütunu: ✅ = profilin varsayılanı (🔑 Fib kapısı 0.382–0.786 + ADX > 15 "
                        "açık), ❌ = aynı profil kapı KAPALI (kademeli planla, karşılaştırma için).")
             st.caption("⚠️ Geçmişte en iyi çalışan ayar gelecekte de en iyisi olmayabilir "
                        "(aşırı uydurma riski). Getiri / düşüş oranı yüksek olanlar daha sağlamdır.")
