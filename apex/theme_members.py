@@ -1,0 +1,101 @@
+# apex/theme_members.py — temaların HİSSE kadrosu
+#
+# Eskiden bir temanın hisseleri yalnızca ETF'lerinin bilinen ilk ~10 bileşeninden
+# geliyordu (ör. Uzay = ARKX + UFO'nun ilk 10'u → içinde AMD, AMZN, DE, GRMN gibi
+# temayla zayıf ilgili devler; ASTS, LUNR, PL, RDW gibi saf oyuncular yok). Bu dosya:
+#   1) her temaya SEÇİLMİŞ saf oyuncu / öncü hisse listesi ekler (EXTRA),
+#   2) artık işlem görmeyen (satın alınan / borsadan çıkan) sembolleri ayıklar (STALE),
+#   3) hisse listesine karışan ETF sembollerini çıkarır.
+# Kullanıcının uygulamadan eklediği hisseler (watchlist → theme_extra) bunlara eklenir.
+# Fiyat verisi gelmeyen sembol taramada kendiliğinden düşer.
+from __future__ import annotations
+
+EXTRA: dict[str, list[str]] = {
+    "Uzay": ["RKLB", "ASTS", "LUNR", "PL", "RDW", "BKSY", "SPCE", "IRDM", "SATS", "VSAT",
+             "GSAT", "SIDU", "FLY", "VOYG", "KRMN", "SPIR", "SATL", "LHX", "NOC", "LMT", "RTX",
+             "BA", "HEI", "TDY", "KTOS", "AVAV", "ACHR", "JOBY"],
+    "Yapay Zekâ": ["NVDA", "AMD", "AVGO", "MRVL", "MSFT", "GOOGL", "META", "AMZN", "ORCL",
+                   "PLTR", "SNOW", "AI", "PATH", "SOUN", "BBAI", "TEM", "CRWV", "NBIS", "SMCI",
+                   "DELL", "HPE", "ANET", "VRT", "ALAB", "CRDO", "ARM", "TSM", "MU", "APP",
+                   "NOW", "IBM", "CRM"],
+    "Yarı İletken": ["ARM", "ALAB", "CRDO", "ON", "NXPI", "ADI", "MCHP", "SWKS", "QRVO", "TER",
+                     "ENTG", "ONTO", "AMKR", "MXL", "POWI", "SITM", "NVMI", "CAMT", "ACLS",
+                     "UCTT", "FORM", "AEHR", "SNPS", "CDNS"],
+    "Kuantum": ["IONQ", "RGTI", "QUBT", "QBTS", "ARQQ", "LAES", "IBM", "GOOGL", "HON", "NVDA",
+                "MSFT"],
+    "Yazılım & SaaS": ["APP", "ADSK", "CDNS", "SNPS", "HUBS", "MDB", "ESTC", "OKTA", "PATH", "U",
+                       "BILL", "GTLB", "CFLT", "PCOR", "VEEV", "TYL", "FICO", "MNDY", "DOCU",
+                       "BOX", "IOT", "RBRK", "S"],
+    "Siber Güvenlik": ["S", "RBRK", "VRNS", "RPD", "SAIL", "FFIV", "OKTA", "FTNT"],
+    "Robotik & Otomasyon": ["ISRG", "ROK", "TER", "ZBRA", "SYM", "CGNX", "SERV", "RR", "TSLA",
+                            "NVDA", "DE", "EMR", "PRCT", "AUR", "MBLY", "ABBNY"],
+    "Teknoloji (Geniş)": ["ARM", "DELL", "ANET", "ADI", "TXN", "PANW", "CRWD", "APP", "SNPS",
+                          "CDNS"],
+    "Veri Merkezi & Dijital GYO": ["VRT", "ANET", "SMCI", "DELL", "CRWV", "NBIS", "APLD", "IREN",
+                                   "CORZ", "GDS", "VNET", "ETN", "PWR", "CEG", "VST", "TLN"],
+    "Nükleer & Uranyum": ["OKLO", "NNE", "SMR", "LEU", "BWXT", "CCJ", "UEC", "UUUU", "DNN", "NXE",
+                          "URG", "EU", "CEG", "VST", "TLN", "GEV", "LTBR", "ASPI"],
+    "Kamu Hizmetleri": ["AES", "PCG", "EIX", "PEG", "ED", "EXC", "WEC", "ES", "DTE", "PPL", "AEE",
+                        "CNP", "NRG", "TLN"],
+    "Temiz Enerji": ["FSLR", "ENPH", "SEDG", "RUN", "ARRY", "SHLS", "NXT", "BE", "PLUG", "FCEL",
+                     "BLDP", "CWEN", "BEP", "EOSE", "FLNC", "GEV"],
+    "Petrol & Gaz": ["EXE"],
+    "Bakır": ["FCX", "SCCO", "TECK", "BHP", "RIO", "ERO", "HBM", "TGB", "IE"],
+    "Lityum & Batarya": ["ALB", "SQM", "LAC", "LAR", "SGML", "ENVX", "QS", "SLDP", "EOSE",
+                         "TSLA", "RIVN", "LCID"],
+    "Nadir Toprak": ["MP", "USAR", "UAMY", "NB", "CRML", "TMC", "ALB"],
+    "Altın Madenciliği": ["AGI", "IAG", "NGD", "OR", "SSRM", "CDE", "HL", "EQX", "ORLA", "PAAS"],
+    "Gümüş": ["PAAS", "AG", "HL", "CDE", "SVM", "EXK", "FSM", "WPM", "SSRM"],
+    "Metal & Madencilik": ["CMC", "MTRN", "ATI", "CRS", "CENX", "MP", "UAMY"],
+    "Savunma & Havacılık": ["KTOS", "AVAV", "PLTR", "LDOS", "BAH", "SAIC", "CACI", "DRS", "MRCY",
+                            "AXON", "ESLT", "BWXT", "RKLB", "KRMN", "RCAT"],
+    "Taşımacılık": ["XPO", "SAIA", "KNX", "CHRW", "LSTR", "MATX", "KEX", "ARCB", "R"],
+    "Konut İnşaatı": ["TPH", "MTH", "MHO", "CCS", "GRBK", "IBP", "TMHC", "SKY", "CVCO"],
+    "Fintek": ["UPST", "LC", "MQ", "FOUR", "GPN", "FI", "CRCL", "BLSH", "GLXY", "CHYM", "KLAR"],
+    "Bitcoin": ["MSTR", "COIN", "GLXY", "HOOD", "MARA", "SMLR"],
+    "Bitcoin Madenciliği": ["BITF"],
+    "Biyoteknoloji": ["ARGX", "INSM", "NBIX", "SRPT", "EXEL", "IONS", "HALO", "ACAD", "PTCT",
+                      "RVMD", "MDGL", "VKTX", "CYTK", "AXSM", "KRYS", "LEGN", "BBIO", "ROIV",
+                      "TGTX", "DVAX", "ARWR", "NTRA", "RARE", "APLS", "IOVA", "CRNX", "SMMT",
+                      "NUVL", "ABVX", "BNTX"],
+    "Genomik": ["TXG", "NTRA", "VCYT", "CDNA", "ADPT", "DNA"],
+    "Tıbbi Cihaz": ["PODD", "GEHC", "RMD", "STE", "ALGN", "PEN", "GMED", "IRTC", "TNDM", "INSP",
+                    "ATRC", "PRCT"],
+    "Sağlık (Geniş)": ["CI", "MCK", "COR", "CAH", "HCA"],
+    "İlaç": ["LLY", "NVO", "MRK", "PFE", "ABBV", "BMY", "JNJ", "AZN", "GSK", "SNY", "NVS", "ZTS",
+             "VTRS", "TEVA", "ELAN", "OGN", "PRGO", "JAZZ"],
+    "İletişim & Medya": ["PSKY", "ROKU", "SPOT", "TTWO", "EA", "RDDT", "SNAP", "LYV"],
+    "Tüketici Defansif": ["PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "MDLZ", "CL", "KMB",
+                          "GIS", "KHC", "HSY", "KR", "STZ", "KDP", "MNST", "CHD", "CLX"],
+    "Materyal": ["LIN", "SHW", "APD", "ECL", "FCX", "NEM", "DOW", "DD", "PPG", "NUE", "VMC", "MLM",
+                 "CTVA", "ALB", "IP", "PKG", "BALL", "CF", "MOS", "LYB"],
+    "Tarım & Gıda": ["DE", "CTVA", "NTR", "MOS", "CF", "ADM", "BG", "AGCO", "CNH", "FMC", "TSN",
+                     "ZTS"],
+    "Su Altyapısı": ["AWK", "XYL", "WTRG", "WTS", "ECL", "PNR", "VLTO", "AOS", "FELE", "MWA",
+                     "CWT", "BMI", "AWR"],
+    "Çin İnterneti": ["BABA", "PDD", "JD", "BIDU", "NTES", "TCOM", "BILI", "TME", "VIPS", "IQ",
+                      "BEKE", "ZTO", "YUMC", "LI", "NIO", "XPEV", "FUTU", "TAL", "EDU"],
+    "Hindistan": ["INFY", "HDB", "IBN", "WIT", "RDY", "MMYT"],
+    "Japonya": ["TM", "SONY", "MUFG", "SMFG", "HMC", "MFG", "NMR", "IX", "TAK", "FANUY", "NTDOY"],
+    "Avrupa": ["ASML", "SAP", "NVO", "AZN", "SHEL", "TTE", "BP", "HSBC", "UL", "SAN", "BCS", "ING",
+               "DEO", "RELX", "SNY", "GSK", "NVS", "ARGX", "SPOT", "STLA", "RACE", "ERIC", "NOK",
+               "BBVA", "LYG"],
+    "Gelişen Piyasalar": ["TSM", "BABA", "PDD", "INFY", "HDB", "IBN", "VALE", "PBR", "ITUB", "NU",
+                          "MELI", "SE", "KB", "SHG", "TCOM", "BIDU", "JD", "CPNG"],
+    "Büyüme": ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "TSLA", "NFLX", "LLY", "V",
+               "MA", "COST", "PLTR", "NOW", "CRWD", "UBER", "SHOP", "APP", "ISRG"],
+    "Değer": ["BRK-B", "JPM", "XOM", "JNJ", "PG", "CVX", "WMT", "BAC", "HD", "ABBV", "KO", "PEP",
+              "MRK", "CSCO", "WFC", "IBM", "VZ", "T", "PM", "CAT"],
+    "Temettü": ["KO", "PEP", "PG", "JNJ", "ABBV", "PFE", "VZ", "T", "MO", "PM", "O", "HD", "TXN",
+                "CSCO", "CVX", "XOM", "MRK", "BMY", "AMGN", "LMT", "UPS", "LOW", "MCD", "CME",
+                "BLK"],
+}
+
+# satın alınan / borsadan çıkan / adı değişen (eski ETF bileşen listelerinde kalmış olabilir)
+STALE = {"JNPR", "X", "CHK", "PARA", "JWN", "ALTM", "ANSS", "HES", "DFS", "WBA", "NARI",
+         "ITCI", "MAG", "WNS"}
+
+# THEME_TRACKER içinde hisse olanlar (geri kalanı ETF'dir ve hisse listesine girmez)
+TRACKER_STOCKS = {"IONQ", "RGTI", "QUBT", "MARA", "RIOT", "CLSK", "IREN"}
+NO_STOCK_THEMES = {"Volatilite", "Uzun Vadeli Tahvil", "Yüksek Getirili Tahvil",
+                   "Küçük Ölçekli (Small Cap)"}

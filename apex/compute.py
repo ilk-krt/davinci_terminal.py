@@ -57,6 +57,8 @@ def snapshot_universe() -> list[str]:
     out: set[str] = set(uni.all_stocks()) | set(uni.all_etfs())
     out |= set(uni.MAIN_SECTORS)
     out |= {t for lst in uni.THEME_TRACKER.values() for t in lst}
+    for tema in uni.THEME_TRACKER:                 # temaların genişletilmiş hisse kadrosu
+        out |= set(theme_holdings(tema))
     out |= set(uni.DEFAULT_EARNINGS)
     for v in uni.DEFAULT_FUTURE_THEMES.values():
         for lst in v.values():
@@ -179,12 +181,12 @@ def rotation():
     return rot, series, failed, files
 
 
-def theme_rotation():
-    """Adım 4: tema ve ETF'lerde göreli rotasyon (RRG)."""
+def theme_rotation(horizon: str = "orta"):
+    """Adım 4: tema ve ETF'lerde göreli rotasyon (RRG) — vade: kısa / orta / uzun."""
     etfs = sorted({t for lst in uni.THEME_TRACKER.values() for t in lst})
     prices, failed = dta.fetch(etfs + ["SPY"], "1d")
-    T, tails = fnl.theme_rotation(prices, uni.THEME_TRACKER)
-    E = fnl.etf_rotation(prices, etfs)
+    T, tails = fnl.theme_rotation(prices, uni.THEME_TRACKER, horizon=horizon)
+    E = fnl.etf_rotation(prices, etfs, horizon=horizon)
     idx_map = {}
     for tema, members in uni.THEME_TRACKER.items():
         idx, _ = fnl.theme_index(prices, members)
@@ -227,17 +229,29 @@ def decision(rot: pd.DataFrame):
     return {"assets": assets, "vix": vr, "notes": notes, "failed": failed}
 
 
-def theme_holdings(tema: str) -> list[str]:
-    """Temadaki ETF'lerin bileşenleri; bileşeni bilinmeyen sembol hissenin
-    kendisidir (ör. IONQ, MARA)."""
+def theme_holdings(tema: str, user_extra: list[str] | None = None) -> list[str]:
+    """Temanın hisse kadrosu = ETF bileşenleri + seçilmiş saf oyuncular (theme_members.EXTRA)
+    + kullanıcının eklediği hisseler. ETF sembolleri, yabancı borsa sembolleri ve artık işlem
+    görmeyenler çıkarılır."""
+    from apex import theme_members as tmm
+    if tema in tmm.NO_STOCK_THEMES:
+        return []
+    etf_like = {t for lst in uni.THEME_TRACKER.values() for t in lst} - tmm.TRACKER_STOCKS
+    etf_like |= set(uni.ETF)
     out: list[str] = []
+    # önce saf oyuncular ve kullanıcının ekledikleri, sonra ETF bileşenleri
+    for x in list(tmm.EXTRA.get(tema, [])) + list(user_extra or []):
+        x = x.strip().upper()
+        if x and x not in out:
+            out.append(x)
     for t in uni.THEME_TRACKER.get(tema, []):
         h = uni.holdings(t)
         if h:
             out += [x for x in h if x not in out]
-        elif t not in uni.ETF and t not in out:
+        elif t in tmm.TRACKER_STOCKS and t not in out:
             out.append(t)
-    return [x for x in out if "." not in x]      # yabancı borsa sembolleri hariç
+    return [x for x in out if "." not in x and x not in tmm.STALE and x not in etf_like
+            and not x.endswith("-USD")]
 
 
 def plan_universe() -> list[str]:
@@ -248,14 +262,14 @@ def plan_universe() -> list[str]:
     return sorted(out)
 
 
-def plans(tickers) -> pd.DataFrame:
-    """Giriş / stop / hedef planları (günlük mumdan)."""
+def plans(tickers, vade: str = "orta") -> pd.DataFrame:
+    """Giriş / stop / hedef planları — kısa/orta: günlük mum, uzun: haftalık mum."""
     from apex import plan as pln
     tickers = sorted(set(tickers))
     if not tickers:
         return pd.DataFrame()
-    prices, _ = dta.fetch(tickers, "1d")
-    return pln.plans(prices, tickers)
+    prices, _ = dta.fetch(tickers, "1wk" if vade == "uzun" else "1d")
+    return pln.plans(prices, tickers, vade)
 
 
 def flows():

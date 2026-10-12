@@ -33,8 +33,16 @@ def _f(x: float) -> str:
             else f"{x:.4g}")
 
 
-def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
-    """Günlük OHLCV → plan sözlüğü (ok=False ise 'neden' alanı açıklar)."""
+# VADE: kısa = günlük mum, sığ giriş ve sıkı stop · orta = günlük (varsayılan) ·
+# uzun = HAFTALIK mum (seviyeler, ATR ve hedefler haftalık grafikten)
+VADE_PLAN = {"kısa": {"tf": "Günlük", "depth": 2.0, "stop": 0.75},
+             "orta": {"tf": "Günlük", "depth": 3.0, "stop": 1.0},
+             "uzun": {"tf": "Haftalık", "depth": 2.5, "stop": 1.0}}
+
+
+def stock_plan(df: pd.DataFrame, tf: str = "Günlük", depth: float = MAX_DEPTH_ATR,
+               stop_atr: float = STOP_ATR) -> dict[str, Any]:
+    """OHLCV (günlük ya da haftalık) → plan sözlüğü (ok=False ise 'neden' alanı açıklar)."""
     if df is None or len(df) < 120:
         return {"ok": False, "neden": "yetersiz fiyat geçmişi"}
     d = df[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(
@@ -45,12 +53,15 @@ def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
     if not (np.isfinite(atr) and atr > 0 and px > 0):
         return {"ok": False, "neden": "ATR hesaplanamadı"}
     c = d["Close"]
-    e21, e50 = float(ema(c, 21).iloc[-1]), float(ema(c, 50).iloc[-1])
-    e200 = float(ema(c, 200).iloc[-1]) if len(d) >= 200 else np.nan
-    hi52 = float(d["High"].tail(252).max())
+    wk = tf == "Haftalık"                     # haftalıkta EMA 5/10/40 ≈ günlük 21/50/200
+    nf, nm_, ns = (5, 10, 40) if wk else (21, 50, 200)
+    e21, e50 = float(ema(c, nf).iloc[-1]), float(ema(c, nm_).iloc[-1])
+    e200 = float(ema(c, ns).iloc[-1]) if len(d) >= ns else np.nan
+    lb = ("h.EMA5", "h.EMA10", "h.EMA40") if wk else ("EMA21", "EMA50", "EMA200")
+    hi52 = float(d["High"].tail(52 if tf == "Haftalık" else 252).max())
 
     sr = pst.sr_matrix(d, atr_s)
-    gm = pst.gap_matrix(d, atr_s, "Günlük")
+    gm = pst.gap_matrix(d, atr_s, tf)
     vz = pst.vsa_zones(d)
     mf = pfib.main_fib(d)
 
@@ -71,9 +82,9 @@ def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
             sup.append((z["top"], f"Wyckoff alım bölgesi ({z['name']})", 1.0))
         elif z["side"] < 0 and z["bot"] >= px:
             res.append((z["bot"], f"Wyckoff satış bölgesi ({z['name']})"))
-    for v, nm in ((e21, "EMA21"), (e50, "EMA50"), (e200, "EMA200")):
+    for v, nm in ((e21, lb[0]), (e50, lb[1]), (e200, lb[2])):
         if np.isfinite(v) and v < px:
-            sup.append((v, nm, 0.7 if nm != "EMA200" else 1.0))
+            sup.append((v, nm, 0.7 if nm != lb[2] else 1.0))
     if mf.get("ok") and mf["up"]:
         for lv in (0.382, 0.5, 0.618):
             v = mf["levels"][lv]
@@ -86,7 +97,7 @@ def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
         res.append((hi52, "52 hafta zirvesi"))
 
     # --- giriş kümesi: fiyatın 0–3 ATR altında en çok çakışan destekler
-    cand = [s for s in sup if px - MAX_DEPTH_ATR * atr <= s[0] <= px]
+    cand = [s for s in sup if px - depth * atr <= s[0] <= px]
     best = None
     for p0, _, _ in cand:
         grp = [s for s in cand if abs(s[0] - p0) <= CLUSTER_ATR * atr]
@@ -106,7 +117,7 @@ def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
     z_hi = min(max(s[0] for s in grp) + ZONE_ATR * atr * 0.5, px)
     z_hi = max(z_hi, z_lo)
     entry = (z_lo + z_hi) / 2
-    stop = z_lo - STOP_ATR * atr
+    stop = z_lo - stop_atr * atr
     risk = entry - stop
 
     # --- hedefler: girişten ≥ 1R yukarıdaki dirençler
@@ -147,11 +158,12 @@ def stock_plan(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def plans(prices: dict[str, pd.DataFrame], tickers) -> pd.DataFrame:
+def plans(prices: dict[str, pd.DataFrame], tickers, vade: str = "orta") -> pd.DataFrame:
+    cfg = VADE_PLAN.get(vade, VADE_PLAN["orta"])
     rows = []
     for t in tickers:
         try:
-            p = stock_plan(prices.get(t))
+            p = stock_plan(prices.get(t), cfg["tf"], cfg["depth"], cfg["stop"])
         except Exception as exc:           # noqa: BLE001
             p = {"ok": False, "neden": f"hesap hatası: {exc}"}
         rows.append({"Sembol": t, **p})

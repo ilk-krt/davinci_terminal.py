@@ -591,17 +591,25 @@ def money_flow_summary(rot: pd.DataFrame, top: int = 4) -> list[str]:
 # --------------------------------------------------------------------------
 # 3) HANGİ TEMA İVMELENİYOR? — göreli rotasyon grafiği (RRG)
 # --------------------------------------------------------------------------
-def rrg_lines(close: pd.Series, bench: pd.Series) -> tuple[pd.Series, pd.Series]:
+# VADE → (RS-Oran ortalama penceresi, RS-Momentum geri bakış) — işlem günü
+RRG_H: dict[str, tuple[int, int]] = {"kısa": (20, 5), "orta": (50, 10), "uzun": (130, 20)}
+VADE_TXT = {"kısa": "Kısa vade (1–2 hafta)", "orta": "Orta vade (1–2 ay)",
+            "uzun": "Uzun vade (3–6 ay)"}
+
+
+def rrg_lines(close: pd.Series, bench: pd.Series, horizon: str = "orta"
+              ) -> tuple[pd.Series, pd.Series]:
     """
     RS-Oranı: (fiyat / SPY) oranının 50 günlük ortalamasına göre konumu ×100.
       100'ün üstü = endeksten güçlü.
     RS-Momentum: RS-Oranının 10 gün önceye göre değişimi ×100.
       100'ün üstü = göreli güç artıyor.
     """
+    n_r, n_m = RRG_H.get(horizon, RRG_H["orta"])
     j = pd.concat([close, bench], axis=1, join="inner").dropna()
     rs = j.iloc[:, 0] / j.iloc[:, 1]
-    ratio = (100 * rs / rs.rolling(50).mean()).ewm(span=5, adjust=False).mean()
-    mom = (100 * ratio / ratio.shift(10)).ewm(span=3, adjust=False).mean()
+    ratio = (100 * rs / rs.rolling(n_r).mean()).ewm(span=max(3, n_m // 2), adjust=False).mean()
+    mom = (100 * ratio / ratio.shift(n_m)).ewm(span=3, adjust=False).mean()
     return ratio, mom
 
 
@@ -654,13 +662,15 @@ def theme_index(prices: dict[str, pd.DataFrame], members: list[str]
 
 
 def early_score(ratio: pd.Series, mom: pd.Series, vol: pd.Series | None,
-                close: pd.Series) -> dict[str, Any]:
+                close: pd.Series, horizon: str = "orta") -> dict[str, Any]:
     r, m = float(ratio.iloc[-1]), float(mom.iloc[-1])
     q = rrg_quadrant(r, m)
-    m_up = float(mom.iloc[-1] - mom.iloc[-6]) if len(mom) > 6 else np.nan
-    r_up = float(ratio.iloc[-1] - ratio.iloc[-6]) if len(ratio) > 6 else np.nan
-    # liderliğe yeni mi geçti? (son 10 günde iyileşen → lider)
-    qs = [rrg_quadrant(a, b) for a, b in zip(ratio.tail(11), mom.tail(11))]
+    lb = max(3, RRG_H.get(horizon, RRG_H["orta"])[1] // 2)
+    m_up = float(mom.iloc[-1] - mom.iloc[-1 - lb]) if len(mom) > lb + 1 else np.nan
+    r_up = float(ratio.iloc[-1] - ratio.iloc[-1 - lb]) if len(ratio) > lb + 1 else np.nan
+    # liderliğe yeni mi geçti? (son ~2 momentum penceresinde iyileşen → lider)
+    tw = 2 * lb + 1
+    qs = [rrg_quadrant(a, b) for a, b in zip(ratio.tail(tw), mom.tail(tw))]
     taze_lider = q == "lider" and any(x in ("iyilesen", "geride") for x in qs[:-1])
 
     vol_ok = False
@@ -680,7 +690,7 @@ def early_score(ratio: pd.Series, mom: pd.Series, vol: pd.Series | None,
         s += 10
     if vol_ok:
         s += 15
-    c5 = _pct(close, 5)
+    c5 = _pct(close, {"kısa": 2, "orta": 5, "uzun": 21}.get(horizon, 5))
     if np.isfinite(c5) and c5 > 0:
         s += 5
     return {"RS-Oran": r, "RS-Mom": m, "Bölge": RRG_Q[q][0], "_q": q,
@@ -690,7 +700,8 @@ def early_score(ratio: pd.Series, mom: pd.Series, vol: pd.Series | None,
 
 
 def theme_rotation(prices: dict[str, pd.DataFrame], themes: dict[str, list[str]],
-                   bench: str = "SPY") -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+                   bench: str = "SPY", horizon: str = "orta"
+                   ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """Tema bazında RRG + erken akış skoru. Döner: (tablo, {tema: kuyruk})."""
     b = prices.get(bench)
     if b is None or b.empty:
@@ -701,13 +712,14 @@ def theme_rotation(prices: dict[str, pd.DataFrame], themes: dict[str, list[str]]
         idx, vol = theme_index(prices, members)
         if idx is None:
             continue
-        ratio, mom = rrg_lines(idx, bc)
+        ratio, mom = rrg_lines(idx, bc, horizon)
         if ratio.dropna().empty or mom.dropna().empty:
             continue
-        e = early_score(ratio.dropna(), mom.dropna(), vol, idx)
+        e = early_score(ratio.dropna(), mom.dropna(), vol, idx, horizon)
         rows.append({"Tema": tema, **e, "ETF'ler": ", ".join(members)})
         t = pd.DataFrame({"RS-Oran": ratio, "RS-Mom": mom}).dropna()
-        tails[tema] = t.iloc[::-5].head(6).iloc[::-1]   # son 6 hafta
+        step = {"kısa": 2, "orta": 5, "uzun": 15}.get(horizon, 5)
+        tails[tema] = t.iloc[::-step].head(6).iloc[::-1]   # son 6 adım
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values("Erken Skor", ascending=False).reset_index(drop=True)
@@ -715,7 +727,7 @@ def theme_rotation(prices: dict[str, pd.DataFrame], themes: dict[str, list[str]]
 
 
 def etf_rotation(prices: dict[str, pd.DataFrame], etfs: list[str],
-                 bench: str = "SPY") -> pd.DataFrame:
+                 bench: str = "SPY", horizon: str = "orta") -> pd.DataFrame:
     b = prices.get(bench)
     if b is None or b.empty:
         return pd.DataFrame()
@@ -726,10 +738,10 @@ def etf_rotation(prices: dict[str, pd.DataFrame], etfs: list[str],
         if df is None or len(df) < 80:
             continue
         c = df["Close"].dropna()
-        ratio, mom = rrg_lines(c, bc)
+        ratio, mom = rrg_lines(c, bc, horizon)
         if ratio.dropna().empty or mom.dropna().empty:
             continue
-        e = early_score(ratio.dropna(), mom.dropna(), df["Close"] * df["Volume"], c)
+        e = early_score(ratio.dropna(), mom.dropna(), df["Close"] * df["Volume"], c, horizon)
         rows.append({"ETF": t, **e})
     out = pd.DataFrame(rows)
     return out.sort_values("Erken Skor", ascending=False) if not out.empty else out
@@ -738,6 +750,11 @@ def etf_rotation(prices: dict[str, pd.DataFrame], etfs: list[str],
 # --------------------------------------------------------------------------
 # 4) BU TEMADA HANGİ HİSSE?
 # --------------------------------------------------------------------------
+# vade → (hisse uzun getiri sütunu, kısa sütun, tema uzun gün, tema kısa gün, etiket, uzama eşiği %)
+VADE_RS = {"kısa": ("1 Hafta %", "1 Gün %", 5, 1, "1 hafta", 20.0),
+           "orta": ("1 Ay %", "1 Hafta %", 21, 5, "1 ay", 35.0),
+           "uzun": ("1 Ay %", "1 Hafta %", 105, 25, "~5 ay", 80.0)}   # uzun: haftalık tarama
+
 BULL = {"💎 DIAMOND AL", "⭐ GOLDEN STAR", "🎣 LİKİDİTE SÜPÜRMESİ", "🐋 TOPLAMA",
         "🚀 AFTERBURNER", "🟢 GİRİŞ BÖLGESİ", "📈 MINERVINI MVP",
         "🎯 SIKIŞMA PATLADI", "⚡ PRO ↗ RETAIL"}
@@ -775,7 +792,7 @@ def classify_stock(d: dict[str, Any], min_liq_m: float = 10.0) -> tuple[str, lis
     p1h = d.get("1 Hafta %", np.nan)
 
     if np.isfinite(rs1a):
-        why.append(f"temaya göre {rs1a:+.1f}% (1A)")
+        why.append(f"temaya göre {rs1a:+.1f}% ({d.get('_rs_lbl', '1A')})")
     if np.isfinite(dw5):
         why.append("whale ↑" if dw5 > 1 else "whale ↓" if dw5 < -1 else "whale yatay")
     if np.isfinite(dsv):
@@ -804,7 +821,7 @@ def classify_stock(d: dict[str, Any], min_liq_m: float = 10.0) -> tuple[str, lis
         return "🌱 Geride kaldı, toparlanıyor", why
     if np.isfinite(rs1a) and rs1a > 0:
         if d.get("_exhausted") or sig == "⚠️ TÜKENME" or (
-                np.isfinite(d.get("1 Ay %", np.nan)) and d.get("1 Ay %") > 35):
+                np.isfinite(d.get("1 Ay %", np.nan)) and d.get("1 Ay %") > d.get("_ext_thr", 35)):
             return "🔥 Lider ama uzamış", why
         return "🚀 Lider", why
     return "⚪ İzle", why
@@ -837,8 +854,12 @@ def build_stock_table(scan_df: pd.DataFrame, theme_close: pd.Series | None,
                       prices: dict[str, pd.DataFrame] | None = None,
                       earn: pd.DataFrame | None = None,
                       short: pd.DataFrame | None = None,
-                      min_liq_m: float = 10.0, swing_score=None) -> pd.DataFrame:
-    """Tarama tablosunu tema içi göreli güç, bilanço ve short ile birleştirir."""
+                      min_liq_m: float = 10.0, swing_score=None,
+                      vade: str = "orta") -> pd.DataFrame:
+    """Tarama tablosunu tema içi göreli güç, bilanço ve short ile birleştirir.
+
+    vade: kısa → hisse 1 hafta / 1 gün, tema 5 / 1 gün · orta → 1 ay / 1 hafta ·
+    uzun → HAFTALIK tarama (21 hafta / 5 hafta), tema 105 / 25 gün."""
     if scan_df is None or scan_df.empty:
         return pd.DataFrame()
     df = scan_df.copy()
@@ -846,10 +867,12 @@ def build_stock_table(scan_df: pd.DataFrame, theme_close: pd.Series | None,
         df = df[df["Sinyal"] != "⚫ VERİ YOK"].copy()
     if df.empty:
         return df
-    th1a = _pct(theme_close, 21) if theme_close is not None else np.nan
-    th1h = _pct(theme_close, 5) if theme_close is not None else np.nan
-    df["Temaya Göre 1A"] = pd.to_numeric(df.get("1 Ay %"), errors="coerce") - th1a
-    df["Temaya Göre 1H"] = pd.to_numeric(df.get("1 Hafta %"), errors="coerce") - th1h
+    c_l, c_s, n_l, n_s, lbl, thr = VADE_RS.get(vade, VADE_RS["orta"])
+    th1a = _pct(theme_close, n_l) if theme_close is not None else np.nan
+    th1h = _pct(theme_close, n_s) if theme_close is not None else np.nan
+    df["Temaya Göre 1A"] = pd.to_numeric(df.get(c_l), errors="coerce") - th1a
+    df["Temaya Göre 1H"] = pd.to_numeric(df.get(c_s), errors="coerce") - th1h
+    df["_rs_lbl"], df["_ext_thr"] = lbl, thr
 
     if prices:
         hi = {}
