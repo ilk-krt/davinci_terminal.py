@@ -2128,8 +2128,10 @@ elif PAGE == "🤖 Robot (simülasyon)":
                       horizontal=True, key="rb_prof_in",
                       format_func=lambda k: {"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
                                              "agresif": "🔥 Agresif",
-                                             "akilli": "🧠 Akıllı (sinyal konseyi)"}[k])
+                                             "akilli": "🧠 Akıllı (sinyal konseyi)",
+                                             "yapisal": "🏛️ Yapısal (S/R · gap · Elliott)"}.get(k, k))
     st.caption(rbt.PROFILE_TXT[prof_r])
+    st.caption(rbt.STRUCT_TXT)
     P0 = rbt.PROFILES[prof_r]
     zone_names = list(rbt.ZONES)
     z_default = next((k for k, v in rbt.ZONES.items() if tuple(v) == tuple(P0["zone"])),
@@ -2163,13 +2165,20 @@ elif PAGE == "🤖 Robot (simülasyon)":
                            bool(P0.get("trend_ride", False)), key=f"rb_ride_{prof_r}")
         ml_r = a10.number_input("Devre kesici: art arda kaç zarardan sonra mola (0 = kapalı)",
                                 0, 5, int(P0.get("max_losses", 0)), 1, key=f"rb_ml_{prof_r}")
+        a11, a12 = st.columns(2)
+        str_r = a11.toggle("🏛️ Yapı katmanı (S/R, gap/FVG, Wyckoff, likidite, Elliott, Mum Gücü, "
+                           "haftalık trend)", bool(P0.get("structure", True)), key=f"rb_str_{prof_r}",
+                           help="Veto + yapısal stop + yapısal hedef (+ akıllıda konsey sinyali).")
+        sen_r = a12.toggle("🏛️ Yapısal destekten dönüşle de gir", bool(P0.get("struct_entry", False)),
+                           key=f"rb_sen_{prof_r}", disabled=not str_r)
     cfg = {**{k: (list(v) if isinstance(v, tuple) else v) for k, v in P0.items()},
            "profile": prof_r, "plan": plan_r, "budget": budget_r,
            "zone": list(rbt.ZONES[zone_r]), "vol_mult": vol_r, "radar": radar_r,
            "stop_atr_max": stopm_r, "trend_filter": trend_r, "loop": loop_r,
            "breakout": brk_r, "ema_bounce": bnc_r, "trail_atr": tr_r,
            "risk_pct": risk_r / 100, "regime_gate": reg_r, "trend_ride": ride_r,
-           "max_losses": int(ml_r),
+           "max_losses": int(ml_r), "structure": bool(str_r),
+           "struct_entry": bool(sen_r and str_r),
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
     period = b1.selectbox("Geçmişte dene: dönem", ["Son 3 ay", "Son 6 ay", "Son 12 ay",
@@ -2190,7 +2199,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                 "olusturma": dt.datetime.now().isoformat(timespec="minutes")})
         _save_wl(f"🤖 {sym_r} robotu başlatıldı")
         st.rerun()
-    if b3.button("🔬 En iyi ayarı bul (4 profil × 3 plan, ~30 sn)", key="rb_opt",
+    if b3.button("🔬 En iyi ayarı bul (5 profil × 3 plan, ~1 dk)", key="rb_opt",
                  width="stretch", disabled=not sym_r or plan_r == "yonet"):
         st.session_state["rb_opt_res"] = (sym_r, (pd.Timestamp.today() - pd.DateOffset(
             months=months)).normalize().isoformat(), budget_r)
@@ -2201,14 +2210,16 @@ elif PAGE == "🤖 Robot (simülasyon)":
         sy_, st_, bu_ = st.session_state["rb_opt_res"]
         st.markdown(f"##### 🔬 {sy_} · {pd.Timestamp(st_):%d.%m.%Y}'den bugüne · hangi ayar "
                     "daha iyi çalıştı?")
-        with st.spinner("12 kombinasyon geçmiş veride deneniyor…"):
+        with st.spinner("5 profil × 3 plan (+ yapı katmanı kapalı karşılaştırması) geçmiş "
+                        "veride deneniyor…"):
             O = robot_optimize(sy_, st_, bu_, st.session_state.nonce_scan)
         if O.empty:
             st.error("Veri alınamadı.")
         else:
             O2 = O.copy()
             O2["Profil"] = O2["Profil"].map({"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
-                                             "agresif": "🔥 Agresif", "akilli": "🧠 Akıllı"})
+                                             "agresif": "🔥 Agresif", "akilli": "🧠 Akıllı",
+                                             "yapisal": "🏛️ Yapısal"})
             O2["Plan"] = O2["Plan"].map(lambda k: rbt.PLANS[k].split(" —")[0])
             st.dataframe(O2, width="stretch", hide_index=True, column_config={
                 "Getiri %": st.column_config.NumberColumn(format="%+.1f%%"),
@@ -2218,10 +2229,15 @@ elif PAGE == "🤖 Robot (simülasyon)":
                 "Kazanan %": st.column_config.NumberColumn(format="%.0f%%"),
                 "Ort. R": st.column_config.NumberColumn(format="%+.2f")})
             best = O.iloc[0]
-            st.success(f"En yüksek getiri: **{best['Profil']} · {rbt.PLANS[best['Plan']].split(' —')[0]}**"
+            st.success(f"En yüksek getiri: **{best['Profil']} · {rbt.PLANS[best['Plan']].split(' —')[0]}"
+                       f"{'' if best.get('Yapı', '✅') == '✅' else ' · yapı katmanı KAPALI'}**"
                        f" ({best['Getiri %']:+.1f}%, maks. düşüş {best['Maks. düşüş %']:.1f}%, "
                        f"al-tut {best['Al-tut %']:+.1f}%). Yukarıdan bu profili ve planı seçip "
                        "başlatabilirsiniz.")
+            st.caption("**Yapı** sütunu: ✅ = yapı katmanı açık (S/R, gap, Elliott, Wyckoff, Mum Gücü, "
+                       "haftalık trend kullanılıyor), ❌ = aynı profil yapı katmanı KAPALI (kademeli "
+                       "planla, karşılaştırma için). Katmanın bu hissede işe yarayıp yaramadığını buradan "
+                       "görebilirsiniz; yaramadıysa '⚙️ Ayarları elle değiştir'den kapatabilirsiniz.")
             st.caption("⚠️ Geçmişte en iyi çalışan ayar gelecekte de en iyisi olmayabilir "
                        "(aşırı uydurma riski). Getiri / düşüş oranı yüksek olanlar daha sağlamdır.")
     if st.session_state.get("rb_bt_res"):
