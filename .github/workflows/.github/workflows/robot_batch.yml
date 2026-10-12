@@ -1,0 +1,56 @@
+name: Robot toplu test
+
+on:
+  workflow_dispatch:
+    inputs:
+      semboller:
+        description: "Semboller (virgülle; boş = varsayılan 50 hisse)"
+        required: false
+        default: ""
+      ay:
+        description: "Geriye kaç ay (1 saatlik veri en fazla ~23 ay)"
+        required: false
+        default: "12"
+      yapi:
+        description: "Yapı katmanı: ikisi / acik / kapali"
+        required: false
+        default: "ikisi"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: robot-toplu-test
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Robotu hisselerde çalıştır
+        run: >
+          python tools/robot_batch.py
+          --semboller "${{ github.event.inputs.semboller }}"
+          --ay "${{ github.event.inputs.ay }}"
+          --yapi "${{ github.event.inputs.yapi }}"
+        continue-on-error: true
+      - name: Sonuç dosyası (indirilebilir)
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot_toplu_test
+          path: data/robot_batch/
+          if-no-files-found: warn
+      - name: Sonuçları repoya kaydet (uygulamada da görünür)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/robot_batch/ || true
+          git diff --cached --quiet || git commit -m "Robot toplu test sonuçları"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
