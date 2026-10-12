@@ -80,7 +80,7 @@ def main(only: list[str]) -> int:
     if want("akis") or want("karar"):
         def f():
             t, failed = cmp.flows()
-            return (t, failed), f"{len(t)} varlık"
+            return (t, failed), f"{len(t.get('1 ay', []))} varlık × {len(t)} dönem"
         step("flows", f)
 
         def f():
