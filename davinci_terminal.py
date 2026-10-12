@@ -1053,14 +1053,15 @@ def show_batch() -> None:
     if len(O):
         g = (O.assign(**{"Al-tutu geçti": O["Getiri %"] > O["Al-tut %"],
                          "Kârlı": O["Getiri %"] > 0})
-             .groupby(["Profil", "Yapı"])
+             .groupby(["Profil", "Kapı" if "Kapı" in O.columns else "Yapı"])
              .agg(**{"Ort. getiri %": ("Getiri %", "mean"), "Medyan getiri %": ("Getiri %", "median"),
                      "Ort. maks. düşüş %": ("Maks. düşüş %", "mean"), "Kârlı %": ("Kârlı", "mean"),
                      "Al-tutu geçti %": ("Al-tutu geçti", "mean"), "Ort. işlem": ("İşlem", "mean")})
              .reset_index())
         g["Kârlı %"] *= 100
         g["Al-tutu geçti %"] *= 100
-        g["Yapı"] = g["Yapı"].map({1: "✅", 0: "❌"})
+        kc = "Kapı" if "Kapı" in g.columns else "Yapı"
+        g[kc] = g[kc].map({1: "✅", 0: "❌"})
         st.dataframe(g.round(1), width="stretch", hide_index=True)
     zp = bd / "robot_toplu_test.zip"
     if zp.exists():
@@ -1071,7 +1072,7 @@ def show_batch() -> None:
 def _rparams(cfg: dict) -> "rbt.Params":
     keys = rbt.Params.__dataclass_fields__
     kw = {k: v for k, v in cfg.items() if k in keys}
-    for k_ in ("zone", "tp_r"):
+    for k_ in ("zone", "tp_r", "fib_gate"):
         if k_ in kw:
             kw[k_] = tuple(kw[k_])
     return rbt.Params(**kw)
@@ -2164,14 +2165,15 @@ elif PAGE == "🤖 Robot (simülasyon)":
             q_r = cost_r = stop_r = 0.0
     prof_keys = list(rbt.PROFILES)
     prof_r = st.radio("Agresiflik", prof_keys,
-                      index=prof_keys.index(st.session_state.get("rb_prof", "akilli"))
-                      if st.session_state.get("rb_prof", "akilli") in prof_keys else 0,
+                      index=prof_keys.index(st.session_state.get("rb_prof", "temkinli"))
+                      if st.session_state.get("rb_prof", "temkinli") in prof_keys else 0,
                       horizontal=True, key="rb_prof_in",
                       format_func=lambda k: {"temkinli": "🐢 Temkinli", "dengeli": "⚖️ Dengeli",
                                              "agresif": "🔥 Agresif",
-                                             "akilli": "🧠 Akıllı (sinyal konseyi)",
+                                             "akilli": "🧪 Akıllı (deneysel)",
                                              "yapisal": "🏛️ Yapısal (S/R · gap · Elliott)"}.get(k, k))
     st.caption(rbt.PROFILE_TXT[prof_r])
+    st.caption(rbt.FIB_GATE_TXT)
     st.caption(rbt.STRUCT_TXT)
     P0 = rbt.PROFILES[prof_r]
     zone_names = list(rbt.ZONES)
@@ -2207,8 +2209,12 @@ elif PAGE == "🤖 Robot (simülasyon)":
         ml_r = a10.number_input("Devre kesici: art arda kaç zarardan sonra mola (0 = kapalı)",
                                 0, 5, int(P0.get("max_losses", 0)), 1, key=f"rb_ml_{prof_r}")
         a11, a12 = st.columns(2)
+        a13, a14 = st.columns(2)
+        fg_r = a13.toggle("🔑 Fib kapısı: dün 0.382–0.618 bölgesinde olmalı", True,
+                          key=f"rb_fg_{prof_r}")
+        adx_r = a14.slider("Günlük ADX alt sınırı (0 = kapalı)", 0, 30, 15, 1, key=f"rb_adx_{prof_r}")
         str_r = a11.toggle("🏛️ Yapı katmanı (S/R, gap/FVG, Wyckoff, likidite, Elliott, Mum Gücü, "
-                           "haftalık trend)", bool(P0.get("structure", True)), key=f"rb_str_{prof_r}",
+                           "haftalık trend)", bool(P0.get("structure", False)), key=f"rb_str_{prof_r}",
                            help="Veto + yapısal stop + yapısal hedef (+ akıllıda konsey sinyali).")
         sen_r = a12.toggle("🏛️ Yapısal destekten dönüşle de gir", bool(P0.get("struct_entry", False)),
                            key=f"rb_sen_{prof_r}", disabled=not str_r)
@@ -2219,6 +2225,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
            "breakout": brk_r, "ema_bounce": bnc_r, "trail_atr": tr_r,
            "risk_pct": risk_r / 100, "regime_gate": reg_r, "trend_ride": ride_r,
            "max_losses": int(ml_r), "structure": bool(str_r),
+           "fib_gate": [0.382, 0.618] if fg_r else [], "adx_min": float(adx_r),
            "struct_entry": bool(sen_r and str_r),
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
@@ -2240,7 +2247,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
                                 "olusturma": dt.datetime.now().isoformat(timespec="minutes")})
         _save_wl(f"🤖 {sym_r} robotu başlatıldı")
         st.rerun()
-    if b3.button("🔬 En iyi ayarı bul (5 profil × 3 plan, ~1 dk)", key="rb_opt",
+    if b3.button("🔬 En iyi ayarı bul (5 profil × 3 plan, ~40 sn)", key="rb_opt",
                  width="stretch", disabled=not sym_r or plan_r == "yonet"):
         st.session_state["rb_opt_res"] = (sym_r, (pd.Timestamp.today() - pd.DateOffset(
             months=months)).normalize().isoformat(), budget_r)
@@ -2251,7 +2258,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
         sy_, st_, bu_ = st.session_state["rb_opt_res"]
         st.markdown(f"##### 🔬 {sy_} · {pd.Timestamp(st_):%d.%m.%Y}'den bugüne · hangi ayar "
                     "daha iyi çalıştı?")
-        with st.spinner("5 profil × 3 plan (+ yapı katmanı kapalı karşılaştırması) geçmiş "
+        with st.spinner("5 profil × 3 plan (+ Fib kapısı kapalı karşılaştırması) geçmiş "
                         "veride deneniyor…"):
             O = robot_optimize(sy_, st_, bu_, st.session_state.nonce_scan)
         if O.empty:
@@ -2271,14 +2278,12 @@ elif PAGE == "🤖 Robot (simülasyon)":
                 "Ort. R": st.column_config.NumberColumn(format="%+.2f")})
             best = O.iloc[0]
             st.success(f"En yüksek getiri: **{best['Profil']} · {rbt.PLANS[best['Plan']].split(' —')[0]}"
-                       f"{'' if best.get('Yapı', '✅') == '✅' else ' · yapı katmanı KAPALI'}**"
+                       f"{'' if best.get('Kapı', '✅') == '✅' else ' · Fib kapısı KAPALI'}**"
                        f" ({best['Getiri %']:+.1f}%, maks. düşüş {best['Maks. düşüş %']:.1f}%, "
                        f"al-tut {best['Al-tut %']:+.1f}%). Yukarıdan bu profili ve planı seçip "
                        "başlatabilirsiniz.")
-            st.caption("**Yapı** sütunu: ✅ = yapı katmanı açık (S/R, gap, Elliott, Wyckoff, Mum Gücü, "
-                       "haftalık trend kullanılıyor), ❌ = aynı profil yapı katmanı KAPALI (kademeli "
-                       "planla, karşılaştırma için). Katmanın bu hissede işe yarayıp yaramadığını buradan "
-                       "görebilirsiniz; yaramadıysa '⚙️ Ayarları elle değiştir'den kapatabilirsiniz.")
+            st.caption("**Kapı** sütunu: ✅ = profilin varsayılanı (🔑 Fib kapısı 0.382–0.618 + ADX > 15 "
+                       "açık), ❌ = aynı profil kapı KAPALI (kademeli planla, karşılaştırma için).")
             st.caption("⚠️ Geçmişte en iyi çalışan ayar gelecekte de en iyisi olmayabilir "
                        "(aşırı uydurma riski). Getiri / düşüş oranı yüksek olanlar daha sağlamdır.")
     if st.session_state.get("rb_bt_res"):
