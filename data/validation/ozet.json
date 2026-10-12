@@ -1,7 +1,8 @@
 {
- "tarih": "2026-10-12T11:39",
+ "tarih": "2026-10-12T16:31",
  "ay": 12,
  "bolumler": [
+  "balina",
   "akis",
   "tema",
   "endeks",
@@ -9,508 +10,1176 @@
  ],
  "surum": "doğrulama v1",
  "hata": {},
- "sure_dk": 32.9,
+ "sure_dk": 18.4,
  "ozet": {
   "akis": {
    "eski · 1 ay": {
     "5G": {
-     "IC ort": 0.042,
-     "IC t": 0.69,
-     "IC>0 %": 58.0,
+     "IC ort": -0.026,
+     "IC t": -0.48,
+     "IC>0 %": 44.0,
      "n tarih": 50
     },
     "20G": {
-     "IC ort": 0.038,
-     "IC t": 0.63,
-     "IC>0 %": 53.2,
+     "IC ort": 0.028,
+     "IC t": 0.46,
+     "IC>0 %": 57.4,
      "n tarih": 47
     },
     "60G": {
-     "IC ort": -0.018,
-     "IC t": -0.3,
-     "IC>0 %": 43.6,
+     "IC ort": -0.055,
+     "IC t": -0.83,
+     "IC>0 %": 46.2,
      "n tarih": 39
     }
    },
    "yeni · 1 ay": {
     "5G": {
-     "IC ort": 0.093,
-     "IC t": 1.56,
-     "IC>0 %": 64.0,
+     "IC ort": 0.016,
+     "IC t": 0.3,
+     "IC>0 %": 54.0,
      "n tarih": 50
     },
     "20G": {
-     "IC ort": 0.049,
-     "IC t": 0.88,
-     "IC>0 %": 46.8,
+     "IC ort": 0.065,
+     "IC t": 1.18,
+     "IC>0 %": 57.4,
      "n tarih": 47
     },
     "60G": {
-     "IC ort": -0.019,
-     "IC t": -0.29,
+     "IC ort": -0.031,
+     "IC t": -0.46,
+     "IC>0 %": 41.0,
+     "n tarih": 39
+    },
+    "etiket ort. göreli 20G %": {
+     "⚪ nötr": -0.43,
+     "🔴 para çıkıyor": -0.64,
+     "🟢 para giriyor": 1.63
+    }
+   },
+   "yeni · 1 hafta": {
+    "5G": {
+     "IC ort": -0.014,
+     "IC t": -0.28,
+     "IC>0 %": 54.0,
+     "n tarih": 50
+    },
+    "20G": {
+     "IC ort": 0.027,
+     "IC t": 0.5,
+     "IC>0 %": 53.2,
+     "n tarih": 47
+    },
+    "60G": {
+     "IC ort": -0.025,
+     "IC t": -0.37,
+     "IC>0 %": 53.8,
+     "n tarih": 39
+    },
+    "etiket ort. göreli 20G %": {
+     "⚪ nötr": 0.06,
+     "🔴 para çıkıyor": -0.53,
+     "🟢 para giriyor": 0.39
+    }
+   },
+   "yeni · 3 ay": {
+    "5G": {
+     "IC ort": -0.002,
+     "IC t": -0.03,
+     "IC>0 %": 50.0,
+     "n tarih": 50
+    },
+    "20G": {
+     "IC ort": 0.001,
+     "IC t": 0.01,
+     "IC>0 %": 48.9,
+     "n tarih": 47
+    },
+    "60G": {
+     "IC ort": 0.012,
+     "IC t": 0.22,
      "IC>0 %": 51.3,
      "n tarih": 39
     },
     "etiket ort. göreli 20G %": {
      "⚪ nötr": -0.38,
-     "🔴 para çıkıyor": -0.47,
-     "🟢 para giriyor": 1.51
-    }
-   },
-   "yeni · 1 hafta": {
-    "5G": {
-     "IC ort": 0.033,
-     "IC t": 0.54,
-     "IC>0 %": 52.0,
-     "n tarih": 50
-    },
-    "20G": {
-     "IC ort": 0.069,
-     "IC t": 1.29,
-     "IC>0 %": 63.8,
-     "n tarih": 47
-    },
-    "60G": {
-     "IC ort": 0.059,
-     "IC t": 1.14,
-     "IC>0 %": 56.4,
-     "n tarih": 39
-    },
-    "etiket ort. göreli 20G %": {
-     "⚪ nötr": -0.74,
-     "🔴 para çıkıyor": -0.1,
-     "🟢 para giriyor": 1.72
-    }
-   },
-   "yeni · 3 ay": {
-    "5G": {
-     "IC ort": 0.059,
-     "IC t": 1.05,
-     "IC>0 %": 56.0,
-     "n tarih": 50
-    },
-    "20G": {
-     "IC ort": -0.0,
-     "IC t": -0.0,
-     "IC>0 %": 51.1,
-     "n tarih": 47
-    },
-    "60G": {
-     "IC ort": 0.04,
-     "IC t": 0.62,
-     "IC>0 %": 53.8,
-     "n tarih": 39
-    },
-    "etiket ort. göreli 20G %": {
-     "⚪ nötr": -0.41,
-     "🔴 para çıkıyor": -0.51,
-     "🟢 para giriyor": 1.54
+     "🔴 para çıkıyor": -0.17,
+     "🟢 para giriyor": 1.09
     }
    }
   },
   "tema": {
    "Erken Skor IC": {
     "5G": {
-     "IC ort": 0.018,
-     "IC t": 0.49,
-     "IC>0 %": 54.0,
+     "IC ort": 0.002,
+     "IC t": 0.06,
+     "IC>0 %": 46.0,
      "n tarih": 50
     },
     "20G": {
-     "IC ort": 0.029,
-     "IC t": 0.88,
+     "IC ort": 0.027,
+     "IC t": 0.86,
      "IC>0 %": 55.3,
      "n tarih": 47
     },
     "60G": {
-     "IC ort": 0.011,
-     "IC t": 0.4,
-     "IC>0 %": 56.4,
+     "IC ort": -0.007,
+     "IC t": -0.26,
+     "IC>0 %": 48.7,
      "n tarih": 39
     }
    },
    "bölgeye göre SPY'ye göre ileri getiri %": {
     "🌤️ Yoruluyor": {
-     "SPY'ye göre 5G %": 0.05,
-     "SPY'ye göre 20G %": -0.4,
-     "SPY'ye göre 60G %": 0.23
+     "SPY'ye göre 5G %": 0.11,
+     "SPY'ye göre 20G %": -0.36,
+     "SPY'ye göre 60G %": -0.09
     },
     "🌱 İyileşiyor": {
-     "SPY'ye göre 5G %": -0.17,
-     "SPY'ye göre 20G %": -0.64,
-     "SPY'ye göre 60G %": -0.84
+     "SPY'ye göre 5G %": -0.27,
+     "SPY'ye göre 20G %": -0.73,
+     "SPY'ye göre 60G %": -1.14
     },
     "🚀 Lider": {
-     "SPY'ye göre 5G %": -0.06,
-     "SPY'ye göre 20G %": -0.0,
-     "SPY'ye göre 60G %": -1.66
+     "SPY'ye göre 5G %": -0.19,
+     "SPY'ye göre 20G %": -0.02,
+     "SPY'ye göre 60G %": -1.36
     },
     "🩸 Geride": {
-     "SPY'ye göre 5G %": -0.38,
-     "SPY'ye göre 20G %": -0.99,
-     "SPY'ye göre 60G %": -1.04
+     "SPY'ye göre 5G %": -0.27,
+     "SPY'ye göre 20G %": -0.92,
+     "SPY'ye göre 60G %": -0.94
     }
    },
    "taze lider": {
     "False": {
-     "mean": -0.71,
-     "size": 2318
+     "mean": -0.7,
+     "size": 2313
     },
     "True": {
-     "mean": 0.85,
-     "size": 282
+     "mean": 0.81,
+     "size": 287
     }
    }
   },
   "endeks": {
    "Günlük": {
     "5G": {
-     "IC ort": 0.067,
-     "IC t": 1.16,
-     "IC>0 %": 62.0,
+     "IC ort": 0.0,
+     "IC t": 0.01,
+     "IC>0 %": 48.0,
      "n tarih": 50
     },
     "20G": {
-     "IC ort": -0.044,
-     "IC t": -0.64,
-     "IC>0 %": 48.9,
+     "IC ort": -0.029,
+     "IC t": -0.46,
+     "IC>0 %": 55.3,
      "n tarih": 47
     },
     "60G": {
-     "IC ort": -0.057,
-     "IC t": -0.88,
-     "IC>0 %": 46.2,
+     "IC ort": -0.062,
+     "IC t": -1.02,
+     "IC>0 %": 43.6,
      "n tarih": 39
     },
     "skor kovası → ileri getiri %": {
      "≤ −20": {
       "İleri 5G %": 0.24,
-      "İleri 20G %": 1.07,
-      "İleri 60G %": 6.52
+      "İleri 20G %": 1.47,
+      "İleri 60G %": 6.72
      },
      "−20…+20": {
-      "İleri 5G %": 0.27,
-      "İleri 20G %": 1.23,
-      "İleri 60G %": 4.84
+      "İleri 5G %": 0.7,
+      "İleri 20G %": 1.15,
+      "İleri 60G %": 4.3
      },
      "≥ +20": {
-      "İleri 5G %": 0.47,
-      "İleri 20G %": 1.83,
-      "İleri 60G %": 3.14
+      "İleri 5G %": -0.08,
+      "İleri 20G %": 1.6,
+      "İleri 60G %": 3.47
      }
     },
     "varlık bazında korelasyon (skor ~ 20G)": {
-     "ABD 10Y faiz": -0.37,
-     "Altın": -0.03,
-     "Altın/Gümüş": 0.2,
-     "Bakır/Altın": -0.11,
-     "Dolar (DXY)": -0.37,
-     "Dow Jones": -0.21,
-     "Gümüş": 0.27,
-     "Kripto (BTC)": 0.08,
+     "ABD 10Y faiz": -0.33,
+     "Altın": 0.05,
+     "Altın/Gümüş": 0.15,
+     "Bakır/Altın": -0.08,
+     "Dolar (DXY)": -0.32,
+     "Dow Jones": -0.15,
+     "Gümüş": 0.2,
+     "Kripto (BTC)": -0.01,
      "Nasdaq": -0.18,
-     "Petrol (Brent)": 0.17,
-     "Russell 2000": -0.32,
-     "S&P 500": -0.29
+     "Petrol (Brent)": 0.07,
+     "Russell 2000": -0.34,
+     "S&P 500": -0.23
     }
    },
    "Haftalık": {
     "5G": {
-     "IC ort": 0.08,
-     "IC t": 1.38,
-     "IC>0 %": 58.0,
+     "IC ort": 0.11,
+     "IC t": 1.97,
+     "IC>0 %": 66.0,
      "n tarih": 50
     },
     "20G": {
-     "IC ort": 0.012,
-     "IC t": 0.2,
-     "IC>0 %": 53.2,
+     "IC ort": 0.08,
+     "IC t": 1.26,
+     "IC>0 %": 61.7,
      "n tarih": 47
     },
     "60G": {
-     "IC ort": -0.036,
-     "IC t": -0.54,
-     "IC>0 %": 51.3,
+     "IC ort": 0.011,
+     "IC t": 0.18,
+     "IC>0 %": 53.8,
      "n tarih": 39
     },
     "skor kovası → ileri getiri %": {
      "≤ −20": {
-      "İleri 5G %": 0.12,
-      "İleri 20G %": 0.98,
-      "İleri 60G %": 6.01
+      "İleri 5G %": 0.19,
+      "İleri 20G %": 1.8,
+      "İleri 60G %": 5.87
      },
      "−20…+20": {
-      "İleri 5G %": 0.23,
-      "İleri 20G %": 0.99,
-      "İleri 60G %": 2.93
+      "İleri 5G %": 0.04,
+      "İleri 20G %": 0.07,
+      "İleri 60G %": 2.53
      },
      "≥ +20": {
-      "İleri 5G %": 0.53,
-      "İleri 20G %": 1.96,
-      "İleri 60G %": 4.89
+      "İleri 5G %": 0.6,
+      "İleri 20G %": 2.38,
+      "İleri 60G %": 5.74
      }
     },
     "varlık bazında korelasyon (skor ~ 20G)": {
-     "ABD 10Y faiz": -0.02,
+     "ABD 10Y faiz": 0.01,
      "Altın": 0.12,
-     "Altın/Gümüş": 0.11,
-     "Bakır/Altın": 0.12,
-     "Dolar (DXY)": -0.42,
-     "Dow Jones": -0.44,
-     "Gümüş": 0.33,
-     "Kripto (BTC)": -0.12,
-     "Nasdaq": -0.55,
-     "Petrol (Brent)": 0.0,
-     "Russell 2000": -0.43,
-     "S&P 500": -0.56
+     "Altın/Gümüş": 0.17,
+     "Bakır/Altın": 0.16,
+     "Dolar (DXY)": -0.57,
+     "Dow Jones": -0.34,
+     "Gümüş": 0.3,
+     "Kripto (BTC)": -0.02,
+     "Nasdaq": -0.33,
+     "Petrol (Brent)": 0.01,
+     "Russell 2000": -0.53,
+     "S&P 500": -0.34
     }
+   }
+  },
+  "balina": {
+   "taban (tüm günler) SPY'ye göre %": {
+    "5G": 0.073,
+    "10G": 0.148,
+    "20G": 0.332
+   },
+   "olaylar": {
+    "PRO ↗ RETAIL": {
+     "n": 10888,
+     "hisse": 432,
+     "5G ort %": -0.08,
+     "5G fark (tabana göre)": -0.15,
+     "5G t": -1.76,
+     "5G pozitif %": 47.0,
+     "10G ort %": 0.12,
+     "10G fark (tabana göre)": -0.03,
+     "10G t": -0.24,
+     "10G pozitif %": 47.9,
+     "20G ort %": 0.46,
+     "20G fark (tabana göre)": 0.13,
+     "20G t": 0.72,
+     "20G pozitif %": 48.0,
+     "yıllara göre 20G ort %": {
+      "2022": 0.24,
+      "2023": 1.02,
+      "2024": 0.26,
+      "2025": 1.0,
+      "2026": -0.64
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.83,
+      "EMA200 üstü": 0.19
+     }
+    },
+    "PRO ↘ RETAIL": {
+     "n": 11083,
+     "hisse": 432,
+     "5G ort %": 0.1,
+     "5G fark (tabana göre)": 0.02,
+     "5G t": 0.26,
+     "5G pozitif %": 47.8,
+     "10G ort %": 0.08,
+     "10G fark (tabana göre)": -0.06,
+     "10G t": -0.55,
+     "10G pozitif %": 47.6,
+     "20G ort %": 0.24,
+     "20G fark (tabana göre)": -0.09,
+     "20G t": -0.56,
+     "20G pozitif %": 47.4,
+     "yıllara göre 20G ort %": {
+      "2022": 0.27,
+      "2023": -0.54,
+      "2024": 0.2,
+      "2025": 1.39,
+      "2026": -0.34
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.21,
+      "EMA200 üstü": 0.26
+     }
+    },
+    "⚠️ Whale tükenme": {
+     "n": 29885,
+     "hisse": 432,
+     "5G ort %": 0.07,
+     "5G fark (tabana göre)": -0.0,
+     "5G t": -0.01,
+     "5G pozitif %": 48.8,
+     "10G ort %": 0.15,
+     "10G fark (tabana göre)": 0.01,
+     "10G t": 0.09,
+     "10G pozitif %": 48.3,
+     "20G ort %": 0.07,
+     "20G fark (tabana göre)": -0.27,
+     "20G t": -2.79,
+     "20G pozitif %": 47.7,
+     "yıllara göre 20G ort %": {
+      "2022": -0.27,
+      "2023": -1.03,
+      "2024": 0.4,
+      "2025": 1.25,
+      "2026": 0.1
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": -0.32,
+      "EMA200 üstü": 0.12
+     }
+    },
+    "⭐ Golden Star": {
+     "n": 10609,
+     "hisse": 432,
+     "5G ort %": -0.06,
+     "5G fark (tabana göre)": -0.14,
+     "5G t": -1.59,
+     "5G pozitif %": 47.0,
+     "10G ort %": 0.14,
+     "10G fark (tabana göre)": -0.01,
+     "10G t": -0.1,
+     "10G pozitif %": 47.9,
+     "20G ort %": 0.48,
+     "20G fark (tabana göre)": 0.15,
+     "20G t": 0.79,
+     "20G pozitif %": 48.1,
+     "yıllara göre 20G ort %": {
+      "2022": 0.27,
+      "2023": 1.02,
+      "2024": 0.31,
+      "2025": 0.95,
+      "2026": -0.58
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.85,
+      "EMA200 üstü": 0.19
+     }
+    },
+    "🎣 Dip süpürmesi": {
+     "n": 12375,
+     "hisse": 432,
+     "5G ort %": 0.18,
+     "5G fark (tabana göre)": 0.11,
+     "5G t": 1.37,
+     "5G pozitif %": 49.8,
+     "10G ort %": 0.24,
+     "10G fark (tabana göre)": 0.09,
+     "10G t": 0.8,
+     "10G pozitif %": 49.6,
+     "20G ort %": 0.74,
+     "20G fark (tabana göre)": 0.4,
+     "20G t": 2.24,
+     "20G pozitif %": 49.6,
+     "yıllara göre 20G ort %": {
+      "2022": 1.56,
+      "2023": 0.53,
+      "2024": -0.1,
+      "2025": 0.77,
+      "2026": 0.65
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.77,
+      "EMA200 üstü": 0.45
+     }
+    },
+    "🎣 Tepe süpürmesi": {
+     "n": 18986,
+     "hisse": 432,
+     "5G ort %": 0.11,
+     "5G fark (tabana göre)": 0.03,
+     "5G t": 0.51,
+     "5G pozitif %": 49.5,
+     "10G ort %": 0.25,
+     "10G fark (tabana göre)": 0.1,
+     "10G t": 1.12,
+     "10G pozitif %": 49.3,
+     "20G ort %": 0.32,
+     "20G fark (tabana göre)": -0.01,
+     "20G t": -0.09,
+     "20G pozitif %": 47.9,
+     "yıllara göre 20G ort %": {
+      "2022": -0.76,
+      "2023": -0.38,
+      "2024": 0.54,
+      "2025": 1.05,
+      "2026": 0.52
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": -0.45,
+      "EMA200 üstü": 0.37
+     }
+    },
+    "🎣 Whale süpürme": {
+     "n": 4778,
+     "hisse": 431,
+     "5G ort %": 0.11,
+     "5G fark (tabana göre)": 0.04,
+     "5G t": 0.26,
+     "5G pozitif %": 49.7,
+     "10G ort %": 0.17,
+     "10G fark (tabana göre)": 0.02,
+     "10G t": 0.11,
+     "10G pozitif %": 49.0,
+     "20G ort %": 0.71,
+     "20G fark (tabana göre)": 0.38,
+     "20G t": 1.28,
+     "20G pozitif %": 48.5,
+     "yıllara göre 20G ort %": {
+      "2022": 1.54,
+      "2023": 0.22,
+      "2024": 0.58,
+      "2025": 0.89,
+      "2026": 0.02
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.75,
+      "EMA200 üstü": 0.54
+     }
+    },
+    "🐋 Gerçek dağıtım (DIST)": {
+     "n": 819,
+     "hisse": 339,
+     "5G ort %": -0.21,
+     "5G fark (tabana göre)": -0.28,
+     "5G t": -0.89,
+     "5G pozitif %": 48.5,
+     "10G ort %": -0.56,
+     "10G fark (tabana göre)": -0.71,
+     "10G t": -1.57,
+     "10G pozitif %": 46.2,
+     "20G ort %": -1.16,
+     "20G fark (tabana göre)": -1.49,
+     "20G t": -2.35,
+     "20G pozitif %": 45.9,
+     "yıllara göre 20G ort %": {
+      "2022": -0.5,
+      "2023": -4.09,
+      "2024": -2.97,
+      "2025": 2.01,
+      "2026": -1.33
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": -2.01,
+      "EMA200 üstü": -0.68
+     }
+    },
+    "🐋 Gerçek toplama (ACC)": {
+     "n": 7895,
+     "hisse": 432,
+     "5G ort %": 0.05,
+     "5G fark (tabana göre)": -0.03,
+     "5G t": -0.31,
+     "5G pozitif %": 48.8,
+     "10G ort %": 0.22,
+     "10G fark (tabana göre)": 0.07,
+     "10G t": 0.52,
+     "10G pozitif %": 49.3,
+     "20G ort %": 0.38,
+     "20G fark (tabana göre)": 0.05,
+     "20G t": 0.26,
+     "20G pozitif %": 47.2,
+     "yıllara göre 20G ort %": {
+      "2022": 2.32,
+      "2023": -0.24,
+      "2024": -0.88,
+      "2025": 1.16,
+      "2026": 0.01
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.3,
+      "EMA200 üstü": 0.65
+     }
+    },
+    "💎 Diamond AL": {
+     "n": 4189,
+     "hisse": 432,
+     "5G ort %": -0.13,
+     "5G fark (tabana göre)": -0.2,
+     "5G t": -1.47,
+     "5G pozitif %": 49.3,
+     "10G ort %": 0.11,
+     "10G fark (tabana göre)": -0.04,
+     "10G t": -0.19,
+     "10G pozitif %": 49.8,
+     "20G ort %": 0.51,
+     "20G fark (tabana göre)": 0.18,
+     "20G t": 0.6,
+     "20G pozitif %": 49.0,
+     "yıllara göre 20G ort %": {
+      "2022": 0.9,
+      "2023": 1.9,
+      "2024": -0.96,
+      "2025": 0.49,
+      "2026": -0.56
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.62,
+      "EMA200 üstü": 0.05
+     }
+    },
+    "💎 Diamond SAT": {
+     "n": 5723,
+     "hisse": 432,
+     "5G ort %": 0.27,
+     "5G fark (tabana göre)": 0.19,
+     "5G t": 1.63,
+     "5G pozitif %": 50.2,
+     "10G ort %": 0.36,
+     "10G fark (tabana göre)": 0.21,
+     "10G t": 1.2,
+     "10G pozitif %": 48.7,
+     "20G ort %": 0.46,
+     "20G fark (tabana göre)": 0.13,
+     "20G t": 0.43,
+     "20G pozitif %": 46.9,
+     "yıllara göre 20G ort %": {
+      "2022": -0.12,
+      "2023": -0.87,
+      "2024": 0.89,
+      "2025": 1.35,
+      "2026": 0.43
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.31,
+      "EMA200 üstü": 0.48
+     }
+    },
+    "💥 Sıkışma patladı": {
+     "n": 12659,
+     "hisse": 432,
+     "5G ort %": -0.08,
+     "5G fark (tabana göre)": -0.15,
+     "5G t": -2.0,
+     "5G pozitif %": 47.5,
+     "10G ort %": -0.01,
+     "10G fark (tabana göre)": -0.16,
+     "10G t": -1.43,
+     "10G pozitif %": 47.9,
+     "20G ort %": 0.49,
+     "20G fark (tabana göre)": 0.15,
+     "20G t": 0.87,
+     "20G pozitif %": 47.8,
+     "yıllara göre 20G ort %": {
+      "2022": 0.72,
+      "2023": 0.23,
+      "2024": 0.04,
+      "2025": 1.22,
+      "2026": 0.15
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.53,
+      "EMA200 üstü": 0.45
+     }
+    },
+    "🔴 Ayı skoru 5+/6": {
+     "n": 39737,
+     "hisse": 432,
+     "5G ort %": 0.14,
+     "5G fark (tabana göre)": 0.07,
+     "5G t": 1.47,
+     "5G pozitif %": 49.0,
+     "10G ort %": 0.17,
+     "10G fark (tabana göre)": 0.02,
+     "10G t": 0.36,
+     "10G pozitif %": 48.1,
+     "20G ort %": 0.37,
+     "20G fark (tabana göre)": 0.04,
+     "20G t": 0.36,
+     "20G pozitif %": 47.5,
+     "yıllara göre 20G ort %": {
+      "2022": 0.46,
+      "2023": -0.35,
+      "2024": 0.31,
+      "2025": 1.31,
+      "2026": 0.03
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.35,
+      "EMA200 üstü": 0.39
+     }
+    },
+    "🔴 Erken uyarı SAT": {
+     "n": 20105,
+     "hisse": 432,
+     "5G ort %": 0.22,
+     "5G fark (tabana göre)": 0.15,
+     "5G t": 2.24,
+     "5G pozitif %": 49.2,
+     "10G ort %": 0.26,
+     "10G fark (tabana göre)": 0.11,
+     "10G t": 1.14,
+     "10G pozitif %": 48.6,
+     "20G ort %": 0.54,
+     "20G fark (tabana göre)": 0.21,
+     "20G t": 1.31,
+     "20G pozitif %": 47.8,
+     "yıllara göre 20G ort %": {
+      "2022": 0.33,
+      "2023": -0.41,
+      "2024": 0.71,
+      "2025": 1.51,
+      "2026": 0.37
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.67,
+      "EMA200 üstü": 0.45
+     }
+    },
+    "🔴 Tepe dönüşü (seesaw)": {
+     "n": 4404,
+     "hisse": 432,
+     "5G ort %": -0.09,
+     "5G fark (tabana göre)": -0.17,
+     "5G t": -1.29,
+     "5G pozitif %": 48.5,
+     "10G ort %": -0.06,
+     "10G fark (tabana göre)": -0.21,
+     "10G t": -1.15,
+     "10G pozitif %": 47.7,
+     "20G ort %": -0.04,
+     "20G fark (tabana göre)": -0.37,
+     "20G t": -1.38,
+     "20G pozitif %": 46.8,
+     "yıllara göre 20G ort %": {
+      "2022": 0.64,
+      "2023": -1.05,
+      "2024": -0.26,
+      "2025": 0.86,
+      "2026": -0.26
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": -0.39,
+      "EMA200 üstü": 0.36
+     }
+    },
+    "🔵 Dip çıkışı (seesaw)": {
+     "n": 3973,
+     "hisse": 432,
+     "5G ort %": -0.07,
+     "5G fark (tabana göre)": -0.15,
+     "5G t": -1.1,
+     "5G pozitif %": 46.4,
+     "10G ort %": 0.07,
+     "10G fark (tabana göre)": -0.08,
+     "10G t": -0.4,
+     "10G pozitif %": 46.4,
+     "20G ort %": 0.22,
+     "20G fark (tabana göre)": -0.11,
+     "20G t": -0.41,
+     "20G pozitif %": 48.5,
+     "yıllara göre 20G ort %": {
+      "2022": -0.66,
+      "2023": 0.86,
+      "2024": -0.03,
+      "2025": 1.01,
+      "2026": -0.86
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.29,
+      "EMA200 üstü": 0.17
+     }
+    },
+    "🔵 Erken uyarı AL": {
+     "n": 20026,
+     "hisse": 432,
+     "5G ort %": -0.02,
+     "5G fark (tabana göre)": -0.1,
+     "5G t": -1.51,
+     "5G pozitif %": 48.1,
+     "10G ort %": 0.13,
+     "10G fark (tabana göre)": -0.02,
+     "10G t": -0.23,
+     "10G pozitif %": 48.3,
+     "20G ort %": 0.35,
+     "20G fark (tabana göre)": 0.02,
+     "20G t": 0.14,
+     "20G pozitif %": 47.1,
+     "yıllara göre 20G ort %": {
+      "2022": 0.45,
+      "2023": 0.36,
+      "2024": 0.41,
+      "2025": 0.83,
+      "2026": -0.53
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.59,
+      "EMA200 üstü": 0.17
+     }
+    },
+    "🕵️ Stealth IN": {
+     "n": 13783,
+     "hisse": 432,
+     "5G ort %": 0.0,
+     "5G fark (tabana göre)": -0.07,
+     "5G t": -0.85,
+     "5G pozitif %": 48.1,
+     "10G ort %": 0.26,
+     "10G fark (tabana göre)": 0.11,
+     "10G t": 0.97,
+     "10G pozitif %": 48.7,
+     "20G ort %": 0.53,
+     "20G fark (tabana göre)": 0.2,
+     "20G t": 1.12,
+     "20G pozitif %": 48.3,
+     "yıllara göre 20G ort %": {
+      "2022": 0.04,
+      "2023": 1.1,
+      "2024": 0.22,
+      "2025": 0.66,
+      "2026": 0.29
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.64,
+      "EMA200 üstü": 0.43
+     }
+    },
+    "🕵️ Stealth OUT": {
+     "n": 16032,
+     "hisse": 432,
+     "5G ort %": 0.16,
+     "5G fark (tabana göre)": 0.09,
+     "5G t": 1.27,
+     "5G pozitif %": 48.7,
+     "10G ort %": 0.09,
+     "10G fark (tabana göre)": -0.06,
+     "10G t": -0.63,
+     "10G pozitif %": 48.0,
+     "20G ort %": 0.48,
+     "20G fark (tabana göre)": 0.15,
+     "20G t": 0.85,
+     "20G pozitif %": 48.1,
+     "yıllara göre 20G ort %": {
+      "2022": 0.85,
+      "2023": -0.75,
+      "2024": 0.85,
+      "2025": 1.3,
+      "2026": -0.07
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.17,
+      "EMA200 üstü": 0.73
+     }
+    },
+    "🚀 Afterburner ayı": {
+     "n": 3391,
+     "hisse": 430,
+     "5G ort %": 0.1,
+     "5G fark (tabana göre)": 0.03,
+     "5G t": 0.19,
+     "5G pozitif %": 48.7,
+     "10G ort %": 0.14,
+     "10G fark (tabana göre)": -0.01,
+     "10G t": -0.05,
+     "10G pozitif %": 49.1,
+     "20G ort %": 0.56,
+     "20G fark (tabana göre)": 0.23,
+     "20G t": 0.72,
+     "20G pozitif %": 48.9,
+     "yıllara göre 20G ort %": {
+      "2022": 0.27,
+      "2023": 0.06,
+      "2024": 0.19,
+      "2025": 1.25,
+      "2026": 1.24
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.57,
+      "EMA200 üstü": 0.56
+     }
+    },
+    "🚀 Afterburner boğa": {
+     "n": 3430,
+     "hisse": 431,
+     "5G ort %": 0.29,
+     "5G fark (tabana göre)": 0.22,
+     "5G t": 1.02,
+     "5G pozitif %": 48.9,
+     "10G ort %": 0.66,
+     "10G fark (tabana göre)": 0.51,
+     "10G t": 1.83,
+     "10G pozitif %": 49.0,
+     "20G ort %": 1.38,
+     "20G fark (tabana göre)": 1.05,
+     "20G t": 2.47,
+     "20G pozitif %": 49.5,
+     "yıllara göre 20G ort %": {
+      "2022": 0.65,
+      "2023": 0.68,
+      "2024": 2.58,
+      "2025": 1.79,
+      "2026": 0.32
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 2.15,
+      "EMA200 üstü": 1.16
+     }
+    },
+    "🟢 Boğa skoru 5+/6": {
+     "n": 41621,
+     "hisse": 432,
+     "5G ort %": -0.0,
+     "5G fark (tabana göre)": -0.08,
+     "5G t": -1.68,
+     "5G pozitif %": 48.0,
+     "10G ort %": 0.15,
+     "10G fark (tabana göre)": 0.0,
+     "10G t": 0.05,
+     "10G pozitif %": 47.8,
+     "20G ort %": 0.36,
+     "20G fark (tabana göre)": 0.03,
+     "20G t": 0.32,
+     "20G pozitif %": 47.3,
+     "yıllara göre 20G ort %": {
+      "2022": -0.07,
+      "2023": 0.45,
+      "2024": 0.58,
+      "2025": 0.88,
+      "2026": -0.37
+     },
+     "trende göre 20G ort %": {
+      "EMA200 altı": 0.49,
+      "EMA200 üstü": 0.28
+     }
+    }
+   },
+   "WHALE IC (20G)": {
+    "IC ort": 0.004,
+    "IC t": 0.18,
+    "IC>0 %": 49.8,
+    "n tarih": 273
+   },
+   "WHALE beşte birlik → 20G %": {
+    "en düşük %20": 0.44,
+    "2": 0.11,
+    "3": 0.26,
+    "4": 0.42,
+    "en yüksek %20": 0.43
+   },
+   "ΔWHALE 5G IC (20G)": {
+    "IC ort": -0.008,
+    "IC t": -0.35,
+    "IC>0 %": 49.1,
+    "n tarih": 273
+   },
+   "ΔWHALE 5G beşte birlik → 20G %": {
+    "en düşük %20": 0.15,
+    "2": 0.6,
+    "3": 0.34,
+    "4": 0.52,
+    "en yüksek %20": 0.06
+   },
+   "PRO−RETAIL IC (20G)": {
+    "IC ort": 0.007,
+    "IC t": 0.29,
+    "IC>0 %": 52.0,
+    "n tarih": 273
+   },
+   "PRO−RETAIL beşte birlik → 20G %": {
+    "en düşük %20": 0.39,
+    "2": 0.17,
+    "3": 0.41,
+    "4": 0.29,
+    "en yüksek %20": 0.4
+   },
+   "OMNI IC (20G)": {
+    "IC ort": -0.01,
+    "IC t": -0.39,
+    "IC>0 %": 50.5,
+    "n tarih": 273
+   },
+   "OMNI beşte birlik → 20G %": {
+    "en düşük %20": 0.62,
+    "2": 0.22,
+    "3": 0.17,
+    "4": 0.13,
+    "en yüksek %20": 0.52
+   },
+   "HUD net IC (20G)": {
+    "IC ort": 0.016,
+    "IC t": 0.66,
+    "IC>0 %": 54.9,
+    "n tarih": 273
+   },
+   "HUD net beşte birlik → 20G %": {
+    "en düşük %20": 0.4,
+    "2": 0.24,
+    "3": 0.46,
+    "4": 0.37,
+    "en yüksek %20": 0.2
    }
   },
   "hisse": {
    "karar": {
     "⛔ UZAK DUR": {
-     "SPY'ye göre 20G ort %": 0.45,
-     "SPY'ye göre 5G ort %": 0.15,
-     "20G pozitif %": 45.56,
-     "n": 5154
+     "SPY'ye göre 20G ort %": 0.3,
+     "SPY'ye göre 5G ort %": 0.24,
+     "20G pozitif %": 45.25,
+     "n": 5182
     },
     "✅ AL": {
-     "SPY'ye göre 20G ort %": -1.77,
-     "SPY'ye göre 5G ort %": -1.02,
-     "20G pozitif %": 44.15,
-     "n": 188
+     "SPY'ye göre 20G ort %": -2.04,
+     "SPY'ye göre 5G ort %": -0.95,
+     "20G pozitif %": 39.39,
+     "n": 231
     },
     "🟡 LİMİT EMİR / BEKLE": {
-     "SPY'ye göre 20G ort %": 0.14,
-     "SPY'ye göre 5G ort %": -0.06,
-     "20G pozitif %": 46.04,
-     "n": 5458
+     "SPY'ye göre 20G ort %": 0.16,
+     "SPY'ye göre 5G ort %": -0.15,
+     "20G pozitif %": 45.76,
+     "n": 5387
     }
    },
    "sınıf": {
     "⚪ İzle": {
-     "SPY'ye göre 20G ort %": 0.77,
-     "SPY'ye göre 5G ort %": 0.25,
-     "20G pozitif %": 46.39,
-     "n": 3818
+     "SPY'ye göre 20G ort %": 0.7,
+     "SPY'ye göre 5G ort %": 0.23,
+     "20G pozitif %": 46.52,
+     "n": 3807
     },
     "⛔ Uzak dur": {
-     "SPY'ye göre 20G ort %": 0.14,
+     "SPY'ye göre 20G ort %": 0.65,
      "SPY'ye göre 5G ort %": 0.24,
-     "20G pozitif %": 46.48,
-     "n": 725
+     "20G pozitif %": 48.67,
+     "n": 752
     },
     "🌱 Geride kaldı, toparlanıyor": {
-     "SPY'ye göre 20G ort %": -0.27,
-     "SPY'ye göre 5G ort %": -0.17,
-     "20G pozitif %": 44.07,
-     "n": 910
+     "SPY'ye göre 20G ort %": -0.35,
+     "SPY'ye göre 5G ort %": -0.19,
+     "20G pozitif %": 43.45,
+     "n": 932
     },
     "🎯 Alım adayı": {
-     "SPY'ye göre 20G ort %": 1.38,
-     "SPY'ye göre 5G ort %": -0.15,
-     "20G pozitif %": 51.72,
-     "n": 961
+     "SPY'ye göre 20G ort %": 0.69,
+     "SPY'ye göre 5G ort %": -0.07,
+     "20G pozitif %": 48.66,
+     "n": 861
     },
     "💧 Likidite düşük": {
-     "SPY'ye göre 20G ort %": -0.28,
-     "SPY'ye göre 5G ort %": -0.06,
-     "20G pozitif %": 45.63,
-     "n": 504
+     "SPY'ye göre 20G ort %": -0.3,
+     "SPY'ye göre 5G ort %": 0.45,
+     "20G pozitif %": 45.6,
+     "n": 500
     },
     "🔥 Lider ama uzamış": {
-     "SPY'ye göre 20G ort %": 0.01,
-     "SPY'ye göre 5G ort %": -0.48,
-     "20G pozitif %": 47.54,
-     "n": 873
+     "SPY'ye göre 20G ort %": 0.21,
+     "SPY'ye göre 5G ort %": -0.4,
+     "20G pozitif %": 46.88,
+     "n": 928
     },
     "🚀 Lider": {
-     "SPY'ye göre 20G ort %": -0.42,
-     "SPY'ye göre 5G ort %": -0.04,
-     "20G pozitif %": 42.97,
-     "n": 3009
+     "SPY'ye göre 20G ort %": -0.52,
+     "SPY'ye göre 5G ort %": -0.14,
+     "20G pozitif %": 42.28,
+     "n": 3020
     }
    },
    "sinyal": {
     "⚠️ RİSK": {
-     "SPY'ye göre 20G ort %": -5.17,
-     "SPY'ye göre 5G ort %": -2.52,
-     "20G pozitif %": 33.33,
-     "n": 9
+     "SPY'ye göre 20G ort %": 5.84,
+     "SPY'ye göre 5G ort %": 0.02,
+     "20G pozitif %": 60.0,
+     "n": 10
     },
     "⚠️ TÜKENME": {
-     "SPY'ye göre 20G ort %": 0.26,
-     "SPY'ye göre 5G ort %": -0.31,
-     "20G pozitif %": 48.83,
-     "n": 1448
+     "SPY'ye göre 20G ort %": 0.42,
+     "SPY'ye göre 5G ort %": -0.27,
+     "20G pozitif %": 47.66,
+     "n": 1475
     },
     "⚡ PRO ↗ RETAIL": {
-     "SPY'ye göre 20G ort %": 5.33,
-     "SPY'ye göre 5G ort %": 1.95,
-     "20G pozitif %": 66.67,
-     "n": 6
+     "SPY'ye göre 20G ort %": 1.57,
+     "SPY'ye göre 5G ort %": -0.52,
+     "20G pozitif %": 50.0,
+     "n": 4
     },
     "⚡ PRO ↘ RETAIL": {
-     "SPY'ye göre 20G ort %": -0.23,
-     "SPY'ye göre 5G ort %": -0.27,
-     "20G pozitif %": 44.05,
-     "n": 168
+     "SPY'ye göre 20G ort %": -0.71,
+     "SPY'ye göre 5G ort %": 0.08,
+     "20G pozitif %": 43.04,
+     "n": 158
     },
     "⚪ BEKLE": {
-     "SPY'ye göre 20G ort %": 0.33,
-     "SPY'ye göre 5G ort %": 0.24,
-     "20G pozitif %": 44.92,
-     "n": 4891
+     "SPY'ye göre 20G ort %": 0.05,
+     "SPY'ye göre 5G ort %": 0.1,
+     "20G pozitif %": 44.97,
+     "n": 4908
     },
     "⛔ DIAMOND SAT": {
-     "SPY'ye göre 20G ort %": 0.29,
-     "SPY'ye göre 5G ort %": 1.01,
-     "20G pozitif %": 44.52,
-     "n": 146
+     "SPY'ye göre 20G ort %": 2.01,
+     "SPY'ye göre 5G ort %": 0.6,
+     "20G pozitif %": 53.4,
+     "n": 103
     },
     "⭐ GOLDEN STAR": {
-     "SPY'ye göre 20G ort %": 0.3,
-     "SPY'ye göre 5G ort %": -0.0,
-     "20G pozitif %": 44.85,
-     "n": 194
-    },
-    "🎣 LİKİDİTE SÜPÜRMESİ": {
-     "SPY'ye göre 20G ort %": 0.01,
-     "SPY'ye göre 5G ort %": -0.81,
-     "20G pozitif %": 43.56,
-     "n": 101
-    },
-    "🎯 SIKIŞMA PATLADI": {
-     "SPY'ye göre 20G ort %": -0.37,
-     "SPY'ye göre 5G ort %": -0.09,
-     "20G pozitif %": 43.78,
+     "SPY'ye göre 20G ort %": -0.05,
+     "SPY'ye göre 5G ort %": 0.06,
+     "20G pozitif %": 45.95,
      "n": 185
     },
+    "🎣 LİKİDİTE SÜPÜRMESİ": {
+     "SPY'ye göre 20G ort %": 1.05,
+     "SPY'ye göre 5G ort %": 0.25,
+     "20G pozitif %": 45.54,
+     "n": 112
+    },
+    "🎯 SIKIŞMA PATLADI": {
+     "SPY'ye göre 20G ort %": -0.35,
+     "SPY'ye göre 5G ort %": -0.97,
+     "20G pozitif %": 41.09,
+     "n": 129
+    },
     "🐋 DAĞITIM": {
-     "SPY'ye göre 20G ort %": -0.04,
-     "SPY'ye göre 5G ort %": 0.08,
-     "20G pozitif %": 46.4,
-     "n": 347
+     "SPY'ye göre 20G ort %": 0.92,
+     "SPY'ye göre 5G ort %": 0.34,
+     "20G pozitif %": 51.48,
+     "n": 474
     },
     "🐋 TOPLAMA": {
-     "SPY'ye göre 20G ort %": 0.14,
-     "SPY'ye göre 5G ort %": -0.05,
-     "20G pozitif %": 44.53,
-     "n": 384
+     "SPY'ye göre 20G ort %": -0.91,
+     "SPY'ye göre 5G ort %": 0.02,
+     "20G pozitif %": 36.86,
+     "n": 407
     },
     "💎 DIAMOND AL": {
-     "SPY'ye göre 20G ort %": -1.52,
-     "SPY'ye göre 5G ort %": -1.65,
-     "20G pozitif %": 31.88,
-     "n": 69
+     "SPY'ye göre 20G ort %": 0.59,
+     "SPY'ye göre 5G ort %": 0.08,
+     "20G pozitif %": 48.78,
+     "n": 82
     },
     "📈 MINERVINI MVP": {
-     "SPY'ye göre 20G ort %": -2.91,
-     "SPY'ye göre 5G ort %": -1.02,
-     "20G pozitif %": 44.59,
-     "n": 74
+     "SPY'ye göre 20G ort %": 1.16,
+     "SPY'ye göre 5G ort %": 0.87,
+     "20G pozitif %": 50.0,
+     "n": 50
     },
     "🔻 AFTERBURNER AYI": {
-     "SPY'ye göre 20G ort %": 1.94,
-     "SPY'ye göre 5G ort %": 0.37,
-     "20G pozitif %": 54.55,
-     "n": 77
+     "SPY'ye göre 20G ort %": -1.74,
+     "SPY'ye göre 5G ort %": -0.01,
+     "20G pozitif %": 31.43,
+     "n": 35
     },
     "🕳️ SIKIŞMA": {
-     "SPY'ye göre 20G ort %": -0.34,
-     "SPY'ye göre 5G ort %": -0.12,
-     "20G pozitif %": 43.1,
-     "n": 1413
+     "SPY'ye göre 20G ort %": -0.19,
+     "SPY'ye göre 5G ort %": -0.07,
+     "20G pozitif %": 42.23,
+     "n": 1435
     },
     "🚀 AFTERBURNER": {
-     "SPY'ye göre 20G ort %": 5.11,
-     "SPY'ye göre 5G ort %": -1.21,
-     "20G pozitif %": 63.22,
-     "n": 87
+     "SPY'ye göre 20G ort %": -1.39,
+     "SPY'ye göre 5G ort %": -1.32,
+     "20G pozitif %": 42.42,
+     "n": 33
     },
     "🟡 GENİŞLEME": {
-     "SPY'ye göre 20G ort %": -0.47,
-     "SPY'ye göre 5G ort %": 0.16,
-     "20G pozitif %": 47.06,
-     "n": 136
+     "SPY'ye göre 20G ort %": 1.52,
+     "SPY'ye göre 5G ort %": -0.5,
+     "20G pozitif %": 51.03,
+     "n": 145
     },
     "🟢 GİRİŞ BÖLGESİ": {
-     "SPY'ye göre 20G ort %": 0.92,
-     "SPY'ye göre 5G ort %": -0.03,
-     "20G pozitif %": 49.29,
-     "n": 1049
+     "SPY'ye göre 20G ort %": 0.69,
+     "SPY'ye göre 5G ort %": 0.16,
+     "20G pozitif %": 48.22,
+     "n": 1039
     },
     "🩸 GÜÇLÜ RİSK": {
-     "SPY'ye göre 20G ort %": 0.58,
-     "SPY'ye göre 5G ort %": 0.19,
-     "20G pozitif %": 50.0,
+     "SPY'ye göre 20G ort %": 0.6,
+     "SPY'ye göre 5G ort %": -0.91,
+     "20G pozitif %": 37.5,
      "n": 16
     }
    },
    "Skor IC 20G": {
-    "IC ort": -0.003,
-    "IC t": -0.11,
+    "IC ort": -0.008,
+    "IC t": -0.28,
     "IC>0 %": 58.3,
     "n tarih": 24
    },
    "Huni Skoru IC 20G": {
-    "IC ort": -0.016,
-    "IC t": -0.63,
+    "IC ort": -0.018,
+    "IC t": -0.75,
     "IC>0 %": 50.0,
     "n tarih": 24
    },
    "plan sonucu (karara göre)": {
     "⛔ UZAK DUR": {
-     "": 349,
-     "giriş olmadı": 1404,
-     "hedef 1": 1276,
-     "stop": 1535,
-     "süre doldu": 590
+     "": 342,
+     "giriş olmadı": 1501,
+     "hedef 1": 1244,
+     "stop": 1458,
+     "süre doldu": 637
     },
     "✅ AL": {
      "": 0,
      "giriş olmadı": 0,
-     "hedef 1": 57,
-     "stop": 118,
-     "süre doldu": 13
+     "hedef 1": 75,
+     "stop": 138,
+     "süre doldu": 18
     },
     "🟡 LİMİT EMİR / BEKLE": {
      "": 0,
-     "giriş olmadı": 1425,
-     "hedef 1": 1590,
-     "stop": 1819,
-     "süre doldu": 624
+     "giriş olmadı": 1563,
+     "hedef 1": 1388,
+     "stop": 1851,
+     "süre doldu": 585
     }
    },
    "plan ort. R (karara göre)": {
     "⛔ UZAK DUR": 0.06,
-    "✅ AL": -0.16,
-    "🟡 LİMİT EMİR / BEKLE": 0.07
+    "✅ AL": -0.15,
+    "🟡 LİMİT EMİR / BEKLE": -0.01
    },
    "Fib r kovası (yukarı bacak)": {
     "(-1.0, 0.236]": {
-     "ort": 0.44,
-     "n": 3425
+     "ort": 0.56,
+     "n": 3402
     },
     "(0.236, 0.382]": {
-     "ort": -0.03,
-     "n": 1395
+     "ort": 0.56,
+     "n": 1387
     },
     "(0.382, 0.5]": {
-     "ort": 0.45,
-     "n": 849
+     "ort": 0.04,
+     "n": 836
     },
     "(0.5, 0.618]": {
-     "ort": 0.8,
-     "n": 678
+     "ort": 0.47,
+     "n": 732
     },
     "(0.618, 0.786]": {
-     "ort": 1.32,
-     "n": 551
+     "ort": -0.22,
+     "n": 536
     },
     "(0.786, 2.0]": {
-     "ort": 1.26,
-     "n": 226
+     "ort": 1.14,
+     "n": 221
     }
    }
   }
