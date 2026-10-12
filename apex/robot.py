@@ -82,7 +82,10 @@ class Params:
     risk_pct: float = 0.0          # işlem başına riske edilecek sermaye (0 = bütçenin tamamı)
     edge_gate: bool = False        # konsey: öğrenilen sinyallerin geçmişte kâr ettirdiği kanıtlanmalı
     trend_ride: bool = False       # güçlü trendde hedef tavanı kalkar, radar susar → kâr koşar
-    structure: bool = True         # 🏛️ yapı katmanı: S/R, gap/FVG, Wyckoff, likidite, Elliott,
+    fib_gate: tuple = (0.382, 0.618)   # 🔑 dünkü kapanış ana bacağın bu Fib aralığında olmalı
+                                       #    (50 hisse testi: tek istikrarlı avantaj buydu)
+    adx_min: float = 15.0          # günlük ADX bunun altındaysa girme (yönsüz piyasa)
+    structure: bool = False        # 🏛️ yapı katmanı: S/R, gap/FVG, Wyckoff, likidite, Elliott,
                                    #    Mum Gücü, haftalık trend → veto + stop + hedef + konsey
     struct_entry: bool = False     # 🏛️ yapısal destekten (S/R, boğa gap, talep, süpürme) giriş
     room_r: float = 1.2            # en yakın dirence en az kaç R mesafe olmalı
@@ -91,7 +94,8 @@ class Params:
 PROFILES: dict[str, dict] = {
     "temkinli": {"zone": (0.5, 0.618), "vol_mult": 1.5, "trend_ma": 200, "breakout": False,
                  "ema_bounce": False, "stop_atr_max": 3.0, "be_r": 1.0, "trail_r": 1.5,
-                 "trail_atr": 2.5, "tp_r": (), "cooldown": 5, "trend_ride": True},
+                 "trail_atr": 2.5, "tp_r": (), "cooldown": 5, "trend_ride": True,
+                 "risk_pct": 0.06},
     "dengeli": {"zone": (0.382, 0.618), "vol_mult": 1.3, "trend_ma": 50, "breakout": False,
                 "ema_bounce": True, "stop_atr_max": 2.5, "be_r": 1.0, "trail_r": 1.2,
                 "trail_atr": 2.5, "tp_r": (), "cooldown": 3, "regime_gate": True,
@@ -109,13 +113,15 @@ PROFILES: dict[str, dict] = {
                 "ema_bounce": False, "stop_atr_max": 2.5, "be_r": 1.0, "trail_r": 1.5,
                 "trail_atr": 2.5, "tp_r": (), "cooldown": 3, "struct_entry": True,
                 "max_losses": 2, "pause_days": 10, "risk_pct": 0.05, "trend_ride": True,
-                "room_r": 1.5},
+                "room_r": 1.5, "structure": True},
 }
 PROFILE_TXT = {
     "temkinli": "🐢 Temkinli — yalnızca 0.5–0.618 Fib + güçlü hacim (1.5×), EMA200 üstü. Az ama "
-                "seçici işlem.",
+                "seçici işlem. İşlem başına risk %6 (IONQ gibi oynak hisselerde bütçenin "
+                "tamamıyla girip %30 kaybetmesin diye).",
     "dengeli": "⚖️ Dengeli — 0.382–0.618 Fib + 1s EMA21 sekmesi, hacim 1.3×, EMA50 üstü.",
-    "akilli": "🧠 Akıllı (sinyal konseyi) — APEX core, OMNI, Şahane, Konfluans, V710 (Q-dry, ODI, "
+    "akilli": "🧪 DENEYSEL — 50 hisselik testte ortalama işlem −0.04R / −0.10R, kazanma %31: "
+              "şimdilik para kazandırmadı. 🧠 Akıllı (sinyal konseyi) — APEX core, OMNI, Şahane, Konfluans, V710 (Q-dry, ODI, "
               "efor), VSA & Delta ve Mum Gücü'nden ~50 sinyali BİRLİKTE oylatır. Her sinyalin "
               "ağırlığını bu hissenin GEÇMİŞİNDEN öğrenir (yalnızca o ana kadarki veriyle, her "
               "~5 günde yeniden); işe yaramayan sinyaller kendiliğinden susar. Skor eğitim "
@@ -134,8 +140,13 @@ PROFILE_TXT = {
                "açık gap dolumu / arz bölgesi / Elliott hedef kutusuna konur. Elliott ayı itkisi, "
                "haftalık düşüş trendi, dağıtım mumu ya da dirence çok yakınken girmez.",
 }
-STRUCT_TXT = ("🏛️ Yapı katmanı (bütün profillerde açık): girişten önce Elliott ayı itkisi, haftalık "
-              "trend, Mum Gücü (dağıtım/fake) ve en yakın dirence mesafe kontrol edilir; stop en "
+FIB_GATE_TXT = ("🔑 Fib kapısı (bütün profillerde): dünkü kapanış günlük ana bacağın 0.382–0.618 "
+                "bölgesinde değilse ve günlük ADX ≤ 15 ise hiçbir giriş türü açılmaz. 50 hisse × 1 yıl "
+                "testinde bu bölgedeki işlemler ortalama +0.30R (%58 kazanan, 41 hisse) getirdi; "
+                "diğer bütün girişler (%84'ü) ≈ 0R idi.")
+STRUCT_TXT = ("🏛️ Yapı katmanı (varsayılan KAPALI — 50 hisse testinde istikrarlı fayda göstermedi; "
+              "yalnızca 🏛️ Yapısal profilde açık): haftalık "
+              "trend ve en yakın dirence mesafe kontrol edilir; stop en "
               "yakın S/R, gap kutusu, Wyckoff bölgesi ya da Elliott teyit seviyesinin altına; hedefler "
               "direnç, açık gap, arz bölgesi, likidite havuzu ve Elliott hedef kutusuna konur. "
               "Akıllı profilde bu seviyeler konseye ek sinyal olarak da girer.")
@@ -196,6 +207,7 @@ class Leg:
     ok: bool
     up: bool = False
     levels: dict = field(default_factory=dict)
+    r: float = float("nan")          # dünkü kapanışın bacaktaki konumu (0 = tepe, 1 = dip)
 
 
 def _leg_cache(d: pd.DataFrame):
@@ -209,7 +221,8 @@ def _leg_cache(d: pd.DataFrame):
             cache[day] = Leg(False)
             return cache[day]
         mf = pfib.main_fib(sub.tail(420))
-        lg = Leg(bool(mf.get("ok")), bool(mf.get("up")), mf.get("levels", {}))
+        lg = Leg(bool(mf.get("ok")), bool(mf.get("up")), mf.get("levels", {}),
+                 float(mf.get("r", np.nan)) if mf.get("ok") else float("nan"))
         cache[day] = lg
         return lg
     return get
@@ -638,6 +651,17 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                        if smart_ok else "")
                 fib_sig = False
             S = srow(i) if A is not None else None
+            if why and ok_trend and p.fib_gate:
+                g_ok = bool(lg.ok and lg.up and np.isfinite(lg.r)
+                            and p.fib_gate[0] <= lg.r <= p.fib_gate[1])
+                diag["🔑 Fib kapısı (dün)"] = diag.get("🔑 Fib kapısı (dün)", 0) + int(g_ok)
+                if not g_ok:
+                    why = ""
+            if why and ok_trend and p.adx_min:
+                a_ok = bool(np.isfinite(cr["adx"]) and cr["adx"] > p.adx_min)
+                diag[f"ADX > {p.adx_min:g}"] = diag.get(f"ADX > {p.adx_min:g}", 0) + int(a_ok)
+                if not a_ok:
+                    why = ""
             if S is not None and why and ok_trend:
                 vts = sctx.vetoes(S)
                 if vts:
@@ -734,22 +758,23 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
 
 
 def optimize(df1h: pd.DataFrame, dfd: pd.DataFrame, start, budget: float = 10_000.0,
-             plans=("vurkac", "kademeli", "bedava"), compare_structure: bool = True) -> pd.DataFrame:
-    """Aynı sembol ve dönemde profiller × planları dener; getiriye göre sıralar.
-    compare_structure: her profil bir kez de yapı katmanı KAPALI (kademeli) denenir."""
+             plans=("vurkac", "kademeli", "bedava"), compare_gate: bool = True) -> pd.DataFrame:
+    """Aynı sembol ve dönemde profiller × planları (profil varsayılanlarıyla) dener.
+    compare_gate: her profil bir kez de 🔑 Fib kapısı + ADX filtresi KAPALI (kademeli) denenir."""
     rows = []
     combos = [(prof, pl, True) for prof in PROFILES for pl in plans]
-    if compare_structure:
-        combos += [(prof, "kademeli", False) for prof in PROFILES if prof != "yapisal"]
-    for prof, pl, stc in combos:
+    if compare_gate:
+        combos += [(prof, "kademeli", False) for prof in PROFILES]
+    for prof, pl, gate in combos:
+        over = {} if gate else {"fib_gate": (), "adx_min": 0.0}
         try:
-            R = run(df1h, dfd, params_for(prof, plan=pl, budget=budget, structure=stc), start=start)
+            R = run(df1h, dfd, params_for(prof, plan=pl, budget=budget, **over), start=start)
         except Exception as exc:                 # noqa: BLE001
-            rows.append({"Profil": prof, "Plan": pl, "Yapı": "✅" if stc else "❌", "Hata": str(exc)})
+            rows.append({"Profil": prof, "Plan": pl, "Kapı": "✅" if gate else "❌", "Hata": str(exc)})
             continue
         s_ = R["stats"]
         dd = s_["Maks. düşüş %"]
-        rows.append({"Profil": prof, "Plan": pl, "Yapı": "✅" if stc else "❌",
+        rows.append({"Profil": prof, "Plan": pl, "Kapı": "✅" if gate else "❌",
                      "Getiri %": s_["Getiri %"],
                      "Al-tut %": s_["Al-tut %"], "Maks. düşüş %": dd,
                      "Getiri / düşüş": (s_["Getiri %"] / abs(dd)) if dd and dd < 0 else np.nan,

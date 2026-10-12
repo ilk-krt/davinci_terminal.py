@@ -325,19 +325,10 @@ def touched_support(s: dict[str, float], lo_win: float, px: float, atr: float) -
 
 
 def vetoes(s: dict[str, float]) -> list[str]:
-    """Girişi durduran yapı uyarıları. Günlük ana Fib bacağı YUKARIYKEN görülen ayı Elliott
-    sayımı çoğu zaman sadece geri çekilmedir (alım bölgesi) — o yüzden Elliott ve dağıtım
-    vetoları yalnızca bacak aşağıysa ya da haftalık trend düşüşteyse devreye girer."""
+    """Girişi durduran yapı uyarıları. 50 hisse testinde Elliott yönü ve Mum Gücü dağıtım
+    mumu girişlerde OLUMSUZ sonuç öngörmedi (aksine) → veto olarak kaldırıldı; yalnızca
+    haftalık düşüş trendi kaldı (n=25, ort. −0.26R)."""
     out = []
-    leg_dn = s.get("fib_up", 1) == 0
-    wk_dn = s.get("wk_trend", 0) < 0
-    if (s.get("ell_sgn", 0) < 0 and s.get("ell_kind", 0) >= 3 and not s.get("ell_dead", 0)
-            and (leg_dn or wk_dn)):
-        out.append("Elliott ayı itkisi sürüyor (bacak/haftalık trend aşağı)")
-    if wk_dn:
+    if s.get("wk_trend", 0) < 0:
         out.append("haftalık trend aşağı")
-    if s.get("mg_syn") == -4 or (s.get("mg_cls") == 11 and leg_dn):
-        out.append("günlük mum: fake yükseliş / dağıtım izi")
-    if s.get("wk_ell_sgn", 0) < 0 and s.get("wk_fib_up", 0) < 0:
-        out.append("haftalık Elliott + Fib bacağı aşağı")
     return out
