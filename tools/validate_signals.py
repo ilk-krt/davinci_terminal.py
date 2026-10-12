@@ -8,6 +8,9 @@ ileriki 5 / 20 / 60 işlem gününde ne olduğuna bakılır).
   B) 🎯 Tema Avcısı : RRG bölgesi (Lider / İyileşiyor / Yoruluyor / Geride) ve Erken Skor
                       sonraki günlerde temanın SPY'ye göre getirisini öngördü mü?
   C) 🧭 Endeksler   : günlük ve haftalık skorlar ileriki getiriyi öngördü mü?
+  E) 🐋 Balina & OMNI: APEX CORE v4 (Golden Star, PRO↗RETAIL, Stealth, ACC/DIST, seesaw…) ve
+                      APEX V670 (Diamond, Afterburner, erken uyarı, süpürme, boğa/ayı skoru)
+                      olaylarından sonra 5/10/20 günde SPY'ye göre getiri — ~450 hisse, ~5 yıl
   D) 🦅 Hisse Avcısı: Sinyal, swing skoru, sınıf (🎯/🚀/⛔…), işlem planı kararı (✅ AL /
                       🟡 LİMİT / ⛔ UZAK DUR) ve plan seviyeleri: hedef mi önce geldi, stop mu?
 
@@ -338,6 +341,117 @@ def part_stocks(months: int, step: int, limit: int = 0) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ------------------------------------------------------------------ E) balina & OMNI olayları
+EVENTS = {   # (kaynak, sütun): etiket — APEX CORE v4 ve APEX V670 OMNI
+    ("core", "star"): "⭐ Golden Star", ("core", "cross_up"): "PRO ↗ RETAIL",
+    ("core", "cross_dn"): "PRO ↘ RETAIL", ("core", "st_in"): "🕵️ Stealth IN",
+    ("core", "st_out"): "🕵️ Stealth OUT", ("core", "real_acc"): "🐋 Gerçek toplama (ACC)",
+    ("core", "real_dist"): "🐋 Gerçek dağıtım (DIST)", ("core", "sweep_bar"): "🎣 Whale süpürme",
+    ("core", "db_bottom"): "🔵 Dip çıkışı (seesaw)", ("core", "rd_top"): "🔴 Tepe dönüşü (seesaw)",
+    ("core", "exhausted"): "⚠️ Whale tükenme", ("core", "sqz_fire"): "💥 Sıkışma patladı",
+    ("omni", "dia_buy"): "💎 Diamond AL", ("omni", "dia_sell"): "💎 Diamond SAT",
+    ("omni", "ab_bull"): "🚀 Afterburner boğa", ("omni", "ab_bear"): "🚀 Afterburner ayı",
+    ("omni", "ew_bull"): "🔵 Erken uyarı AL", ("omni", "ew_bear"): "🔴 Erken uyarı SAT",
+    ("omni", "sweep_low"): "🎣 Dip süpürmesi", ("omni", "sweep_high"): "🎣 Tepe süpürmesi",
+    ("omni", "bull5"): "🟢 Boğa skoru 5+/6", ("omni", "bear5"): "🔴 Ayı skoru 5+/6",
+}
+
+
+def part_whale(limit: int = 0) -> pd.DataFrame:
+    """Her hisse için TÜM geçmiş (≈5 yıl) bir kez hesaplanır — göstergeler nedensel olduğu
+    için her bar yalnızca kendisine kadarki veriyi görür. Olay günlerinden sonraki 5/10/20
+    günün SPY'ye göre getirisi kaydedilir; ayrıca her 5 günde bir sürekli değerler
+    (WHALE, ΔWHALE, PRO−RETAIL, OMNI) örneklenir."""
+    print("E) Balina & OMNI olayları", flush=True)
+    syms = sorted({s for tema in uni.THEME_TRACKER for s in cmp.theme_holdings(tema)})
+    if limit:
+        syms = syms[:limit]
+    P = _fetch(syms + ["SPY"])
+    spy = P["SPY"]["Close"]
+    rows = []
+    t0 = time.time()
+    for k, s in enumerate(syms, 1):
+        df = P.get(s)
+        if df is None or len(df) < 400:
+            continue
+        try:
+            d = df[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(subset=["Close"])
+            d["Volume"] = d["Volume"].fillna(0.0)
+            core = eng.apex_core(d)
+            omni = eng.apex_omni(d)
+            omni["bull5"] = (omni["hud"] >= 5) & (omni["hud"].shift(1) < 5)
+            omni["bear5"] = (omni["hud_bear"] >= 5) & (omni["hud_bear"].shift(1) < 5)
+            c = d["Close"]
+            sp = spy.reindex(d.index).ffill()
+            fw = {}
+            for n in (5, 10, 20):
+                fw[n] = ((c.shift(-n) / c - 1) - (sp.shift(-n) / sp - 1)) * 100
+            up = (c > c.ewm(span=200, adjust=False).mean())
+            valid = np.arange(len(d)) >= 260            # gösterge ısınması
+            src = {"core": core, "omni": omni}
+            for (sk, col), lab in EVENTS.items():
+                ev = src[sk][col].fillna(False).astype(bool).to_numpy() & valid
+                for i in np.flatnonzero(ev):
+                    rows.append({"Tür": "olay", "Sinyal": lab, "Sembol": s, "Tarih": d.index[i].date(),
+                                 "Trend": "EMA200 üstü" if up.iloc[i] else "EMA200 altı",
+                                 **{f"SPY'ye göre {n}G %": fw[n].iloc[i] for n in (5, 10, 20)}})
+            # sürekli değerler (5 günde bir)
+            dw5 = core["whale"] - core["whale"].shift(5)
+            for i in range(260, len(d), 10):
+                rows.append({"Tür": "seviye", "Sinyal": "", "Sembol": s, "Tarih": d.index[i].date(),
+                             "Trend": "EMA200 üstü" if up.iloc[i] else "EMA200 altı",
+                             "WHALE": core["whale"].iloc[i], "ΔWHALE 5G": dw5.iloc[i],
+                             "PRO−RETAIL": core["pro"].iloc[i] - core["ret_line"].iloc[i],
+                             "OMNI": omni["mom"].iloc[i], "HUD net": omni["hud_net"].iloc[i],
+                             **{f"SPY'ye göre {n}G %": fw[n].iloc[i] for n in (5, 10, 20)}})
+        except Exception as exc:                 # noqa: BLE001
+            print(f"   {s}: {type(exc).__name__}: {exc}", flush=True)
+        if k % 25 == 0:
+            print(f"  {k}/{len(syms)} hisse · {len(rows)} satır · {(time.time() - t0) / 60:.1f} dk",
+                  flush=True)
+    return pd.DataFrame(rows)
+
+
+def _whale_summary(E: pd.DataFrame) -> dict:
+    out: dict = {}
+    lv = E[E["Tür"] == "seviye"]
+    base = {n: float(lv[f"SPY'ye göre {n}G %"].mean()) for n in (5, 10, 20)}
+    out["taban (tüm günler) SPY'ye göre %"] = {f"{n}G": round(v, 3) for n, v in base.items()}
+    ev = E[E["Tür"] == "olay"]
+    tab = {}
+    for lab, g in ev.groupby("Sinyal"):
+        rec = {"n": int(len(g)), "hisse": int(g["Sembol"].nunique())}
+        for n in (5, 10, 20):
+            x = g[f"SPY'ye göre {n}G %"].dropna()
+            if len(x) < 10:
+                continue
+            m = float(x.mean())
+            # örtüşme payı: aynı hissede yakın olaylar bağımsız değil → kabaca n/2 ile t
+            t = (m - base[n]) / (x.std(ddof=1) / np.sqrt(max(len(x) / 2, 1)))
+            rec[f"{n}G ort %"] = round(m, 2)
+            rec[f"{n}G fark (tabana göre)"] = round(m - base[n], 2)
+            rec[f"{n}G t"] = round(t, 2)
+            rec[f"{n}G pozitif %"] = round(float((x > 0).mean() * 100), 1)
+        g20 = g.dropna(subset=["SPY'ye göre 20G %"])
+        if len(g20):
+            yr = g20.groupby(pd.to_datetime(g20["Tarih"]).dt.year)["SPY'ye göre 20G %"].mean()
+            rec["yıllara göre 20G ort %"] = {int(k): round(float(v), 2) for k, v in yr.items()}
+            rec["trende göre 20G ort %"] = g20.groupby("Trend")["SPY'ye göre 20G %"].mean() \
+                .round(2).to_dict()
+        tab[lab] = rec
+    out["olaylar"] = tab
+    for col in ("WHALE", "ΔWHALE 5G", "PRO−RETAIL", "OMNI", "HUD net"):
+        out[f"{col} IC (20G)"] = _ic_summary(lv, col, "SPY'ye göre 20G %")
+        try:
+            q = pd.qcut(lv[col], 5, labels=["en düşük %20", "2", "3", "4", "en yüksek %20"],
+                        duplicates="drop")
+            out[f"{col} beşte birlik → 20G %"] = lv.groupby(q, observed=True)[
+                "SPY'ye göre 20G %"].mean().round(2).to_dict()
+        except Exception:                        # noqa: BLE001
+            pass
+    return out
+
+
 # ------------------------------------------------------------------ özet
 def summarize(R: dict[str, pd.DataFrame]) -> dict:
     S: dict = {}
@@ -376,6 +490,9 @@ def summarize(R: dict[str, pd.DataFrame]) -> dict:
                 lambda g: round(float(g[col].corr(g["İleri 20G %"])), 2)
                 if g[col].notna().sum() > 8 else np.nan).to_dict()
         S["endeks"] = out
+    E = R.get("balina")
+    if E is not None and len(E):
+        S["balina"] = _whale_summary(E)
     D = R.get("hisse")
     if D is not None and len(D):
         tgt = "SPY'ye göre 20G %"
@@ -416,8 +533,14 @@ def _js(o):
 
 def write(R: dict[str, pd.DataFrame], meta: dict) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    names = {}
     for k, df in R.items():
-        df.to_csv(OUT / f"{k}.csv", index=False, float_format="%.4f")
+        if k == "balina":                        # büyük: sıkıştırılmış yaz
+            names[k] = f"{k}.csv.gz"
+            df.to_csv(OUT / names[k], index=False, float_format="%.2f", compression="gzip")
+        else:
+            names[k] = f"{k}.csv"
+            df.to_csv(OUT / names[k], index=False, float_format="%.4f")
     try:
         meta["ozet"] = summarize(R)
     except Exception as exc:                     # noqa: BLE001
@@ -426,14 +549,14 @@ def write(R: dict[str, pd.DataFrame], meta: dict) -> None:
     (OUT / "ozet.json").write_text(json.dumps(_js(meta), ensure_ascii=False, indent=1))
     with zipfile.ZipFile(OUT / "sinyal_dogrulama.zip", "w", zipfile.ZIP_DEFLATED) as z:
         for f in list(R):
-            z.write(OUT / f"{f}.csv", f"{f}.csv")
+            z.write(OUT / names[f], names[f])
         z.write(OUT / "ozet.json", "ozet.json")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ay", type=int, default=12)
-    ap.add_argument("--bolum", default="akis,tema,endeks,hisse")
+    ap.add_argument("--bolum", default="balina,akis,tema,endeks,hisse")
     ap.add_argument("--hisse-adim", type=int, default=10, help="hisselerde kaç işlem gününde bir")
     ap.add_argument("--hisse-limit", type=int, default=0, help="test için ilk N hisse")
     a = ap.parse_args()
@@ -444,7 +567,8 @@ def main() -> int:
     t0 = time.time()
     fns = {"akis": lambda: part_flows(a.ay), "tema": lambda: part_themes(a.ay),
            "endeks": lambda: part_markets(a.ay),
-           "hisse": lambda: part_stocks(a.ay, a.hisse_adim, a.hisse_limit)}
+           "hisse": lambda: part_stocks(a.ay, a.hisse_adim, a.hisse_limit),
+           "balina": lambda: part_whale(a.hisse_limit)}
     for k in parts:
         try:
             ts = time.time()
