@@ -82,8 +82,9 @@ class Params:
     risk_pct: float = 0.0          # işlem başına riske edilecek sermaye (0 = bütçenin tamamı)
     edge_gate: bool = False        # konsey: öğrenilen sinyallerin geçmişte kâr ettirdiği kanıtlanmalı
     trend_ride: bool = False       # güçlü trendde hedef tavanı kalkar, radar susar → kâr koşar
-    fib_gate: tuple = (0.382, 0.618)   # 🔑 dünkü kapanış ana bacağın bu Fib aralığında olmalı
-                                       #    (50 hisse testi: tek istikrarlı avantaj buydu)
+    fib_gate: tuple = (0.382, 0.786)   # 🔑 dünkü kapanış ana bacağın bu Fib aralığında olmalı
+                                       #    (50 hisse × 2 ayrı yıl: her iki yılda da ≈ +0.28R;
+                                       #     0.382'den sığ geri çekilmeler iki yılda da ≈ 0R)
     adx_min: float = 15.0          # günlük ADX bunun altındaysa girme (yönsüz piyasa)
     structure: bool = False        # 🏛️ yapı katmanı: S/R, gap/FVG, Wyckoff, likidite, Elliott,
                                    #    Mum Gücü, haftalık trend → veto + stop + hedef + konsey
@@ -140,10 +141,11 @@ PROFILE_TXT = {
                "açık gap dolumu / arz bölgesi / Elliott hedef kutusuna konur. Elliott ayı itkisi, "
                "haftalık düşüş trendi, dağıtım mumu ya da dirence çok yakınken girmez.",
 }
-FIB_GATE_TXT = ("🔑 Fib kapısı (bütün profillerde): dünkü kapanış günlük ana bacağın 0.382–0.618 "
-                "bölgesinde değilse ve günlük ADX ≤ 15 ise hiçbir giriş türü açılmaz. 50 hisse × 1 yıl "
-                "testinde bu bölgedeki işlemler ortalama +0.30R (%58 kazanan, 41 hisse) getirdi; "
-                "diğer bütün girişler (%84'ü) ≈ 0R idi.")
+FIB_GATE_TXT = ("🔑 Fib kapısı (bütün profillerde): dünkü kapanış günlük ana bacağın 0.382–0.786 "
+                "geri çekilme bölgesinde değilse ve günlük ADX ≤ 15 ise hiçbir giriş türü açılmaz. "
+                "50 hisse, iki ayrı yılda test edildi: bu bölgedeki girişler 2025–26'da +0.28R "
+                "(261 işlem), daha önce hiç görülmemiş 2024–25'te de +0.28R (346 işlem); 0.382'den "
+                "sığ geri çekilmelerdeki girişler iki yılda da ≈ 0R. Avantaj küçüktür ama tutarlıdır.")
 STRUCT_TXT = ("🏛️ Yapı katmanı (varsayılan KAPALI — 50 hisse testinde istikrarlı fayda göstermedi; "
               "yalnızca 🏛️ Yapısal profilde açık): haftalık "
               "trend ve en yakın dirence mesafe kontrol edilir; stop en "
