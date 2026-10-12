@@ -1,8 +1,8 @@
 {
- "tarih": "2026-10-12T11:19",
- "ay": 12,
- "baslangic": "2025-10-12",
- "bitis": "bugün",
+ "tarih": "2026-10-12T12:25",
+ "ay": 22,
+ "baslangic": "2024-12-12",
+ "bitis": "2025-10-12",
  "semboller": [
   "NVDA",
   "AMD",
@@ -124,5 +124,5 @@
  "hata": {},
  "surum": "robot v5 (Fib kapısı)",
  "kapi": "ikisi",
- "sure_dk": 49.0
+ "sure_dk": 17.7
 }
