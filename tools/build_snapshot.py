@@ -131,6 +131,14 @@ def main(only: list[str]) -> int:
             return p, f"{ok}/{len(pu)} hisse"
         step("plans", f)
 
+    if want("orgu") or want("plan") or want("tarama"):
+        def f():
+            T = cmp.orgu()
+            n_k = int(T["🐈 Ölü kedi"].sum()) if len(T) else 0
+            return T, (f"{len(T)} hisse · şablon {'var' if T.attrs.get('sablon') else 'YOK'} · "
+                       f"ölü kedi {n_k}")
+        step("orgu", f)
+
     if want("hype"):
         def f():
             h = cmp.hype()

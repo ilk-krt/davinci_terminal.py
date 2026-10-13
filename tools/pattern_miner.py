@@ -576,6 +576,8 @@ def experiment(D: pd.DataFrame, cols: list[str], tgt: str, split: str, gap_days:
                     "lift": round(float(yte[sel].mean()) / base_te, 2) if base_te else None}
             res["şablon eşleştirme (test)"] = {"AUC": round(float(roc_auc_score(yte, sim)), 3), **sl}
             res["_sablon"] = {c: float(v) for c, v in zip(sq, tmpl * sd_)}   # özgün birimde fark
+            res["_model"] = {"cols": [c[4:] for c in sq], "mu": [float(x) for x in mu_],
+                             "sd": [float(x) for x in sd_], "tmpl_z": [float(x) for x in tmpl]}
         except Exception as exc:                 # noqa: BLE001
             res["şablon hatası"] = str(exc)
     # okunabilir örgü kuralları
@@ -719,10 +721,37 @@ def main() -> int:
         for c_, v_ in (e_.pop("_sablon", {}) or {}).items():
             base_, lag_ = c_[4:].rsplit("_", 1)
             trows.append({"Deney": k_, "Seri": label(base_), "Gün önce": int(lag_), "Fark": v_})
+    models = {k_: e_.pop("_model") for k_, e_ in exps.items() if "_model" in e_}
+    if models:
+        (OUT / "sablon_model.json").write_text(json.dumps(models))
     if trows:
         pd.DataFrame(trows).pivot_table(index=["Deney", "Seri"], columns="Gün önce",
                                         values="Fark").round(3).to_csv(OUT / "sablon.csv")
     meta["deneyler"] = exps
+    # uygulamadaki ÖRGÜ TARAYICI kurallarının ayrı kontrolü (test dönemi = A'nın testi)
+    try:
+        te = D[D.index > last - pd.DateOffset(months=27) + pd.Timedelta(days=35)]
+        flags = {
+            "🐈 Ölü kedi (→ büyük düşüş)": ("dn", (te["d_e200"] < 0) & (te["from_hi"] <= -30)
+                                            & (te["ret5"] >= np.maximum(5.0, 1.5 * te["atr_pct"]))
+                                            & ((te["omni_d5"] >= 10) | (te["hud_net"] >= 3))),
+            "R1 sıkışma (→ oynaklığına göre büyük yükseliş)": (
+                "upz", (te["atr_pct"] > 1.88) & (te["x_lambda"] > 2.30) & (te["atr_ratio"] <= 0.69)),
+            "R2 kuruma (→ oynaklığına göre büyük yükseliş)": (
+                "upz", (te["x_lambda_ch"] <= -0.34) & (te["x_lambda"] <= 16.46)
+                & (te["vol_10_60"] <= 0.74) & (te["x_amihud"] <= -0.23)),
+        }
+        chk = {}
+        for nm, (tg, m) in flags.items():
+            m = m.fillna(False)
+            b = float(te[tg].mean())
+            p_ = float(te.loc[m, tg].mean()) if m.sum() else np.nan
+            chk[nm] = {"n": int(m.sum()), "olasılık %": round(p_ * 100, 2) if np.isfinite(p_) else None,
+                       "taban %": round(b * 100, 2), "lift": round(p_ / b, 2) if b and np.isfinite(p_) else None,
+                       "ileri 20G SPY'ye göre ort %": round(float(te.loc[m, "fwd_ex"].mean()), 2) if m.sum() else None}
+        meta["örgü tarayıcı kuralları (test)"] = chk
+    except Exception as exc:                     # noqa: BLE001
+        meta["hata"]["kural_kontrol"] = str(exc)
     meta["sure_dk"] = round((time.time() - t0) / 60, 1)
     (OUT / "ozet.json").write_text(json.dumps(_js(meta), ensure_ascii=False, indent=1))
     rows = []
@@ -732,7 +761,7 @@ def main() -> int:
     pd.DataFrame(rows).to_csv(OUT / "kurallar.csv", index=False)
     with zipfile.ZipFile(OUT / "patern_madenciligi.zip", "w", zipfile.ZIP_DEFLATED) as z:
         for f in ("ozet.json", "kurallar.csv", "parmakizi_yukselis.csv", "parmakizi_dusus.csv",
-                  "parmakizi_yukselis_oynakliga_gore.csv", "sablon.csv"):
+                  "parmakizi_yukselis_oynakliga_gore.csv", "sablon.csv", "sablon_model.json"):
             if (OUT / f).exists():
                 z.write(OUT / f, f)
     print(json.dumps(_js({k: {kk: vv for kk, vv in v.items() if kk in ("AUC (test)", "lift (test)")}
