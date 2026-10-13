@@ -40,6 +40,7 @@ from apex import tracking as trk
 from apex import hype as hyp
 from apex import robot as rbt
 from apex import robotchart as rbc
+from apex import orgu as org
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -413,11 +414,103 @@ def _px(x) -> str:
     return f"{x:,.0f}" if x >= 1000 else f"{x:.2f}"
 
 
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_orgu(nonce: str, live: bool = False):
+    """🧬 Örgü tarayıcı sonuçları — akşam hesabından; yoksa (istenirse) canlı."""
+    s = snap.load("orgu")
+    if s is not None and not live:
+        return s
+    return cmp.orgu() if live else None
+
+
+def _orgu_T():
+    T = load_orgu(st.session_state.get("nonce_scan", "0"))
+    if T is None or len(T) == 0:
+        T = st.session_state.get("orgu_live")
+    return T
+
+
+def _orgu_map() -> dict:
+    T = _orgu_T()
+    if T is None or len(T) == 0:
+        return {}
+    return {r["Sembol"]: r for r in T.to_dict("records")}
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def orgu_chart_png(sym: str, nonce: str) -> bytes | None:
+    p, _ = dta.fetch([sym, "SPY"], "1d")
+    d = p.get(sym)
+    if d is None or len(d) < 160:
+        return None
+    spy = p.get("SPY")
+    f = org.chart(d, spy["Close"] if spy is not None else None, sym)
+    b = tvc.to_bytes(f, "png")
+    tvc.close(f)
+    return b
+
+
+def show_orgu_scanner() -> None:
+    T = _orgu_T()
+    if T is None or len(T) == 0:
+        st.info("Örgü taraması henüz akşam hesabında yok (bir sonraki Akşam hesabında gelir).")
+        if st.button("Şimdi hesapla (~3–5 dk, ~770 hisse)", key="og_live"):
+            with st.spinner("Örgü taranıyor…"):
+                st.session_state["orgu_live"] = load_orgu(st.session_state.nonce_scan, True)
+            st.rerun()
+        return
+    if not T.attrs.get("sablon", True) or T["Şablon benzerliği"].isna().all():
+        st.warning("Şablon dosyası (data/patterns/sablon.csv) bulunamadı — yalnızca sessiz sıkışma "
+                   "ve ölü kedi gösteriliyor. Patern madenciliği bir kez çalışınca gelir.")
+    st.caption(
+        f"📅 Veri: {T['Veri tarihi'].max()} · {len(T)} hisse. **Örgü puanı** = %60 şablon "
+        "benzerliği (yüzdelik) + %40 sessiz sıkışma. Patern madenciliğinin (730 hisse × 5 yıl, "
+        "görülmemiş dönemde test) bulgusu: şablona en benzer %1'de oynaklığına göre büyük yükseliş "
+        "olasılığı tabanın 1.8–2.2 katı (≈ %3.7 → %6.5–8). Kesinlik değil, olasılık: listeyi "
+        "Fib/plan ve risk yönetimiyle birlikte kullanın.")
+    c1, c2, c3 = st.columns(3)
+    n_top = c1.slider("Kaç hisse", 10, 60, 25, 5, key="og_n")
+    min_atr = c2.slider("En az ATR %", 0.0, 6.0, 1.0, 0.5, key="og_atr",
+                        help="Çok sakin hisseleri ele (büyük hareket kapasitesi düşük)")
+    only_r = c3.toggle("Yalnızca R1/R2 kuralına uyanlar", False, key="og_r")
+    V = T[(~T["🐈 Ölü kedi"]) & (T["ATR %"] >= min_atr)]
+    if only_r:
+        V = V[V["R1"] | V["R2"]]
+    V = V.head(n_top).copy()
+    V["Kural"] = [" ".join(k for k in ("R1", "R2") if r[k]) for _, r in V.iterrows()]
+    st.dataframe(V[["Sembol", "Tema", "Örgü puanı", "Benzerlik yüzdeliği", "Sessiz sıkışma",
+                    "Kural", "Öne çıkan", "ATR %", "SPY'ye göre 20G %", "Fiyat"]],
+                 width="stretch", hide_index=True, column_config={
+                     "Örgü puanı": st.column_config.ProgressColumn(format="%d", min_value=0,
+                                                                   max_value=100),
+                     "Benzerlik yüzdeliği": st.column_config.NumberColumn(format="%.0f"),
+                     "Sessiz sıkışma": st.column_config.NumberColumn(format="%.0f"),
+                     "ATR %": st.column_config.NumberColumn(format="%.1f"),
+                     "SPY'ye göre 20G %": st.column_config.NumberColumn(format="%+.1f"),
+                     "Fiyat": st.column_config.NumberColumn(format="%.2f")})
+    st.caption("**R1** sıkışmış oynaklık + yüksek fiyat etkisi (testte 2.0 kat) · **R2** hacim "
+               "kuruması + iyileşen likidite + azalan fiyat etkisi (testte 1.6 kat).")
+    pick = st.selectbox("🔍 Hisse Avcısı'nda incele", [""] + V["Sembol"].tolist(), key="og_pick")
+    if pick:
+        tm = V.loc[V["Sembol"] == pick, "Tema"].iloc[0]
+        st.button(f"➡️ {pick} ({tm})", key="og_go", on_click=_go, args=(PAGES[3],),
+                  kwargs={"ha_tema": tm, "ha_sym": pick})
+    K = T[T["🐈 Ölü kedi"]]
+    if len(K):
+        st.markdown(f"##### 🐈 Ölü kedi uyarısı ({len(K)})")
+        st.caption("Düşen trendde (EMA200 altı, 52 hafta zirvesinden ≥ %30 aşağıda) son 5 günde ani "
+                   "OMNI/HUD/fiyat sıçraması: patern madenciliğinde büyük DÜŞÜŞLERDEN önceki örgü. "
+                   "Bu hisselerde Hisse Avcısı kararı ⛔ UZAK DUR'a çekilir, robot giriş yapmaz.")
+        st.dataframe(K[["Sembol", "Tema", "Ölü kedi günü", "ATR %", "SPY'ye göre 20G %", "Fiyat"]],
+                     width="stretch", hide_index=True)
+
+
 def trade_plan_table(TB: pd.DataFrame, P: pd.DataFrame, index_ok: bool) -> pd.DataFrame:
-    """Tarama tablosu + plan → sade karar tablosu (sebepleriyle)."""
+    """Tarama tablosu + plan → sade karar tablosu (sebepleriyle) + 🧬 örgü."""
     if TB is None or TB.empty or P is None or P.empty:
         return pd.DataFrame()
     pm = {r["Sembol"]: r for r in P.to_dict("records")}
+    om = _orgu_map()
     rows = []
     for r in TB.to_dict("records"):
         p = pm.get(r["Sembol"], {"ok": False, "neden": "plan yok"})
@@ -425,9 +518,14 @@ def trade_plan_table(TB: pd.DataFrame, P: pd.DataFrame, index_ok: bool) -> pd.Da
         p["ok"] = p.get("ok") is True or p.get("ok") == True  # noqa: E712 (NaN → False)
         karar, why = pln.verdict(p, r.get("Durum", ""), r.get("Sinyal", ""),
                                  r.get("Kalan Gün"), index_ok)
+        otag, onote = org.verdict_note(om.get(r["Sembol"], {}))
+        if otag.startswith("🐈"):
+            karar, why = "⛔ UZAK DUR", [f"🐈 {onote}"] + why
+        elif otag:
+            why = why + [f"🧬 {onote}"]
         ok = p["ok"]
         rows.append({
-            "Karar": karar, "Hisse": r["Sembol"],
+            "Karar": karar, "Örgü": otag, "Hisse": r["Sembol"],
             "Fiyat": _px(p["Fiyat"] if ok else r.get("Fiyat")),
             "Giriş bölgesi": f"{_px(p['Giriş Alt'])} – {_px(p['Giriş Üst'])}" if ok else "—",
             "Stop": (f"{_px(p['Stop'])} ({p['Stop %']:+.1f}%)" if ok else "—"),
@@ -436,7 +534,7 @@ def trade_plan_table(TB: pd.DataFrame, P: pd.DataFrame, index_ok: bool) -> pd.Da
             "R:R": round(float(p["R:R"]), 1) if ok else np.nan,
             "Sebep": " · ".join(why),
             "_o": {"✅": 0, "🟡": 1, "⛔": 2}.get(karar[:1], 3),
-            "_s": r.get("Huni Skoru", 0),
+            "_s": r.get("Huni Skoru", 0) + (15 if otag.startswith("🧬") else 0),
         })
     out = pd.DataFrame(rows)
     return out.sort_values(["_o", "_s"], ascending=[True, False]).drop(
@@ -1622,6 +1720,8 @@ elif PAGE == PAGES[2]:
 # ======================================================================= 4
 elif PAGE == PAGES[3]:
     st.markdown("### 🦅 Hisse Avcısı")
+    with st.expander("🧬 Örgü tarayıcı — bugün büyük hareket öncesi örgüye en çok benzeyen hisseler"):
+        show_orgu_scanner()
     all_themes = [t for t in uni.THEME_TRACKER if theme_holdings(t)]
     if st.session_state.ha_tema not in all_themes and st.session_state.ha_sym:
         st.session_state.ha_tema = next((t for t in all_themes
@@ -1679,7 +1779,7 @@ elif PAGE == PAGES[3]:
                               badge(f"🟡 LİMİT EMİR / BEKLE · {n_bk}", ""),
                               badge(f"⛔ UZAK DUR · {len(PT) - n_al - n_bk}", "neg")]),
                     unsafe_allow_html=True)
-        pcols = ["Karar", "Hisse", "Fiyat", "Giriş bölgesi", "Stop", "Kâr al 1",
+        pcols = ["Karar", "Örgü", "Hisse", "Fiyat", "Giriş bölgesi", "Stop", "Kâr al 1",
                  "Kâr al 2", "R:R", "Sebep"]
         show_bad = st.toggle("⛔ Uzak durulacakları da göster", False, key="ha_bad")
         view = PT if show_bad else PT[PT["Karar"].str.startswith(("✅", "🟡"))]
@@ -1731,6 +1831,31 @@ elif PAGE == PAGES[3]:
             k[4].markdown(kpi("R:R", f"{prow['R:R']:.1f}" if np.isfinite(prow["R:R"]) else "—",
                               "kâr al 1'e göre"), unsafe_allow_html=True)
             st.markdown(f"**Sebep:** {prow['Sebep']}")
+            _om = _orgu_map().get(sym)
+            with st.expander("🧬 Örgü: son 30 gün büyük yükseliş öncesi şablona benziyor mu?",
+                             expanded=bool(prow.get("Örgü"))):
+                if _om:
+                    o1, o2, o3, o4 = st.columns(4)
+                    o1.metric("Örgü puanı", f"{_om['Örgü puanı']:.0f}")
+                    o2.metric("Şablon benzerliği", f"ilk %{100 - _om['Benzerlik yüzdeliği']:.0f}"
+                              if np.isfinite(_om["Benzerlik yüzdeliği"]) else "—")
+                    o3.metric("Sessiz sıkışma", f"{_om['Sessiz sıkışma']:.0f}/100")
+                    o4.metric("Kurallar", " ".join(k for k in ("R1", "R2") if _om.get(k)) or "—")
+                    if _om.get("🐈 Ölü kedi"):
+                        st.error(f"🐈 Ölü kedi ({_om.get('Ölü kedi günü')}): düşen trendde ani "
+                                 "sıçrama — büyük düşüşlerden önceki örgüye benziyor.")
+                    if _om.get("Öne çıkan"):
+                        st.caption(f"Öne çıkan: {_om['Öne çıkan']}")
+                else:
+                    st.caption("Bu hisse akşam örgü taramasında yok (tema kadrosu dışı ya da veri "
+                               "yetersiz). Grafik yine de çizilir.")
+                _png = orgu_chart_png(sym, st.session_state.nonce_chart)
+                if _png:
+                    st.image(_png, width="stretch")
+                st.caption("Mavi: hissenin son 30 günü. Sarı kesikli: 730 hisse × 5 yılda, oynaklığına "
+                           "göre büyük yükselişten (20 günde SPY'yi ≥ 1.5 × ATR%·√20 geçen) önceki "
+                           "ortalama örgü. Şablona en benzer %1 hissede büyük hareket olasılığı "
+                           "test dönemlerinde tabanın 1.8–2.2 katıydı — kesinlik değil, olasılık.")
             _pl = Ph[Ph["Sembol"] == sym].to_dict("records") if not Ph.empty else []
             _pl = _pl[0] if _pl else {}
             _in_w = sym in [x["sym"] for x in _wl().get("stock_watch", [])]
@@ -2294,6 +2419,8 @@ elif PAGE == "🤖 Robot (simülasyon)":
         fg_r = a13.toggle("🔑 Fib kapısı: dün 0.382–0.786 geri çekilme bölgesinde olmalı", True,
                           key=f"rb_fg_{prof_r}")
         adx_r = a14.slider("Günlük ADX alt sınırı (0 = kapalı)", 0, 30, 15, 1, key=f"rb_adx_{prof_r}")
+        kedi_r = a13.toggle("🐈 Ölü kedi vetosu (düşen trendde ani sıçramadan sonra 5 gün girme)",
+                            True, key=f"rb_kedi_{prof_r}")
         str_r = a11.toggle("🏛️ Yapı katmanı (S/R, gap/FVG, Wyckoff, likidite, Elliott, Mum Gücü, "
                            "haftalık trend)", bool(P0.get("structure", False)), key=f"rb_str_{prof_r}",
                            help="Veto + yapısal stop + yapısal hedef (+ akıllıda konsey sinyali).")
@@ -2307,6 +2434,7 @@ elif PAGE == "🤖 Robot (simülasyon)":
            "risk_pct": risk_r / 100, "regime_gate": reg_r, "trend_ride": ride_r,
            "max_losses": int(ml_r), "structure": bool(str_r),
            "fib_gate": [0.382, 0.786] if fg_r else [], "adx_min": float(adx_r),
+           "orgu_veto": bool(kedi_r),
            "struct_entry": bool(sen_r and str_r),
            "qty": q_r, "cost": cost_r, "user_stop": stop_r}
     b1, b2, b3 = st.columns([1, 1, 2])
