@@ -1,0 +1,282 @@
+,t-40,t-30,t-20,t-15,t-10,t-5,t-3,t-1,t0,etiket,grup,n olay,güç
+atr_pct,0.567,0.564,0.595,0.568,0.535,0.533,0.539,0.568,0.692,ATR % (oynaklık),fiyat yapısı / Fib / mum,8892,0.583
+from_hi,-0.397,-0.405,-0.432,-0.414,-0.408,-0.416,-0.424,-0.443,-0.546,52 hafta zirvesine uzaklık %,fiyat yapısı / Fib / mum,8892,0.457
+x_lastvol20,-0.350,-0.361,-0.352,-0.352,-0.334,-0.335,-0.323,-0.322,-0.327,Son saatin hacim payı (20 gün),TradingView dışı balina izi,8892,0.327
+x_lambda,0.247,0.248,0.243,0.243,0.240,0.243,0.244,0.245,0.250,Kyle-λ fiyat etkisi (60 gün),TradingView dışı balina izi,8892,0.245
+d_e200,-0.150,-0.155,-0.187,-0.172,-0.169,-0.179,-0.186,-0.208,-0.322,EMA200'e uzaklık (ATR),fiyat yapısı / Fib / mum,8892,0.224
+pos52,-0.157,-0.159,-0.189,-0.171,-0.167,-0.176,-0.187,-0.210,-0.321,52 haftalık aralıkta konum (0–1),fiyat yapısı / Fib / mum,8892,0.224
+tv_s_eff_pos,-0.016,-0.037,-0.099,-0.021,-0.003,-0.067,-0.101,-0.197,-0.498,Fiyat efor çizgisinin üstünde,motor sinyalleri (anlık),8892,0.216
+d_e50,-0.074,-0.075,-0.139,-0.098,-0.082,-0.097,-0.113,-0.160,-0.392,EMA50'ye uzaklık (ATR),fiyat yapısı / Fib / mum,8892,0.191
+d_e21,-0.039,-0.041,-0.120,-0.049,-0.030,-0.054,-0.079,-0.146,-0.475,EMA21'e uzaklık (ATR),fiyat yapısı / Fib / mum,8892,0.189
+w10_hud_net__konum,0.025,-0.003,-0.034,0.055,0.020,-0.028,-0.076,-0.149,-0.473,HUD net (boğa − ayı) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.182
+w10_daily__konum,0.022,-0.017,-0.054,0.048,0.041,-0.026,-0.070,-0.156,-0.441,DAILY bandı — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.173
+tv_o_hud_net,-0.006,0.002,-0.068,0.016,0.042,-0.001,-0.045,-0.141,-0.481,OMNI HUD net (−6…+6),motor sinyalleri (anlık),8892,0.167
+hud_net,-0.006,0.002,-0.068,0.016,0.042,-0.001,-0.045,-0.141,-0.481,HUD net (boğa − ayı),APEX 670 OMNI,8892,0.167
+tv_v_eff_score,-0.038,-0.047,-0.104,-0.066,-0.057,-0.070,-0.081,-0.124,-0.386,Efor gücü (0–8),motor sinyalleri (anlık),8892,0.165
+daily,-0.034,-0.035,-0.123,-0.050,-0.004,-0.032,-0.070,-0.145,-0.396,DAILY bandı,APEX CORE çizgi/histogram,8892,0.161
+w10_omni__konum,0.013,0.001,-0.065,0.034,0.070,-0.010,-0.065,-0.147,-0.416,OMNI momentum — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.160
+tv_a_flow,-0.035,-0.044,-0.105,-0.038,-0.017,-0.039,-0.056,-0.114,-0.430,Akış dengesi (delta),motor sinyalleri (anlık),8892,0.160
+w30_hud_net__konum,0.002,0.005,-0.052,0.028,0.047,-0.000,-0.042,-0.134,-0.458,HUD net (boğa − ayı) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.159
+omni_d5,0.028,-0.018,-0.061,0.066,0.062,-0.009,-0.055,-0.138,-0.389,OMNI 5 günlük değişim,APEX 670 OMNI,8892,0.148
+ret5,0.021,-0.014,-0.063,0.081,0.028,-0.007,-0.017,-0.098,-0.468,Son 5 gün getiri %,fiyat yapısı / Fib / mum,8892,0.147
+daily_d5,0.032,-0.022,-0.043,0.073,0.028,-0.033,-0.062,-0.132,-0.358,DAILY 5 günlük değişim,APEX CORE çizgi/histogram,8892,0.146
+w30_daily__artan,-0.048,-0.081,-0.108,-0.077,-0.063,-0.079,-0.101,-0.135,-0.260,DAILY bandı — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.144
+w_pwr,-0.060,-0.054,-0.139,-0.092,-0.047,-0.066,-0.070,-0.108,-0.321,Whale gücü,APEX CORE çizgi/histogram,8892,0.141
+w10_w_pwr__konum,-0.020,-0.017,-0.090,-0.003,0.031,-0.029,-0.037,-0.107,-0.384,Whale gücü — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.139
+omni,-0.046,-0.034,-0.126,-0.071,-0.011,-0.023,-0.060,-0.124,-0.349,OMNI momentum,APEX 670 OMNI,8892,0.139
+w30_daily__konum,-0.005,-0.009,-0.086,0.002,0.034,-0.002,-0.042,-0.124,-0.386,DAILY bandı — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.139
+w10_hud_net__egim,0.027,-0.010,-0.045,0.066,0.061,-0.016,-0.064,-0.130,-0.315,HUD net (boğa − ayı) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.131
+w30_w_pwr__konum,-0.054,-0.046,-0.130,-0.062,-0.010,-0.031,-0.040,-0.097,-0.346,Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.128
+w30_omni__konum,-0.010,-0.009,-0.087,-0.018,0.042,0.018,-0.026,-0.103,-0.345,OMNI momentum — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.123
+w30_w_pwr__artan,-0.044,-0.076,-0.096,-0.077,-0.068,-0.082,-0.094,-0.108,-0.207,Whale gücü — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.123
+w10_daily__artan,-0.020,-0.024,-0.100,-0.036,0.045,-0.004,-0.054,-0.120,-0.304,DAILY bandı — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.120
+w10_f_hist__konum,0.027,0.005,-0.016,0.051,0.060,-0.007,-0.055,-0.109,-0.309,Fusion histogram — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.120
+w10_f_gap__konum,0.027,0.005,-0.016,0.051,0.060,-0.007,-0.055,-0.109,-0.309,Speedline − sinyal — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.120
+w10_whale__konum,-0.017,-0.010,-0.072,-0.012,0.053,0.003,-0.030,-0.107,-0.340,WHALE bandı — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.120
+pro_ret,-0.077,-0.067,-0.120,-0.106,-0.067,-0.064,-0.074,-0.103,-0.224,PRO − RETAIL,APEX CORE çizgi/histogram,8892,0.116
+retail,0.089,0.079,0.115,0.110,0.080,0.075,0.079,0.098,0.206,RETAIL bandı,APEX CORE çizgi/histogram,8892,0.115
+x_ii20,-0.025,-0.056,-0.127,-0.117,-0.107,-0.101,-0.093,-0.086,-0.177,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün),TradingView dışı balina izi,8892,0.114
+tv_k_dir,-0.050,-0.034,-0.101,-0.067,-0.015,-0.022,-0.043,-0.098,-0.283,Konfluans DIRECTION,motor sinyalleri (anlık),8892,0.111
+w10_rs20__konum,-0.016,0.019,-0.036,0.029,0.035,0.021,0.014,-0.068,-0.341,SPY'ye göre 20 gün % — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.111
+since_sweep_high,0.044,0.058,0.077,0.081,0.096,0.101,0.111,0.110,0.118,Son 🎣 Tepe süpürmesi olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.110
+w10_omni__artan,-0.016,0.004,-0.100,-0.028,0.079,0.027,-0.027,-0.100,-0.285,OMNI momentum — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.110
+w10_hud_net__artan,0.012,-0.029,-0.044,0.019,0.029,-0.035,-0.065,-0.105,-0.233,HUD net (boğa − ayı) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.109
+e50_200,-0.095,-0.098,-0.100,-0.098,-0.104,-0.105,-0.105,-0.109,-0.119,EMA50 > EMA200,fiyat yapısı / Fib / mum,8892,0.109
+w30_omni__artan,-0.041,-0.056,-0.087,-0.046,-0.020,-0.041,-0.064,-0.102,-0.224,OMNI momentum — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.108
+w10_pro_ret__konum,-0.004,0.001,-0.061,0.001,0.057,0.011,-0.025,-0.091,-0.303,PRO − RETAIL — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.108
+whale,-0.065,-0.055,-0.108,-0.096,-0.064,-0.055,-0.062,-0.090,-0.211,WHALE bandı,APEX CORE çizgi/histogram,8892,0.105
+w10_w_pwr__artan,-0.023,-0.035,-0.087,-0.041,0.023,-0.016,-0.045,-0.092,-0.259,Whale gücü — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.103
+since_exhausted,0.049,0.053,0.057,0.073,0.085,0.090,0.097,0.107,0.111,Son ⚠️ Whale tükenme olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.101
+tv_o_f_hist,-0.001,0.023,-0.049,0.014,0.074,0.040,0.001,-0.067,-0.281,Fusion histogram,motor sinyalleri (anlık),8892,0.097
+w10_daily__egim,0.009,-0.009,-0.068,0.028,0.090,0.001,-0.041,-0.097,-0.246,DAILY bandı — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.096
+w10_omni__egim,0.003,0.007,-0.078,0.004,0.106,0.036,-0.015,-0.083,-0.239,OMNI momentum — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.093
+tv_v_eff_up,-0.032,-0.039,-0.034,-0.016,-0.033,-0.050,-0.067,-0.077,-0.178,Efor kırılımı ↑,motor sinyalleri (anlık),8892,0.093
+tv_v_eff_dn,0.029,0.024,0.043,0.045,0.052,0.075,0.065,0.085,0.146,Efor kırılımı ↓,motor sinyalleri (anlık),8892,0.093
+whale_d5,-0.000,-0.005,-0.069,0.013,0.054,0.027,0.003,-0.061,-0.273,WHALE 5 günlük değişim,APEX CORE çizgi/histogram,8892,0.091
+w10_s_speed__konum,0.005,0.032,-0.044,0.010,0.090,0.039,0.006,-0.063,-0.249,Synergy hızı — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.089
+f_hist,-0.011,0.012,-0.055,0.015,0.063,0.033,0.001,-0.053,-0.270,Fusion histogram,APEX 670 OMNI,8892,0.089
+f_gap,-0.011,0.012,-0.055,0.015,0.063,0.033,0.001,-0.053,-0.270,Speedline − sinyal,APEX 670 OMNI,8892,0.089
+tv_o_sweep_low,0.020,0.034,0.044,0.016,-0.008,0.025,0.059,0.092,0.177,Dip süpürmesi,motor sinyalleri (anlık),8892,0.088
+tv_c_pro_gt_ret,-0.076,-0.052,-0.111,-0.101,-0.072,-0.043,-0.055,-0.080,-0.170,PRO > RETAIL,motor sinyalleri (anlık),8892,0.087
+w30_whale__artan,-0.068,-0.067,-0.088,-0.071,-0.043,-0.046,-0.059,-0.080,-0.160,WHALE bandı — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.087
+w30_f_hist__konum,0.008,0.022,-0.031,0.037,0.063,0.025,-0.006,-0.063,-0.252,Fusion histogram — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.086
+w30_f_gap__konum,0.008,0.022,-0.031,0.037,0.063,0.025,-0.006,-0.063,-0.252,Speedline − sinyal — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.086
+tv_k_entry,-0.036,-0.027,-0.056,-0.044,-0.055,-0.050,-0.070,-0.083,-0.139,Konfluans giriş bölgesi,motor sinyalleri (anlık),8892,0.086
+pro_ret_d5,0.003,-0.007,-0.060,0.014,0.056,0.018,-0.009,-0.063,-0.249,PRO−RETAIL 5 günlük değişim,APEX CORE çizgi/histogram,8892,0.085
+w30_x_smi20__egim,0.004,-0.010,0.002,0.004,-0.034,-0.069,-0.083,-0.092,-0.078,Smart Money Index: son saat − ilk saat (20 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.080
+w10_updn_vol__konum,-0.018,0.011,-0.035,0.012,0.022,0.008,-0.005,-0.041,-0.267,Yükselen/düşen gün hacim oranı (20 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.080
+w10_x_obv_div__konum,0.017,-0.003,0.066,0.017,-0.003,-0.001,-0.007,0.056,0.255,OBV − fiyat ayrışması (20 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.080
+updn_vol,-0.050,-0.028,-0.068,-0.051,-0.036,-0.033,-0.031,-0.049,-0.205,Yükselen/düşen gün hacim oranı (20 gün),fiyat yapısı / Fib / mum,8892,0.079
+tv_o_ew_bull,0.030,0.006,0.007,0.035,0.014,-0.030,-0.044,-0.073,-0.169,Fusion kesişim ↑,motor sinyalleri (anlık),8892,0.079
+w30_hud_net__artan,-0.015,-0.038,-0.037,-0.011,-0.026,-0.044,-0.050,-0.066,-0.153,HUD net (boğa − ayı) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.079
+fib_up,-0.050,-0.057,-0.060,-0.063,-0.073,-0.075,-0.078,-0.081,-0.079,Ana Fib bacağı yukarı,fiyat yapısı / Fib / mum,8892,0.078
+w30_pro_ret__artan,-0.039,-0.048,-0.067,-0.054,-0.027,-0.034,-0.048,-0.072,-0.157,PRO − RETAIL — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.078
+w10_whale__artan,-0.046,-0.010,-0.082,-0.059,0.034,0.026,-0.010,-0.063,-0.210,WHALE bandı — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.077
+w30_rs20__konum,-0.044,-0.006,-0.039,-0.007,0.016,0.031,0.033,-0.015,-0.231,SPY'ye göre 20 gün % — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.077
+w10_pro_ret__artan,-0.019,-0.000,-0.076,-0.047,0.048,0.033,-0.005,-0.061,-0.204,PRO − RETAIL — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.076
+w10_f_gap__egim,0.004,0.014,-0.046,0.025,0.080,0.005,-0.034,-0.076,-0.187,Speedline − sinyal — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.075
+w10_f_hist__egim,0.004,0.014,-0.046,0.025,0.080,0.005,-0.034,-0.076,-0.187,Fusion histogram — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.075
+w30_x_smi20__konum,-0.017,0.013,0.017,-0.042,-0.101,-0.093,-0.065,-0.062,0.079,Smart Money Index: son saat − ilk saat (20 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.075
+since_ab_bull,-0.114,-0.092,-0.086,-0.071,-0.067,-0.066,-0.074,-0.088,-0.071,Son 🚀 Afterburner boğa olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.075
+since_dia_sell,0.028,0.048,0.052,0.067,0.071,0.080,0.082,0.080,0.056,Son 💎 Diamond SAT olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.074
+w10_f_hist__artan,0.019,0.014,-0.028,0.028,0.070,0.011,-0.025,-0.072,-0.186,Fusion histogram — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.074
+w10_f_gap__artan,0.019,0.014,-0.028,0.028,0.070,0.011,-0.025,-0.072,-0.186,Speedline − sinyal — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.074
+since_sweep_low,-0.040,-0.053,-0.072,-0.076,-0.055,-0.052,-0.060,-0.071,-0.110,Son 🎣 Dip süpürmesi olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.073
+w10_retail__konum,0.012,-0.001,0.051,0.008,-0.040,-0.015,0.009,0.048,0.217,RETAIL bandı — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.072
+tv_o_ab_bear,0.031,0.010,0.000,-0.015,-0.024,0.010,0.006,0.036,0.235,Absorpsiyon (ayı),motor sinyalleri (anlık),8892,0.072
+n20_sweep_high,-0.024,-0.038,-0.058,-0.059,-0.067,-0.065,-0.069,-0.070,-0.081,Son 20 günde 🎣 Tepe süpürmesi sayısı,olay sayıları,8892,0.071
+tv_o_ew_bear,-0.010,0.015,0.003,-0.039,-0.007,0.012,0.023,0.058,0.192,Fusion kesişim ↓,motor sinyalleri (anlık),8892,0.071
+x_id20,-0.088,-0.056,-0.122,-0.101,-0.059,-0.023,-0.005,-0.029,-0.219,Gün içi getiri toplamı (20 gün),TradingView dışı balina izi,8892,0.069
+w10_w_pwr__egim,-0.004,0.007,-0.068,0.001,0.081,0.028,-0.001,-0.045,-0.190,Whale gücü — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.066
+w10_sqz_dur__konum,-0.016,0.005,-0.024,0.015,0.044,0.010,-0.018,-0.087,-0.147,Sıkışma süresi (gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.065
+since_st_out,0.033,0.037,0.034,0.039,0.075,0.080,0.069,0.058,0.051,Son 🕵️ Stealth OUT olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.065
+w30_whale__konum,-0.030,-0.024,-0.078,-0.041,0.007,0.009,0.001,-0.044,-0.204,WHALE bandı — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.064
+rs20,0.006,0.025,-0.018,0.014,0.033,0.041,0.053,0.046,-0.117,SPY'ye göre 20 gün %,fiyat yapısı / Fib / mum,8892,0.064
+w30_x_obv_div__konum,0.034,0.017,0.078,0.050,0.037,0.015,0.005,0.034,0.201,OBV − fiyat ayrışması (20 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.064
+w30_x_ii20__artan,0.040,0.041,0.041,0.048,0.055,0.059,0.063,0.068,0.061,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.063
+w30_pro_ret__konum,-0.027,-0.018,-0.069,-0.034,0.012,0.015,0.000,-0.041,-0.194,PRO − RETAIL — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.063
+n20_exhausted,-0.060,-0.054,-0.032,-0.035,-0.045,-0.055,-0.059,-0.064,-0.071,Son 20 günde ⚠️ Whale tükenme sayısı,olay sayıları,8892,0.062
+n10_ew_bull,0.029,0.011,-0.034,0.019,0.064,0.012,-0.021,-0.063,-0.153,Son 10 günde 🔵 Erken uyarı AL sayısı,olay sayıları,8892,0.062
+w30_x_smi20__artan,0.021,0.033,0.045,0.050,0.052,0.056,0.060,0.063,0.071,Smart Money Index: son saat − ilk saat (20 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.062
+w10_rs20__artan,-0.021,0.038,-0.023,0.009,0.063,0.040,0.035,-0.011,-0.163,SPY'ye göre 20 gün % — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.062
+n10_sweep_high,-0.022,-0.037,-0.058,-0.050,-0.047,-0.051,-0.058,-0.059,-0.080,Son 10 günde 🎣 Tepe süpürmesi sayısı,olay sayıları,8892,0.062
+w10_s_speed__artan,-0.021,0.026,-0.048,-0.027,0.075,0.074,0.045,-0.004,-0.124,Synergy hızı — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.062
+w30_retail__artan,0.038,0.053,0.056,0.051,0.029,0.032,0.040,0.051,0.121,RETAIL bandı — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.061
+w30_vol_10_60__artan,0.028,0.013,0.006,-0.019,-0.075,-0.085,-0.075,-0.055,-0.027,Hacim 10 gün / 60 gün — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.061
+w10_x_smi20__konum,-0.016,0.015,0.005,-0.063,-0.084,-0.049,0.006,0.010,0.178,Smart Money Index: son saat − ilk saat (20 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.061
+retail_d5,0.001,0.002,0.046,0.001,-0.045,-0.018,-0.002,0.031,0.189,RETAIL 5 günlük değişim,APEX CORE çizgi/histogram,8892,0.060
+w10_x_ii20__egim,0.022,-0.021,-0.077,-0.042,0.037,0.074,0.081,0.080,0.004,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.060
+n20_st_out,-0.035,-0.037,-0.040,-0.042,-0.062,-0.066,-0.063,-0.056,-0.051,Son 20 günde 🕵️ Stealth OUT sayısı,olay sayıları,8892,0.059
+s_speed,-0.046,-0.031,-0.075,-0.060,-0.020,-0.016,-0.026,-0.050,-0.147,Synergy hızı,APEX 670 OMNI,8892,0.059
+w10_x_on_id__konum,0.018,0.010,-0.007,-0.018,-0.031,-0.043,-0.032,0.019,0.140,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.058
+n20_sweep_low,0.060,0.063,0.083,0.082,0.058,0.048,0.048,0.055,0.083,Son 20 günde 🎣 Dip süpürmesi sayısı,olay sayıları,8892,0.058
+tv_o_s_speed,-0.049,-0.034,-0.073,-0.065,-0.027,-0.021,-0.027,-0.049,-0.137,Synergy hızı,motor sinyalleri (anlık),8892,0.058
+tv_c_exh,-0.036,-0.029,-0.032,-0.043,-0.034,-0.046,-0.058,-0.056,-0.072,Tükenme,motor sinyalleri (anlık),8892,0.058
+w10_bbw_rank__konum,0.032,-0.017,0.014,-0.025,-0.052,-0.022,0.018,0.053,0.137,Bollinger genişliği yüzdeliği (120 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.057
+w10_x_ii20__artan,0.025,0.032,0.033,0.039,0.056,0.059,0.059,0.064,0.046,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.057
+w30_updn_vol__konum,-0.022,0.004,-0.030,-0.000,0.015,0.023,0.023,-0.004,-0.175,Yükselen/düşen gün hacim oranı (20 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.056
+w10_whale__egim,-0.024,0.014,-0.063,-0.034,0.068,0.053,0.032,-0.010,-0.130,WHALE bandı — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.056
+w10_x_ii20__konum,0.022,-0.016,-0.077,-0.018,0.021,0.034,0.024,0.032,-0.133,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.056
+w10_x_smi20__egim,-0.038,-0.007,0.059,-0.038,-0.137,-0.091,-0.036,-0.002,0.090,Smart Money Index: son saat − ilk saat (20 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.055
+w30_bbw_rank__egim,0.012,0.041,0.022,0.001,-0.042,-0.063,-0.065,-0.057,-0.035,Bollinger genişliği yüzdeliği (120 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.055
+w10_pro_ret__egim,-0.015,0.011,-0.056,-0.029,0.075,0.048,0.019,-0.021,-0.128,PRO − RETAIL — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.054
+w30_s_speed__konum,-0.009,0.013,-0.042,-0.007,0.047,0.052,0.036,-0.000,-0.128,Synergy hızı — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.054
+n10_exhausted,-0.053,-0.035,-0.025,-0.042,-0.046,-0.045,-0.048,-0.055,-0.067,Son 10 günde ⚠️ Whale tükenme sayısı,olay sayıları,8892,0.054
+n10_ew_bear,0.015,-0.006,0.016,-0.010,-0.041,-0.007,0.014,0.048,0.148,Son 10 günde 🔴 Erken uyarı SAT sayısı,olay sayıları,8892,0.054
+w10_updn_vol__artan,-0.027,0.023,-0.036,-0.010,0.056,0.051,0.039,0.015,-0.109,Yükselen/düşen gün hacim oranı (20 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.053
+w30_atr_ratio__egim,0.062,0.049,-0.005,-0.033,-0.061,-0.067,-0.063,-0.053,-0.030,ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.053
+tv_s_ult_up,-0.005,-0.029,-0.058,-0.034,-0.027,-0.026,-0.025,-0.034,-0.123,Ultimate kanal kırılımı,motor sinyalleri (anlık),8892,0.052
+n10_sweep_low,0.049,0.045,0.083,0.068,0.004,0.003,0.027,0.058,0.120,Son 10 günde 🎣 Dip süpürmesi sayısı,olay sayıları,8892,0.052
+ret20,0.005,0.028,-0.036,-0.010,0.005,0.014,0.024,0.014,-0.154,Son 20 gün getiri %,fiyat yapısı / Fib / mum,8892,0.052
+tv_c_cross_dn,0.000,-0.003,0.013,-0.026,-0.008,0.014,0.032,0.040,0.121,Whale kesişim ↓,motor sinyalleri (anlık),8892,0.052
+x_obv_div,0.003,-0.019,0.036,0.018,0.022,0.024,0.018,0.020,0.143,OBV − fiyat ayrışması (20 gün),TradingView dışı balina izi,8892,0.052
+w10_s_speed__egim,-0.028,0.028,-0.051,-0.026,0.076,0.054,0.025,-0.016,-0.110,Synergy hızı — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.051
+w10_retail__artan,0.021,0.010,0.047,0.037,-0.024,-0.026,-0.002,0.031,0.145,RETAIL bandı — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.051
+n20_dia_sell,-0.019,-0.039,-0.049,-0.053,-0.056,-0.057,-0.054,-0.058,-0.034,Son 20 günde 💎 Diamond SAT sayısı,olay sayıları,8892,0.051
+tv_c_sqz_fire,0.017,-0.009,-0.005,-0.039,-0.002,0.024,0.041,0.068,0.069,Sıkışma patlaması,motor sinyalleri (anlık),8892,0.051
+n10_ab_bull,0.054,0.026,0.039,0.010,0.019,0.035,0.048,0.068,0.050,Son 10 günde 🚀 Afterburner boğa sayısı,olay sayıları,8892,0.050
+tv_a_rev_up,-0.016,-0.011,-0.033,-0.001,0.013,-0.016,-0.022,-0.026,-0.136,VSA soğurma dönüşü ↑,motor sinyalleri (anlık),8892,0.050
+n10_ab_bear,0.060,-0.015,0.028,0.013,-0.022,-0.014,-0.019,0.021,0.144,Son 10 günde 🚀 Afterburner ayı sayısı,olay sayıları,8892,0.049
+rs60,0.076,0.055,0.023,0.051,0.056,0.051,0.049,0.030,-0.068,SPY'ye göre 60 gün %,fiyat yapısı / Fib / mum,8892,0.049
+w10_x_smi20__artan,0.012,0.028,0.057,0.049,0.024,0.030,0.038,0.051,0.078,Smart Money Index: son saat − ilk saat (20 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.049
+w10_atr_ratio__egim,0.079,-0.034,-0.007,-0.032,-0.070,-0.020,0.011,0.050,0.116,ATR14 / ATR50 (oynaklık sıkışması < 1) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.049
+tv_o_sweep_high,-0.021,-0.035,-0.040,-0.019,-0.039,-0.024,-0.036,-0.043,-0.090,Tepe süpürmesi,motor sinyalleri (anlık),8892,0.048
+w30_x_obv_div__artan,0.003,0.013,0.046,0.032,0.025,0.025,0.027,0.034,0.106,OBV − fiyat ayrışması (20 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.048
+w30_bbw_rank__konum,0.042,0.032,0.023,-0.016,-0.066,-0.067,-0.042,0.000,0.081,Bollinger genişliği yüzdeliği (120 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.047
+w10_atr_ratio__konum,0.057,-0.032,-0.033,-0.057,-0.069,-0.002,0.016,0.044,0.126,ATR14 / ATR50 (oynaklık sıkışması < 1) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.047
+n10_sqz_fire,0.007,-0.017,0.005,-0.014,-0.022,0.015,0.030,0.060,0.082,Son 10 günde 💥 Sıkışma patladı sayısı,olay sayıları,8892,0.047
+w10_rs20__egim,-0.015,0.030,-0.029,0.019,0.042,0.029,0.019,0.003,-0.136,SPY'ye göre 20 gün % — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.047
+w10_x_on_id__artan,0.037,-0.015,0.021,-0.002,-0.043,-0.057,-0.055,-0.025,0.049,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.046
+w30_retail__konum,0.023,0.010,0.052,0.031,-0.010,-0.013,-0.006,0.017,0.148,RETAIL bandı — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.046
+w10_bbw_rank__egim,0.033,0.000,0.001,-0.020,-0.066,-0.038,-0.008,0.036,0.100,Bollinger genişliği yüzdeliği (120 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.046
+w30_atr_ratio__konum,0.077,0.008,-0.025,-0.061,-0.093,-0.060,-0.035,0.005,0.080,ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.045
+w30_rs20__artan,0.000,0.003,-0.008,0.023,0.047,0.036,0.036,0.024,-0.083,SPY'ye göre 20 gün % — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.045
+ret60,0.070,0.051,0.012,0.040,0.051,0.038,0.034,0.009,-0.098,Son 60 gün getiri %,fiyat yapısı / Fib / mum,8892,0.045
+n20_ab_bull,0.079,0.057,0.045,0.032,0.042,0.032,0.041,0.057,0.049,Son 20 günde 🚀 Afterburner boğa sayısı,olay sayıları,8892,0.045
+w10_x_on_id__egim,0.030,-0.022,0.007,-0.020,-0.041,-0.052,-0.049,-0.032,0.045,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.044
+w30_x_on_id__konum,0.029,0.023,0.004,-0.018,-0.038,-0.047,-0.040,-0.012,0.079,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.044
+since_ew_bull,-0.039,-0.034,0.020,-0.007,-0.052,-0.030,-0.012,0.026,0.109,Son 🔵 Erken uyarı AL olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.044
+bbw_rank,0.055,0.053,0.053,0.016,-0.036,-0.043,-0.024,0.016,0.090,Bollinger genişliği yüzdeliği (120 gün),fiyat yapısı / Fib / mum,8892,0.043
+tv_k_expand,0.059,0.035,0.011,0.008,0.029,0.025,0.061,0.081,0.005,Konfluans genişleme,motor sinyalleri (anlık),8892,0.043
+w30_vol_10_60__egim,0.027,0.040,-0.007,-0.032,-0.046,-0.048,-0.048,-0.044,-0.032,Hacim 10 gün / 60 gün — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.043
+w10_vol_10_60__artan,0.048,-0.028,-0.016,-0.031,-0.064,-0.065,-0.053,-0.016,0.036,Hacim 10 gün / 60 gün — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.043
+w10_bbw_rank__artan,0.021,-0.024,-0.006,-0.024,-0.058,-0.028,0.002,0.043,0.096,Bollinger genişliği yüzdeliği (120 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.042
+since_ew_bear,-0.011,0.003,-0.021,0.003,0.012,0.005,-0.003,-0.030,-0.127,Son 🔴 Erken uyarı SAT olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.042
+w30_vol_10_60__konum,0.054,-0.016,-0.018,-0.042,-0.069,-0.058,-0.048,-0.014,0.045,Hacim 10 gün / 60 gün — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.041
+w10_vol_10_60__konum,0.050,-0.038,-0.016,-0.025,-0.045,-0.037,-0.020,0.023,0.085,Hacim 10 gün / 60 gün — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.041
+w30_hud_net__egim,-0.014,0.018,-0.019,-0.019,0.017,0.041,0.041,0.018,-0.062,HUD net (boğa − ayı) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.041
+n10_cross_up,-0.019,0.007,-0.045,-0.043,0.017,0.058,0.052,0.036,-0.017,Son 10 günde PRO↗RETAIL sayısı,olay sayıları,8892,0.041
+n10_star,-0.016,0.007,-0.050,-0.044,0.019,0.057,0.052,0.036,-0.017,Son 10 günde ⭐ Golden Star sayısı,olay sayıları,8892,0.041
+tv_o_dia_buy,0.016,0.003,0.034,0.025,-0.011,-0.029,-0.019,-0.030,-0.085,Elmas al,motor sinyalleri (anlık),8892,0.041
+w10_atr_ratio__artan,0.053,-0.037,-0.013,-0.042,-0.063,-0.022,0.002,0.039,0.099,ATR14 / ATR50 (oynaklık sıkışması < 1) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.041
+w10_updn_vol__egim,-0.027,0.017,-0.034,-0.011,0.035,0.022,0.011,-0.006,-0.123,Yükselen/düşen gün hacim oranı (20 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.040
+n10_st_out,-0.021,-0.031,-0.025,-0.024,-0.065,-0.071,-0.054,-0.028,-0.008,Son 10 günde 🕵️ Stealth OUT sayısı,olay sayıları,8892,0.040
+tv_c_acc,-0.028,-0.005,0.014,0.003,0.009,0.011,0.015,0.041,0.092,Gerçek toplama,motor sinyalleri (anlık),8892,0.040
+tv_c_cross_up,-0.003,0.010,-0.039,0.007,0.016,0.043,0.010,-0.013,-0.093,Whale kesişim ↑,motor sinyalleri (anlık),8892,0.040
+w10_retail__egim,0.012,-0.008,0.033,0.029,-0.053,-0.041,-0.023,0.004,0.091,RETAIL bandı — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.040
+tv_c_star,-0.001,0.009,-0.040,0.009,0.016,0.041,0.010,-0.012,-0.093,APEX yıldız,motor sinyalleri (anlık),8892,0.039
+since_sweep_bar,-0.040,-0.033,-0.049,-0.057,-0.037,-0.036,-0.040,-0.036,-0.040,Son 🎣 Whale süpürme olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.038
+w10_vol_10_60__egim,0.073,-0.052,0.007,-0.012,-0.046,-0.047,-0.025,0.010,0.069,Hacim 10 gün / 60 gün — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.038
+tv_o_ab_bull,0.025,0.007,0.003,-0.008,0.018,0.021,0.046,0.068,-0.012,Absorpsiyon (boğa),motor sinyalleri (anlık),8892,0.037
+tv_a_rev_dn,-0.016,0.021,0.010,0.021,0.014,0.010,0.002,0.034,0.102,VSA dağıtım dönüşü ↓,motor sinyalleri (anlık),8892,0.037
+tv_m_syn,0.019,0.042,-0.001,-0.008,0.017,0.004,0.001,0.048,0.092,Mum Gücü sentezi,motor sinyalleri (anlık),8892,0.037
+x_on_id,0.094,0.071,0.103,0.092,0.056,0.020,0.002,0.017,0.107,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim,TradingView dışı balina izi,8892,0.036
+tv_k_mag,0.065,0.023,0.005,0.004,0.020,0.020,0.047,0.065,-0.013,Konfluans MAGNITUDE,motor sinyalleri (anlık),8892,0.036
+w30_x_ii20__konum,0.068,-0.005,-0.069,-0.042,-0.019,0.013,0.025,0.030,-0.077,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.036
+w30_x_svr5__egim,-0.035,-0.041,-0.013,0.014,0.045,0.046,0.043,0.035,0.021,FINRA short hacim oranı (5 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.036
+red_cov,-0.049,-0.035,-0.031,-0.076,-0.066,-0.048,-0.022,-0.021,0.054,WHALE ≥ DAILY (kırmızı örtüyor),APEX CORE çizgi/histogram,8892,0.036
+w30_x_on_id__egim,0.017,0.019,0.009,0.002,-0.010,-0.024,-0.037,-0.046,-0.037,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.036
+n10_cross_dn,0.001,-0.024,0.019,-0.009,-0.034,-0.016,0.003,0.037,0.087,Son 10 günde PRO↘RETAIL sayısı,olay sayıları,8892,0.036
+w10_x_obv_div__artan,0.025,-0.012,0.054,0.031,-0.011,-0.009,-0.015,0.005,0.114,OBV − fiyat ayrışması (20 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.036
+x_smi20,0.080,0.072,0.146,0.100,0.025,0.007,0.000,0.003,0.131,Smart Money Index: son saat − ilk saat (20 gün),TradingView dışı balina izi,8892,0.035
+vol_10_60,0.099,0.049,0.053,0.032,-0.018,-0.035,-0.029,0.006,0.071,Hacim 10 gün / 60 gün,fiyat yapısı / Fib / mum,8892,0.035
+since_ab_bear,-0.056,-0.032,-0.039,-0.031,-0.012,-0.009,-0.006,-0.021,-0.105,Son 🚀 Afterburner ayı olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.035
+w30_bbw_rank__artan,0.009,-0.003,-0.005,-0.027,-0.062,-0.056,-0.042,-0.018,0.023,Bollinger genişliği yüzdeliği (120 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.035
+w30_x_svr5__artan,-0.020,-0.029,-0.024,0.005,0.027,0.037,0.044,0.045,0.013,FINRA short hacim oranı (5 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.035
+atr_ratio,0.075,0.041,0.023,-0.004,-0.049,-0.049,-0.041,-0.015,0.034,ATR14 / ATR50 (oynaklık sıkışması < 1),fiyat yapısı / Fib / mum,8892,0.035
+n10_dia_buy,0.036,0.005,0.043,0.059,0.043,-0.001,-0.031,-0.034,-0.071,Son 10 günde 💎 Diamond AL sayısı,olay sayıları,8892,0.035
+w30_sqz_dur__konum,0.001,-0.004,-0.014,0.013,0.030,0.025,0.010,-0.028,-0.071,Sıkışma süresi (gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.034
+mg_cls,-0.029,-0.024,-0.029,-0.019,-0.053,-0.015,0.013,-0.021,-0.082,Mum Gücü sınıfı,fiyat yapısı / Fib / mum,8892,0.033
+x_uphr20,0.013,0.038,-0.046,-0.025,0.011,0.006,0.023,0.018,-0.084,Yükselen saatlerin hacim payı (20 gün),TradingView dışı balina izi,8892,0.033
+tv_a_abs_dn,0.011,0.010,0.002,-0.006,-0.010,0.002,-0.001,0.019,0.107,Düşüşte soğurma (talep),motor sinyalleri (anlık),8892,0.032
+n20_sweep_bar,0.042,0.046,0.059,0.067,0.050,0.034,0.032,0.030,0.033,Son 20 günde 🎣 Whale süpürme sayısı,olay sayıları,8892,0.032
+w30_f_gap__artan,0.019,0.002,-0.001,0.026,0.035,0.017,0.002,-0.021,-0.088,Speedline − sinyal — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.032
+w30_f_hist__artan,0.019,0.002,-0.001,0.026,0.035,0.017,0.002,-0.021,-0.088,Fusion histogram — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.032
+n10_dia_sell,-0.013,-0.041,-0.030,-0.036,-0.046,-0.042,-0.041,-0.039,0.001,Son 10 günde 💎 Diamond SAT sayısı,olay sayıları,8892,0.031
+x_on20,0.046,0.048,0.015,0.025,0.018,0.003,-0.003,-0.008,-0.110,Gece getirisi toplamı (20 gün),TradingView dışı balina izi,8892,0.031
+fib_r,-0.033,-0.027,-0.013,-0.022,-0.033,-0.032,-0.030,-0.032,-0.029,Ana Fib bacağında konum (0 tepe – 1 dip),fiyat yapısı / Fib / mum,8892,0.031
+tv_v_odi_bear,-0.003,-0.013,0.002,-0.012,-0.021,-0.024,-0.019,0.006,0.073,ODI ayı,motor sinyalleri (anlık),8892,0.031
+n20_ew_bull,0.007,0.031,-0.018,-0.001,0.024,0.024,0.027,-0.002,-0.069,Son 20 günde 🔵 Erken uyarı AL sayısı,olay sayıları,8892,0.030
+n20_real_acc,-0.018,-0.007,0.026,0.026,0.029,0.024,0.020,0.030,0.047,Son 20 günde 🐋 ACC sayısı,olay sayıları,8892,0.030
+since_real_acc,0.031,0.012,-0.002,0.003,-0.011,-0.023,-0.020,-0.031,-0.045,Son 🐋 ACC olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.030
+n10_real_acc,-0.027,0.013,0.025,0.018,0.015,0.015,0.018,0.030,0.054,Son 10 günde 🐋 ACC sayısı,olay sayıları,8892,0.029
+w30_atr_ratio__artan,0.052,0.008,0.002,-0.027,-0.068,-0.049,-0.037,-0.020,0.011,ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.029
+w30_updn_vol__artan,0.002,-0.001,-0.031,-0.005,0.020,0.016,0.020,0.015,-0.065,Yükselen/düşen gün hacim oranı (20 gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.029
+sqz_on,-0.007,-0.013,-0.022,-0.002,0.022,0.022,0.009,-0.025,-0.059,Sıkışmada,APEX CORE çizgi/histogram,8892,0.029
+w30_f_hist__egim,-0.011,0.016,0.003,-0.000,0.020,0.035,0.038,0.030,-0.009,Fusion histogram — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.028
+w30_f_gap__egim,-0.011,0.016,0.003,-0.000,0.020,0.035,0.038,0.030,-0.009,Speedline − sinyal — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.028
+x_amihud,-0.079,-0.078,-0.058,-0.048,-0.038,-0.031,-0.033,-0.035,-0.013,Amihud likidite (20/120),TradingView dışı balina izi,8892,0.028
+n20_dia_buy,0.027,0.029,0.034,0.048,0.062,0.042,0.032,0.015,-0.019,Son 20 günde 💎 Diamond AL sayısı,olay sayıları,8892,0.027
+w30_daily__egim,-0.022,0.003,-0.030,-0.038,-0.007,0.024,0.031,0.021,-0.031,DAILY bandı — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.027
+n20_ew_bear,0.019,0.007,0.009,0.006,-0.021,-0.013,-0.007,0.006,0.082,Son 20 günde 🔴 Erken uyarı SAT sayısı,olay sayıları,8892,0.027
+w10_sqz_dur__egim,0.012,-0.005,-0.011,0.019,0.026,0.022,0.009,-0.018,-0.054,Sıkışma süresi (gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.026
+w30_s_speed__artan,-0.010,-0.005,-0.031,-0.014,0.022,0.024,0.014,-0.003,-0.060,Synergy hızı — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.025
+n20_ab_bear,0.055,0.034,0.010,0.011,0.005,-0.001,-0.007,0.004,0.089,Son 20 günde 🚀 Afterburner ayı sayısı,olay sayıları,8892,0.025
+since_db_bottom,0.023,0.026,0.009,0.020,0.028,0.024,0.023,0.025,0.027,Son 🔵 Dip çıkışı olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.025
+n20_db_bottom,-0.022,-0.020,0.001,-0.015,-0.015,-0.021,-0.023,-0.028,-0.026,Son 20 günde 🔵 Dip çıkışı sayısı,olay sayıları,8892,0.024
+sqz_dur,-0.003,-0.003,-0.013,0.005,0.023,0.023,0.014,-0.015,-0.046,Sıkışma süresi (gün),APEX CORE çizgi/histogram,8892,0.024
+tv_o_dia_sell,-0.000,-0.024,-0.002,-0.036,-0.022,-0.025,-0.012,-0.007,0.052,Elmas sat,motor sinyalleri (anlık),8892,0.024
+since_dia_buy,-0.023,-0.023,-0.045,-0.054,-0.057,-0.037,-0.030,-0.021,0.008,Son 💎 Diamond AL olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.024
+w30_x_obv_div__egim,-0.016,-0.000,0.001,0.012,0.027,0.029,0.023,0.017,0.027,OBV − fiyat ayrışması (20 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.024
+tv_c_st_out,-0.035,-0.016,-0.007,-0.030,-0.046,-0.028,-0.012,0.019,0.033,Stealth çıkış,motor sinyalleri (anlık),8892,0.023
+w10_x_obv_div__egim,0.018,-0.029,0.046,0.030,-0.013,-0.002,-0.008,-0.014,0.069,OBV − fiyat ayrışması (20 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.023
+since_cross_dn,-0.007,0.012,0.002,0.017,0.032,0.028,0.016,-0.000,-0.048,Son PRO↘RETAIL olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.023
+since_sqz_fire,-0.003,0.008,0.001,0.020,0.018,0.005,-0.009,-0.029,-0.049,Son 💥 Sıkışma patladı olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.023
+x_svr20,-0.004,-0.012,-0.013,-0.001,0.012,0.020,0.024,0.026,0.017,FINRA short hacim oranı (20 gün),TradingView dışı balina izi,8892,0.022
+n10_rd_top,0.016,0.002,0.014,0.031,0.003,-0.017,-0.031,-0.019,-0.019,Son 10 günde 🔴 Tepe dönüşü sayısı,olay sayıları,8892,0.021
+w30_x_on_id__artan,0.029,0.033,0.033,0.014,-0.020,-0.020,-0.021,-0.023,0.021,Gece − gün içi getiri farkı (20 gün) — kurumsal birikim — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.021
+w30_sqz_dur__egim,0.025,0.005,-0.005,-0.001,0.017,0.026,0.027,0.021,0.009,Sıkışma süresi (gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.021
+w30_rs20__egim,-0.023,-0.003,0.007,0.006,0.011,0.020,0.027,0.031,0.005,SPY'ye göre 20 gün % — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.021
+w30_x_svr5__konum,-0.039,-0.020,-0.001,0.042,0.026,0.020,0.012,-0.004,-0.048,FINRA short hacim oranı (5 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.021
+tv_a_flip_dn,-0.016,0.004,-0.008,0.012,-0.001,-0.010,-0.016,-0.023,-0.035,Baskınlık satıcıya,motor sinyalleri (anlık),8892,0.021
+n20_sqz_fire,-0.002,-0.008,-0.009,-0.019,-0.012,0.001,0.013,0.023,0.046,Son 20 günde 💥 Sıkışma patladı sayısı,olay sayıları,8892,0.021
+w10_x_svr5__konum,-0.027,0.010,0.009,0.038,-0.000,-0.001,0.001,-0.018,-0.062,FINRA short hacim oranı (5 gün) — 10 gün aralığındaki konumu (0 dip–1 tepe),pencere eğilimleri (10 / 30 gün),8892,0.020
+tv_c_dist,-0.017,-0.013,0.003,-0.012,0.003,0.013,-0.009,-0.019,-0.038,Gerçek dağıtım,motor sinyalleri (anlık),8892,0.020
+tv_c_st_in,0.010,-0.007,-0.021,-0.017,0.007,0.017,0.001,0.023,-0.036,Stealth giriş,motor sinyalleri (anlık),8892,0.019
+since_st_in,0.011,0.010,0.041,0.049,0.032,0.018,0.019,0.013,0.028,Son 🕵️ Stealth IN olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.019
+x_svr_z,-0.036,-0.031,-0.015,0.025,0.020,0.019,0.017,0.010,-0.030,FINRA short oranı z (60 güne göre),TradingView dışı balina izi,8892,0.019
+tv_v_odi_bull,0.008,0.005,-0.016,-0.006,-0.005,-0.002,-0.015,0.002,0.056,ODI boğa,motor sinyalleri (anlık),8892,0.019
+w30_omni__egim,-0.015,-0.003,-0.022,-0.038,-0.019,0.013,0.024,0.021,-0.018,OMNI momentum — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.019
+x_svr5,-0.019,-0.011,-0.004,0.021,0.021,0.023,0.021,0.013,-0.019,FINRA short hacim oranı (5 gün),TradingView dışı balina izi,8892,0.019
+since_cross_up,0.022,0.013,0.054,0.056,0.046,0.007,0.004,0.011,0.049,Son PRO↗RETAIL olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.018
+n20_cross_dn,0.009,-0.017,-0.006,0.002,-0.010,-0.018,-0.006,0.006,0.039,Son 20 günde PRO↘RETAIL sayısı,olay sayıları,8892,0.017
+w10_sqz_dur__artan,-0.000,-0.015,-0.011,-0.014,0.002,0.021,0.026,0.019,0.003,Sıkışma süresi (gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.017
+tv_k_risk,0.017,-0.008,0.008,-0.003,0.004,0.013,0.015,0.028,0.011,Konfluans risk,motor sinyalleri (anlık),8892,0.017
+since_star,0.019,0.014,0.056,0.055,0.046,0.006,0.003,0.010,0.048,Son ⭐ Golden Star olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.017
+tv_v_qconf,0.008,-0.026,-0.002,0.032,0.023,0.020,0.013,0.001,-0.031,Q-dry teyidi,motor sinyalleri (anlık),8892,0.016
+n10_st_in,-0.018,-0.001,-0.040,-0.044,-0.016,0.012,0.014,0.029,0.005,Son 10 günde 🕵️ Stealth IN sayısı,olay sayıları,8892,0.015
+tv_a_abs_up,0.000,-0.014,0.020,0.001,0.012,-0.023,-0.016,-0.011,-0.008,Yükselişte soğurma (arz),motor sinyalleri (anlık),8892,0.014
+since_real_dist,0.014,0.023,0.022,0.021,0.012,0.006,0.010,0.015,0.025,Son 🐋 DIST olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.014
+n20_st_in,-0.012,-0.015,-0.031,-0.047,-0.041,-0.024,-0.019,-0.003,-0.009,Son 20 günde 🕵️ Stealth IN sayısı,olay sayıları,8892,0.014
+w30_x_ii20__egim,0.082,0.005,-0.044,-0.062,-0.058,-0.027,-0.011,0.005,0.011,Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.014
+w10_x_svr5__egim,-0.027,0.002,0.004,0.031,0.015,-0.009,-0.007,-0.006,-0.030,FINRA short hacim oranı (5 gün) — 10 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.013
+w30_w_pwr__egim,-0.021,-0.017,-0.029,-0.038,-0.019,0.003,0.014,0.017,-0.018,Whale gücü — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.013
+n10_sweep_bar,0.038,0.026,0.057,0.046,0.013,-0.000,0.005,0.015,0.029,Son 10 günde 🎣 Whale süpürme sayısı,olay sayıları,8892,0.012
+w10_x_svr5__artan,-0.029,-0.011,0.012,0.034,0.027,-0.001,-0.002,-0.009,-0.037,FINRA short hacim oranı (5 gün) — 10 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.012
+x_lambda_ch,-0.016,-0.006,-0.002,-0.003,-0.015,-0.002,0.003,0.013,0.030,Kyle-λ değişimi (20 gün),TradingView dışı balina izi,8892,0.012
+n20_cross_up,-0.025,-0.012,-0.032,-0.034,-0.024,0.008,0.015,0.019,-0.002,Son 20 günde PRO↗RETAIL sayısı,olay sayıları,8892,0.011
+n20_star,-0.026,-0.009,-0.036,-0.036,-0.025,0.007,0.016,0.021,-0.001,Son 20 günde ⭐ Golden Star sayısı,olay sayıları,8892,0.011
+n10_real_dist,-0.029,-0.020,-0.003,-0.010,-0.000,0.010,0.001,-0.006,-0.026,Son 10 günde 🐋 DIST sayısı,olay sayıları,8892,0.011
+w30_s_speed__egim,-0.023,-0.019,-0.007,-0.014,-0.008,0.005,0.012,0.015,0.003,Synergy hızı — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.009
+tv_s_smc_buy,0.009,-0.003,-0.020,0.009,0.009,-0.008,-0.004,-0.008,-0.016,SMC al,motor sinyalleri (anlık),8892,0.009
+n20_real_dist,-0.026,-0.034,-0.015,-0.018,-0.002,-0.000,-0.003,-0.011,-0.019,Son 20 günde 🐋 DIST sayısı,olay sayıları,8892,0.008
+tv_s_smc_sell,-0.010,-0.013,-0.004,-0.013,-0.001,0.003,-0.004,0.003,0.021,SMC sat,motor sinyalleri (anlık),8892,0.008
+tv_a_flip_up,-0.017,-0.002,0.013,0.017,0.003,-0.007,0.012,0.004,-0.006,Baskınlık alıcıya,motor sinyalleri (anlık),8892,0.007
+w30_updn_vol__egim,-0.014,-0.017,-0.008,-0.011,-0.011,-0.004,0.003,0.006,-0.015,Yükselen/düşen gün hacim oranı (20 gün) — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.007
+w30_pro_ret__egim,-0.012,-0.012,-0.013,-0.025,-0.021,-0.003,0.006,0.010,-0.006,PRO − RETAIL — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.006
+n20_rd_top,0.009,0.014,0.014,0.019,0.014,0.011,0.001,0.004,-0.009,Son 20 günde 🔴 Tepe dönüşü sayısı,olay sayıları,8892,0.006
+w30_whale__egim,-0.013,-0.017,-0.016,-0.026,-0.025,-0.008,0.001,0.006,-0.010,WHALE bandı — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.006
+n10_db_bottom,-0.017,-0.008,0.011,-0.019,-0.027,-0.009,-0.001,-0.010,-0.005,Son 10 günde 🔵 Dip çıkışı sayısı,olay sayıları,8892,0.006
+w30_retail__egim,0.006,0.010,0.006,0.016,0.016,0.003,-0.005,-0.009,0.005,RETAIL bandı — 30 gün eğimi,pencere eğilimleri (10 / 30 gün),8892,0.005
+since_rd_top,-0.020,-0.017,-0.021,-0.030,-0.015,-0.012,0.002,-0.005,0.002,Son 🔴 Tepe dönüşü olayından bu yana gün,olaydan bu yana geçen gün (sıra),8892,0.005
+w30_sqz_dur__artan,-0.024,-0.017,-0.014,-0.016,-0.011,-0.002,0.002,0.002,-0.001,Sıkışma süresi (gün) — 30 gün artan gün oranı,pencere eğilimleri (10 / 30 gün),8892,0.002

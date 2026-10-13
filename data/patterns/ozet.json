@@ -1,0 +1,2981 @@
+{
+ "tarih": "2026-10-13T09:43",
+ "surum": "patern v1",
+ "ufuk gün": 20,
+ "büyük yükseliş": "20 günde ≥ +%15 ve SPY'ye göre ≥ +10 puan",
+ "büyük düşüş": "20 günde ≤ −%15 ve SPY'ye göre ≤ −10 puan",
+ "hata": {},
+ "satır": 438074,
+ "hisse": 730,
+ "özellik": 402,
+ "özellik grupları": {
+  "pencere eğilimleri (10 / 30 gün)": 126,
+  "örgü dizisi (son 30 günün seyri)": 121,
+  "motor sinyalleri (anlık)": 44,
+  "olay sayıları": 40,
+  "olaydan bu yana geçen gün (sıra)": 20,
+  "fiyat yapısı / Fib / mum": 19,
+  "TradingView dışı balina izi": 14,
+  "APEX CORE çizgi/histogram": 12,
+  "APEX 670 OMNI": 6
+ },
+ "taban oran (tümü) %": {
+  "büyük yükseliş": 10.39,
+  "büyük düşüş": 7.91,
+  "oynaklığına göre büyük yükseliş": 2.99
+ },
+ "hedefler": {
+  "up": "büyük yükseliş (mutlak)",
+  "dn": "büyük düşüş (mutlak)",
+  "upz": "oynaklığına göre büyük yükseliş: SPY'ye göre 20G getiri ≥ 1.5 × (ATR% × √20) — oynak hisse olmanın etkisini ayıklar"
+ },
+ "parmak izi — oynaklığına göre büyük yükselişten önce (en güçlü 25)": [
+  {
+   "etiket": "Bollinger genişliği yüzdeliği (120 gün)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.1,
+   "t-20": -0.07,
+   "t-10": -0.09,
+   "t-5": -0.11,
+   "t-1": -0.17,
+   "t0": -0.2,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Son saatin hacim payı (20 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": -0.17,
+   "t-20": -0.14,
+   "t-10": -0.13,
+   "t-5": -0.15,
+   "t-1": -0.15,
+   "t0": -0.15,
+   "n olay": 3106
+  },
+  {
+   "etiket": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.13,
+   "t-20": -0.08,
+   "t-10": -0.11,
+   "t-5": -0.11,
+   "t-1": -0.15,
+   "t0": -0.18,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Bollinger genişliği yüzdeliği (120 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.1,
+   "t-20": -0.12,
+   "t-10": -0.1,
+   "t-5": -0.09,
+   "t-1": -0.13,
+   "t0": -0.15,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Hacim 10 gün / 60 gün",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.1,
+   "t-20": -0.07,
+   "t-10": -0.08,
+   "t-5": -0.09,
+   "t-1": -0.11,
+   "t0": -0.14,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Kyle-λ fiyat etkisi (60 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": 0.13,
+   "t-20": 0.12,
+   "t-10": 0.11,
+   "t-5": 0.11,
+   "t-1": 0.11,
+   "t0": 0.11,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün eğimi",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.02,
+   "t-20": -0.02,
+   "t-10": 0.04,
+   "t-5": 0.1,
+   "t-1": 0.12,
+   "t0": 0.08,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Amihud likidite (20/120)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": -0.1,
+   "t-20": -0.12,
+   "t-10": -0.1,
+   "t-5": -0.09,
+   "t-1": -0.11,
+   "t0": -0.11,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Bollinger genişliği yüzdeliği (120 gün) — 30 gün eğimi",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.12,
+   "t-20": -0.08,
+   "t-10": -0.11,
+   "t-5": -0.1,
+   "t-1": -0.1,
+   "t0": -0.1,
+   "n olay": 3106
+  },
+  {
+   "etiket": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.14,
+   "t-20": -0.18,
+   "t-10": -0.09,
+   "t-5": -0.07,
+   "t-1": -0.1,
+   "t0": -0.15,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Son 🎣 Dip süpürmesi olayından bu yana gün",
+   "grup": "olaydan bu yana geçen gün (sıra)",
+   "t-40": 0.05,
+   "t-20": 0.04,
+   "t-10": 0.07,
+   "t-5": 0.09,
+   "t-1": 0.1,
+   "t0": 0.1,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Fusion histogram — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.03,
+   "t-20": -0.0,
+   "t-10": 0.06,
+   "t-5": -0.03,
+   "t-1": -0.09,
+   "t0": -0.2,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Speedline − sinyal — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.03,
+   "t-20": -0.0,
+   "t-10": 0.06,
+   "t-5": -0.03,
+   "t-1": -0.09,
+   "t0": -0.2,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Sıkışma süresi (gün) — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.02,
+   "t-20": 0.01,
+   "t-10": 0.04,
+   "t-5": 0.09,
+   "t-1": 0.1,
+   "t0": 0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Son 10 günde 🎣 Dip süpürmesi sayısı",
+   "grup": "olay sayıları",
+   "t-40": 0.01,
+   "t-20": -0.03,
+   "t-10": -0.07,
+   "t-5": -0.1,
+   "t-1": -0.09,
+   "t0": -0.07,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Sıkışma süresi (gün) — 30 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.04,
+   "t-20": 0.01,
+   "t-10": 0.04,
+   "t-5": 0.06,
+   "t-1": 0.11,
+   "t0": 0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Whale gücü — 30 gün eğimi",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.1,
+   "t-20": -0.01,
+   "t-10": 0.03,
+   "t-5": 0.07,
+   "t-1": 0.1,
+   "t0": 0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.22,
+   "t-20": -0.18,
+   "t-10": -0.16,
+   "t-5": -0.11,
+   "t-1": -0.08,
+   "t0": -0.08,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Hacim 10 gün / 60 gün — 30 gün artan gün oranı",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.11,
+   "t-20": -0.07,
+   "t-10": -0.1,
+   "t-5": -0.09,
+   "t-1": -0.08,
+   "t0": -0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Son 🚀 Afterburner ayı olayından bu yana gün",
+   "grup": "olaydan bu yana geçen gün (sıra)",
+   "t-40": -0.03,
+   "t-20": 0.03,
+   "t-10": 0.07,
+   "t-5": 0.07,
+   "t-1": 0.09,
+   "t0": 0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.04,
+   "t-20": 0.06,
+   "t-10": 0.07,
+   "t-5": 0.08,
+   "t-1": 0.09,
+   "t0": 0.08,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün artan gün oranı",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.05,
+   "t-20": 0.06,
+   "t-10": 0.08,
+   "t-5": 0.08,
+   "t-1": 0.09,
+   "t0": 0.07,
+   "n olay": 3106
+  },
+  {
+   "etiket": "Son 20 günde 🎣 Dip süpürmesi sayısı",
+   "grup": "olay sayıları",
+   "t-40": 0.01,
+   "t-20": -0.03,
+   "t-10": -0.06,
+   "t-5": -0.07,
+   "t-1": -0.08,
+   "t0": -0.09,
+   "n olay": 3106
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.04,
+   "t-20": -0.02,
+   "t-10": 0.05,
+   "t-5": -0.0,
+   "t-1": -0.06,
+   "t0": -0.25,
+   "n olay": 3106
+  },
+  {
+   "etiket": "EMA21'e uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.01,
+   "t-20": -0.01,
+   "t-10": 0.1,
+   "t-5": 0.09,
+   "t-1": 0.06,
+   "t0": -0.09,
+   "n olay": 3106
+  }
+ ],
+ "parmak izi — büyük yükselişten önce (en güçlü 25)": [
+  {
+   "etiket": "ATR % (oynaklık)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.57,
+   "t-20": 0.6,
+   "t-10": 0.54,
+   "t-5": 0.53,
+   "t-1": 0.57,
+   "t0": 0.69,
+   "n olay": 8892
+  },
+  {
+   "etiket": "52 hafta zirvesine uzaklık %",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.4,
+   "t-20": -0.43,
+   "t-10": -0.41,
+   "t-5": -0.42,
+   "t-1": -0.44,
+   "t0": -0.55,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Son saatin hacim payı (20 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": -0.35,
+   "t-20": -0.35,
+   "t-10": -0.33,
+   "t-5": -0.34,
+   "t-1": -0.32,
+   "t0": -0.33,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Kyle-λ fiyat etkisi (60 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": 0.25,
+   "t-20": 0.24,
+   "t-10": 0.24,
+   "t-5": 0.24,
+   "t-1": 0.25,
+   "t0": 0.25,
+   "n olay": 8892
+  },
+  {
+   "etiket": "EMA200'e uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.15,
+   "t-20": -0.19,
+   "t-10": -0.17,
+   "t-5": -0.18,
+   "t-1": -0.21,
+   "t0": -0.32,
+   "n olay": 8892
+  },
+  {
+   "etiket": "52 haftalık aralıkta konum (0–1)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.16,
+   "t-20": -0.19,
+   "t-10": -0.17,
+   "t-5": -0.18,
+   "t-1": -0.21,
+   "t0": -0.32,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Fiyat efor çizgisinin üstünde",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": -0.02,
+   "t-20": -0.1,
+   "t-10": -0.0,
+   "t-5": -0.07,
+   "t-1": -0.2,
+   "t0": -0.5,
+   "n olay": 8892
+  },
+  {
+   "etiket": "EMA50'ye uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.07,
+   "t-20": -0.14,
+   "t-10": -0.08,
+   "t-5": -0.1,
+   "t-1": -0.16,
+   "t0": -0.39,
+   "n olay": 8892
+  },
+  {
+   "etiket": "EMA21'e uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.04,
+   "t-20": -0.12,
+   "t-10": -0.03,
+   "t-5": -0.05,
+   "t-1": -0.15,
+   "t0": -0.48,
+   "n olay": 8892
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.02,
+   "t-20": -0.03,
+   "t-10": 0.02,
+   "t-5": -0.03,
+   "t-1": -0.15,
+   "t0": -0.47,
+   "n olay": 8892
+  },
+  {
+   "etiket": "DAILY bandı — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.02,
+   "t-20": -0.05,
+   "t-10": 0.04,
+   "t-5": -0.03,
+   "t-1": -0.16,
+   "t0": -0.44,
+   "n olay": 8892
+  },
+  {
+   "etiket": "OMNI HUD net (−6…+6)",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": -0.01,
+   "t-20": -0.07,
+   "t-10": 0.04,
+   "t-5": -0.0,
+   "t-1": -0.14,
+   "t0": -0.48,
+   "n olay": 8892
+  },
+  {
+   "etiket": "HUD net (boğa − ayı)",
+   "grup": "APEX 670 OMNI",
+   "t-40": -0.01,
+   "t-20": -0.07,
+   "t-10": 0.04,
+   "t-5": -0.0,
+   "t-1": -0.14,
+   "t0": -0.48,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Efor gücü (0–8)",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": -0.04,
+   "t-20": -0.1,
+   "t-10": -0.06,
+   "t-5": -0.07,
+   "t-1": -0.12,
+   "t0": -0.39,
+   "n olay": 8892
+  },
+  {
+   "etiket": "DAILY bandı",
+   "grup": "APEX CORE çizgi/histogram",
+   "t-40": -0.03,
+   "t-20": -0.12,
+   "t-10": -0.0,
+   "t-5": -0.03,
+   "t-1": -0.15,
+   "t0": -0.4,
+   "n olay": 8892
+  },
+  {
+   "etiket": "OMNI momentum — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.01,
+   "t-20": -0.07,
+   "t-10": 0.07,
+   "t-5": -0.01,
+   "t-1": -0.15,
+   "t0": -0.42,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Akış dengesi (delta)",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": -0.04,
+   "t-20": -0.1,
+   "t-10": -0.02,
+   "t-5": -0.04,
+   "t-1": -0.11,
+   "t0": -0.43,
+   "n olay": 8892
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 30 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.0,
+   "t-20": -0.05,
+   "t-10": 0.05,
+   "t-5": -0.0,
+   "t-1": -0.13,
+   "t0": -0.46,
+   "n olay": 8892
+  },
+  {
+   "etiket": "OMNI 5 günlük değişim",
+   "grup": "APEX 670 OMNI",
+   "t-40": 0.03,
+   "t-20": -0.06,
+   "t-10": 0.06,
+   "t-5": -0.01,
+   "t-1": -0.14,
+   "t0": -0.39,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Son 5 gün getiri %",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.02,
+   "t-20": -0.06,
+   "t-10": 0.03,
+   "t-5": -0.01,
+   "t-1": -0.1,
+   "t0": -0.47,
+   "n olay": 8892
+  },
+  {
+   "etiket": "DAILY 5 günlük değişim",
+   "grup": "APEX CORE çizgi/histogram",
+   "t-40": 0.03,
+   "t-20": -0.04,
+   "t-10": 0.03,
+   "t-5": -0.03,
+   "t-1": -0.13,
+   "t0": -0.36,
+   "n olay": 8892
+  },
+  {
+   "etiket": "DAILY bandı — 30 gün artan gün oranı",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.05,
+   "t-20": -0.11,
+   "t-10": -0.06,
+   "t-5": -0.08,
+   "t-1": -0.14,
+   "t0": -0.26,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Whale gücü",
+   "grup": "APEX CORE çizgi/histogram",
+   "t-40": -0.06,
+   "t-20": -0.14,
+   "t-10": -0.05,
+   "t-5": -0.07,
+   "t-1": -0.11,
+   "t0": -0.32,
+   "n olay": 8892
+  },
+  {
+   "etiket": "Whale gücü — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.02,
+   "t-20": -0.09,
+   "t-10": 0.03,
+   "t-5": -0.03,
+   "t-1": -0.11,
+   "t0": -0.38,
+   "n olay": 8892
+  },
+  {
+   "etiket": "OMNI momentum",
+   "grup": "APEX 670 OMNI",
+   "t-40": -0.05,
+   "t-20": -0.13,
+   "t-10": -0.01,
+   "t-5": -0.02,
+   "t-1": -0.12,
+   "t0": -0.35,
+   "n olay": 8892
+  }
+ ],
+ "parmak izi — büyük düşüşten önce (en güçlü 25)": [
+  {
+   "etiket": "ATR % (oynaklık)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.74,
+   "t-20": 0.73,
+   "t-10": 0.79,
+   "t-5": 0.79,
+   "t-1": 0.76,
+   "t0": 0.68,
+   "n olay": 7061
+  },
+  {
+   "etiket": "52 hafta zirvesine uzaklık %",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.55,
+   "t-20": -0.54,
+   "t-10": -0.59,
+   "t-5": -0.59,
+   "t-1": -0.55,
+   "t0": -0.43,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Son saatin hacim payı (20 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": -0.4,
+   "t-20": -0.4,
+   "t-10": -0.4,
+   "t-5": -0.4,
+   "t-1": -0.4,
+   "t0": -0.41,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Kyle-λ fiyat etkisi (60 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": 0.35,
+   "t-20": 0.35,
+   "t-10": 0.34,
+   "t-5": 0.34,
+   "t-1": 0.34,
+   "t0": 0.34,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Son 5 gün getiri %",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": 0.03,
+   "t-20": 0.1,
+   "t-10": -0.05,
+   "t-5": 0.0,
+   "t-1": 0.21,
+   "t0": 0.77,
+   "n olay": 7061
+  },
+  {
+   "etiket": "52 haftalık aralıkta konum (0–1)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.24,
+   "t-20": -0.23,
+   "t-10": -0.27,
+   "t-5": -0.27,
+   "t-1": -0.22,
+   "t0": -0.1,
+   "n olay": 7061
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.01,
+   "t-20": 0.0,
+   "t-10": -0.06,
+   "t-5": 0.02,
+   "t-1": 0.18,
+   "t0": 0.5,
+   "n olay": 7061
+  },
+  {
+   "etiket": "EMA200'e uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.24,
+   "t-20": -0.21,
+   "t-10": -0.25,
+   "t-5": -0.26,
+   "t-1": -0.21,
+   "t0": -0.07,
+   "n olay": 7061
+  },
+  {
+   "etiket": "OMNI 5 günlük değişim",
+   "grup": "APEX 670 OMNI",
+   "t-40": 0.0,
+   "t-20": 0.03,
+   "t-10": -0.07,
+   "t-5": -0.02,
+   "t-1": 0.17,
+   "t0": 0.47,
+   "n olay": 7061
+  },
+  {
+   "etiket": "HUD net (boğa − ayı)",
+   "grup": "APEX 670 OMNI",
+   "t-40": 0.01,
+   "t-20": 0.04,
+   "t-10": -0.09,
+   "t-5": -0.05,
+   "t-1": 0.14,
+   "t0": 0.51,
+   "n olay": 7061
+  },
+  {
+   "etiket": "OMNI HUD net (−6…+6)",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": 0.01,
+   "t-20": 0.04,
+   "t-10": -0.09,
+   "t-5": -0.05,
+   "t-1": 0.14,
+   "t0": 0.51,
+   "n olay": 7061
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 30 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": 0.01,
+   "t-20": 0.03,
+   "t-10": -0.08,
+   "t-5": -0.04,
+   "t-1": 0.15,
+   "t0": 0.49,
+   "n olay": 7061
+  },
+  {
+   "etiket": "DAILY 5 günlük değişim",
+   "grup": "APEX CORE çizgi/histogram",
+   "t-40": -0.03,
+   "t-20": 0.01,
+   "t-10": -0.04,
+   "t-5": 0.02,
+   "t-1": 0.17,
+   "t0": 0.42,
+   "n olay": 7061
+  },
+  {
+   "etiket": "DAILY bandı — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.02,
+   "t-20": 0.02,
+   "t-10": -0.08,
+   "t-5": -0.02,
+   "t-1": 0.15,
+   "t0": 0.46,
+   "n olay": 7061
+  },
+  {
+   "etiket": "EMA50 > EMA200",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.15,
+   "t-20": -0.15,
+   "t-10": -0.16,
+   "t-5": -0.17,
+   "t-1": -0.17,
+   "t0": -0.15,
+   "n olay": 7061
+  },
+  {
+   "etiket": "OMNI momentum — 10 gün aralığındaki konumu (0 dip–1 tepe)",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.01,
+   "t-20": 0.03,
+   "t-10": -0.1,
+   "t-5": -0.04,
+   "t-1": 0.14,
+   "t0": 0.44,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim",
+   "grup": "TradingView dışı balina izi",
+   "t-40": 0.12,
+   "t-20": 0.08,
+   "t-10": 0.16,
+   "t-5": 0.19,
+   "t-1": 0.19,
+   "t0": 0.06,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Konfluans MAGNITUDE",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": 0.1,
+   "t-20": 0.11,
+   "t-10": 0.06,
+   "t-5": 0.03,
+   "t-1": 0.12,
+   "t0": 0.43,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Son 🚀 Afterburner boğa olayından bu yana gün",
+   "grup": "olaydan bu yana geçen gün (sıra)",
+   "t-40": -0.15,
+   "t-20": -0.16,
+   "t-10": -0.15,
+   "t-5": -0.14,
+   "t-1": -0.14,
+   "t0": -0.22,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Gece getirisi toplamı (20 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": 0.1,
+   "t-20": 0.12,
+   "t-10": 0.12,
+   "t-5": 0.11,
+   "t-1": 0.14,
+   "t0": 0.27,
+   "n olay": 7061
+  },
+  {
+   "etiket": "EMA21'e uzaklık (ATR)",
+   "grup": "fiyat yapısı / Fib / mum",
+   "t-40": -0.05,
+   "t-20": 0.0,
+   "t-10": -0.11,
+   "t-5": -0.09,
+   "t-1": 0.06,
+   "t0": 0.42,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Fiyat efor çizgisinin üstünde",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": -0.06,
+   "t-20": -0.01,
+   "t-10": -0.13,
+   "t-5": -0.08,
+   "t-1": 0.11,
+   "t0": 0.43,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Konfluans genişleme",
+   "grup": "motor sinyalleri (anlık)",
+   "t-40": 0.1,
+   "t-20": 0.1,
+   "t-10": 0.09,
+   "t-5": 0.04,
+   "t-1": 0.12,
+   "t0": 0.39,
+   "n olay": 7061
+  },
+  {
+   "etiket": "Gün içi getiri toplamı (20 gün)",
+   "grup": "TradingView dışı balina izi",
+   "t-40": -0.09,
+   "t-20": -0.02,
+   "t-10": -0.11,
+   "t-5": -0.17,
+   "t-1": -0.14,
+   "t0": 0.12,
+   "n olay": 7061
+  },
+  {
+   "etiket": "HUD net (boğa − ayı) — 10 gün eğimi",
+   "grup": "pencere eğilimleri (10 / 30 gün)",
+   "t-40": -0.0,
+   "t-20": 0.02,
+   "t-10": -0.08,
+   "t-5": 0.0,
+   "t-1": 0.16,
+   "t0": 0.38,
+   "n olay": 7061
+  }
+ ],
+ "deneyler": {
+  "A · up · 5 yıl (1s verisi hariç)": {
+   "deney": "A",
+   "hedef": "up",
+   "eğitim": "2021-11-02 → 2024-07-12",
+   "test": "2024-08-19 → 2026-09-14",
+   "eğitim satır": 233729,
+   "test satır": 187807,
+   "taban oran eğitim %": 9.17,
+   "taban oran test %": 12.06,
+   "AUC (test)": 0.73,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 28.79,
+     "lift": 2.39,
+     "ileri 20G ort %": 7.65
+    },
+    "en iyi %5": {
+     "olasılık %": 27.61,
+     "lift": 2.29,
+     "ileri 20G ort %": 6.99
+    },
+    "en iyi %10": {
+     "olasılık %": 26.48,
+     "lift": 2.2,
+     "ileri 20G ort %": 6.64
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2024": 3.11,
+    "2025": 2.45,
+    "2026": 1.69
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.737,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 34.91,
+      "lift": 2.89,
+      "ileri 20G ort %": 14.69
+     },
+     "en iyi %5": {
+      "olasılık %": 30.26,
+      "lift": 2.51,
+      "ileri 20G ort %": 8.94
+     },
+     "en iyi %10": {
+      "olasılık %": 28.54,
+      "lift": 2.37,
+      "ileri 20G ort %": 7.23
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.733,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 28.95,
+      "lift": 2.4,
+      "ileri 20G ort %": 7.77
+     },
+     "en iyi %5": {
+      "olasılık %": 27.0,
+      "lift": 2.24,
+      "ileri 20G ort %": 6.02
+     },
+     "en iyi %10": {
+      "olasılık %": 26.1,
+      "lift": 2.16,
+      "ileri 20G ort %": 5.92
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "fiyat yapısı / Fib / mum": 0.1886,
+    "TradingView dışı balina izi": 0.0135,
+    "pencere eğilimleri (10 / 30 gün)": 0.0012,
+    "motor sinyalleri (anlık)": 0.0005,
+    "APEX CORE çizgi/histogram": -0.0003,
+    "olaydan bu yana geçen gün (sıra)": -0.0009,
+    "örgü dizisi (son 30 günün seyri)": -0.001,
+    "olay sayıları": -0.0011,
+    "APEX 670 OMNI": -0.0018
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.1757
+    },
+    {
+     "özellik": "Kyle-λ fiyat etkisi (60 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0102
+    },
+    {
+     "özellik": "EMA200'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0035
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.003
+    },
+    {
+     "özellik": "52 haftalık aralıkta konum (0–1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0017
+    },
+    {
+     "özellik": "52 hafta zirvesine uzaklık %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0016
+    },
+    {
+     "özellik": "Kyle-λ değişimi (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0015
+    },
+    {
+     "özellik": "Son 60 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0015
+    },
+    {
+     "özellik": "Bollinger genişliği yüzdeliği (120 gün)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0012
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.001
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (9 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0009
+    },
+    {
+     "özellik": "Son 🎣 Whale süpürme olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0009
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (6 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "FINRA short hacim oranı (5 gün) — 10 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Akış dengesi (delta)",
+     "grup": "motor sinyalleri (anlık)",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (21 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0005
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0005
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (3 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0005
+    },
+    {
+     "özellik": "Whale gücü — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0004
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (15 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0004
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.513,
+    "en benzer %1": {
+     "olasılık %": 9.42,
+     "lift": 0.78
+    },
+    "en benzer %5": {
+     "olasılık %": 10.02,
+     "lift": 0.83
+    },
+    "en benzer %10": {
+     "olasılık %": 11.13,
+     "lift": 0.92
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % ≤ -41.49 VE Hacim 10 gün / 60 gün (30 gün önce) > 0.72",
+     "Eğitim n": 3756,
+     "Eğitim olasılık %": 33.41,
+     "Eğitim lift": 3.64,
+     "Test n": 1627,
+     "Test olasılık %": 35.65,
+     "Test lift": 2.96
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % ≤ -41.49",
+     "Eğitim n": 4840,
+     "Eğitim olasılık %": 30.41,
+     "Eğitim lift": 3.32,
+     "Test n": 2061,
+     "Test olasılık %": 34.59,
+     "Test lift": 2.87
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.09 … 7.02 VE Kyle-λ fiyat etkisi (60 gün) > 4.96 VE EMA200'e uzaklık (ATR) ≤ -6.84",
+     "Eğitim n": 1677,
+     "Eğitim olasılık %": 26.24,
+     "Eğitim lift": 2.86,
+     "Test n": 586,
+     "Test olasılık %": 24.91,
+     "Test lift": 2.07
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % > -41.49 VE Kyle-λ fiyat etkisi (60 gün) > 5.96",
+     "Eğitim n": 11213,
+     "Eğitim olasılık %": 24.14,
+     "Eğitim lift": 2.63,
+     "Test n": 7726,
+     "Test olasılık %": 31.36,
+     "Test lift": 2.6
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02",
+     "Eğitim n": 23479,
+     "Eğitim olasılık %": 23.55,
+     "Eğitim lift": 2.57,
+     "Test n": 20790,
+     "Test olasılık %": 28.1,
+     "Test lift": 2.33
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % > -41.49",
+     "Eğitim n": 18639,
+     "Eğitim olasılık %": 21.77,
+     "Eğitim lift": 2.37,
+     "Test n": 18729,
+     "Test olasılık %": 27.39,
+     "Test lift": 2.27
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 5.09 … 7.02 VE Kyle-λ fiyat etkisi (60 gün) > 4.96",
+     "Eğitim n": 12012,
+     "Eğitim olasılık %": 20.29,
+     "Eğitim lift": 2.21,
+     "Test n": 5911,
+     "Test olasılık %": 27.32,
+     "Test lift": 2.27
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.09 … 7.02 VE Kyle-λ fiyat etkisi (60 gün) ≤ 4.96 VE EMA200'e uzaklık (ATR) ≤ -5.33",
+     "Eğitim n": 3810,
+     "Eğitim olasılık %": 19.95,
+     "Eğitim lift": 2.18,
+     "Test n": 2706,
+     "Test olasılık %": 19.03,
+     "Test lift": 1.58
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % ≤ -41.49 VE Hacim 10 gün / 60 gün (30 gün önce) ≤ 0.72",
+     "Eğitim n": 1084,
+     "Eğitim olasılık %": 20.02,
+     "Eğitim lift": 2.18,
+     "Test n": 434,
+     "Test olasılık %": 30.65,
+     "Test lift": 2.54
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.09 … 7.02 VE Kyle-λ fiyat etkisi (60 gün) > 4.96 VE EMA200'e uzaklık (ATR) > -6.84",
+     "Eğitim n": 10335,
+     "Eğitim olasılık %": 19.32,
+     "Eğitim lift": 2.11,
+     "Test n": 5325,
+     "Test olasılık %": 27.59,
+     "Test lift": 2.29
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 3.34 … 5.09 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.08 VE Kyle-λ değişimi (20 gün) ≤ -0.03 VE SPY'ye göre 20 gün % — 30 gün eğimi > 1.80",
+     "Eğitim n": 819,
+     "Eğitim olasılık %": 18.93,
+     "Eğitim lift": 2.06,
+     "Test n": 1018,
+     "Test olasılık %": 21.81,
+     "Test lift": 1.81
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 3.34 … 5.09 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.08 VE Synergy hızı (9 gün önce) > 5.69 VE 52 hafta zirvesine uzaklık % ≤ -51.00",
+     "Eğitim n": 1488,
+     "Eğitim olasılık %": 18.62,
+     "Eğitim lift": 2.03,
+     "Test n": 1393,
+     "Test olasılık %": 18.81,
+     "Test lift": 1.56
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.02 VE Son 60 gün getiri % > -41.49 VE Kyle-λ fiyat etkisi (60 gün) ≤ 5.96",
+     "Eğitim n": 7426,
+     "Eğitim olasılık %": 18.19,
+     "Eğitim lift": 1.98,
+     "Test n": 11003,
+     "Test olasılık %": 24.59,
+     "Test lift": 2.04
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) 5.09 … 7.02",
+     "Eğitim n": 26917,
+     "Eğitim olasılık %": 17.4,
+     "Eğitim lift": 1.9,
+     "Test n": 23090,
+     "Test olasılık %": 23.85,
+     "Test lift": 1.98
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 3.34 … 5.09 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.08 VE Synergy hızı (9 gün önce) ≤ 5.69 VE Kyle-λ fiyat etkisi (60 gün) > 2.27",
+     "Eğitim n": 12647,
+     "Eğitim olasılık %": 17.02,
+     "Eğitim lift": 1.86,
+     "Test n": 7010,
+     "Test olasılık %": 17.23,
+     "Test lift": 1.43
+    }
+   ]
+  },
+  "B · up · son 2 yıl (1s balina izleri dahil)": {
+   "deney": "B",
+   "hedef": "up",
+   "eğitim": "2024-10-14 → 2025-11-12",
+   "test": "2025-12-18 → 2026-09-14",
+   "eğitim satır": 98346,
+   "test satır": 67114,
+   "taban oran eğitim %": 11.73,
+   "taban oran test %": 12.38,
+   "AUC (test)": 0.702,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 26.34,
+     "lift": 2.13,
+     "ileri 20G ort %": 1.78
+    },
+    "en iyi %5": {
+     "olasılık %": 22.74,
+     "lift": 1.84,
+     "ileri 20G ort %": 1.56
+    },
+    "en iyi %10": {
+     "olasılık %": 23.7,
+     "lift": 1.92,
+     "ileri 20G ort %": 2.37
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2025": 2.22,
+    "2026": 1.8
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.697,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 30.51,
+      "lift": 2.46,
+      "ileri 20G ort %": 7.06
+     },
+     "en iyi %5": {
+      "olasılık %": 28.1,
+      "lift": 2.27,
+      "ileri 20G ort %": 4.84
+     },
+     "en iyi %10": {
+      "olasılık %": 25.72,
+      "lift": 2.08,
+      "ileri 20G ort %": 3.51
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.698,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 21.28,
+      "lift": 1.72,
+      "ileri 20G ort %": -0.4
+     },
+     "en iyi %5": {
+      "olasılık %": 23.99,
+      "lift": 1.94,
+      "ileri 20G ort %": 1.72
+     },
+     "en iyi %10": {
+      "olasılık %": 23.73,
+      "lift": 1.92,
+      "ileri 20G ort %": 2.1
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "fiyat yapısı / Fib / mum": 0.1345,
+    "TradingView dışı balina izi": 0.013,
+    "pencere eğilimleri (10 / 30 gün)": 0.0052,
+    "örgü dizisi (son 30 günün seyri)": 0.0048,
+    "APEX CORE çizgi/histogram": 0.0001,
+    "motor sinyalleri (anlık)": 0.0,
+    "olay sayıları": -0.0003,
+    "APEX 670 OMNI": -0.0006,
+    "olaydan bu yana geçen gün (sıra)": -0.0011
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.1313
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0094
+    },
+    {
+     "özellik": "Kyle-λ fiyat etkisi (60 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0083
+    },
+    {
+     "özellik": "Son saatin hacim payı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0044
+    },
+    {
+     "özellik": "Bollinger genişliği yüzdeliği (120 gün)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0016
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0015
+    },
+    {
+     "özellik": "Smart Money Index: son saat − ilk saat (20 gün) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0015
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün (9 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "52 hafta zirvesine uzaklık %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "52 haftalık aralıkta konum (0–1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.001
+    },
+    {
+     "özellik": "Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 10 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "Gün içi getiri toplamı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (6 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "Yükselen/düşen gün hacim oranı (20 gün) — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "EMA50'ye uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "RETAIL bandı — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "Gece getirisi toplamı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0005
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.505,
+    "en benzer %1": {
+     "olasılık %": 14.14,
+     "lift": 1.14
+    },
+    "en benzer %5": {
+     "olasılık %": 14.57,
+     "lift": 1.18
+    },
+    "en benzer %10": {
+     "olasılık %": 13.59,
+     "lift": 1.1
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) ≤ 0.48 VE Bollinger genişliği yüzdeliği (120 gün) ≤ 0.21 VE Hacim 10 gün / 60 gün (12 gün önce) ≤ 0.84",
+     "Eğitim n": 628,
+     "Eğitim olasılık %": 47.77,
+     "Eğitim lift": 4.07,
+     "Test n": 762,
+     "Test olasılık %": 27.95,
+     "Test lift": 2.26
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.22 … 5.68 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.84 VE Amihud likidite (20/120) ≤ -0.40",
+     "Eğitim n": 451,
+     "Eğitim olasılık %": 44.79,
+     "Eğitim lift": 3.82,
+     "Test n": 136,
+     "Test olasılık %": 21.32,
+     "Test lift": 1.72
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.48 VE Smart Money Index: son saat − ilk saat (20 gün) > -1.25 VE Son saatin hacim payı (20 gün) ≤ 0.24",
+     "Eğitim n": 3444,
+     "Eğitim olasılık %": 44.72,
+     "Eğitim lift": 3.81,
+     "Test n": 2649,
+     "Test olasılık %": 20.16,
+     "Test lift": 1.63
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.48 VE Smart Money Index: son saat − ilk saat (20 gün) > -1.25",
+     "Eğitim n": 3871,
+     "Eğitim olasılık %": 42.26,
+     "Eğitim lift": 3.6,
+     "Test n": 2832,
+     "Test olasılık %": 20.16,
+     "Test lift": 1.63
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) ≤ 0.48 VE Bollinger genişliği yüzdeliği (120 gün) ≤ 0.21",
+     "Eğitim n": 1712,
+     "Eğitim olasılık %": 37.91,
+     "Eğitim lift": 3.23,
+     "Test n": 1645,
+     "Test olasılık %": 26.57,
+     "Test lift": 2.15
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) ≤ 0.48 VE Bollinger genişliği yüzdeliği (120 gün) > 0.21 VE Kyle-λ fiyat etkisi (60 gün) > 15.21",
+     "Eğitim n": 949,
+     "Eğitim olasılık %": 37.3,
+     "Eğitim lift": 3.18,
+     "Test n": 166,
+     "Test olasılık %": 30.72,
+     "Test lift": 2.48
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.48",
+     "Eğitim n": 6799,
+     "Eğitim olasılık %": 36.43,
+     "Eğitim lift": 3.11,
+     "Test n": 5311,
+     "Test olasılık %": 22.46,
+     "Test lift": 1.81
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 4.22 … 5.68 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 1.09 VE Amihud likidite (20/120) ≤ -0.40",
+     "Eğitim n": 1150,
+     "Eğitim olasılık %": 33.39,
+     "Eğitim lift": 2.85,
+     "Test n": 422,
+     "Test olasılık %": 24.41,
+     "Test lift": 1.97
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) ≤ 0.48 VE Bollinger genişliği yüzdeliği (120 gün) ≤ 0.21 VE Hacim 10 gün / 60 gün (12 gün önce) > 0.84",
+     "Eğitim n": 1084,
+     "Eğitim olasılık %": 32.2,
+     "Eğitim lift": 2.74,
+     "Test n": 883,
+     "Test olasılık %": 25.37,
+     "Test lift": 2.05
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.48 VE Smart Money Index: son saat − ilk saat (20 gün) ≤ -1.25 VE Smart Money Index: son saat − ilk saat (20 gün) — 30 gün eğimi > -2.76",
+     "Eğitim n": 2518,
+     "Eğitim olasılık %": 30.58,
+     "Eğitim lift": 2.61,
+     "Test n": 2050,
+     "Test olasılık %": 25.22,
+     "Test lift": 2.04
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.48 VE Smart Money Index: son saat − ilk saat (20 gün) ≤ -1.25",
+     "Eğitim n": 2928,
+     "Eğitim olasılık %": 28.72,
+     "Eğitim lift": 2.45,
+     "Test n": 2479,
+     "Test olasılık %": 25.09,
+     "Test lift": 2.03
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.22 … 5.68 VE Hacim 10 gün / 60 gün (3 gün önce) 0.84 … 1.09 VE Amihud likidite (20/120) ≤ -0.40",
+     "Eğitim n": 699,
+     "Eğitim olasılık %": 26.04,
+     "Eğitim lift": 2.22,
+     "Test n": 286,
+     "Test olasılık %": 25.87,
+     "Test lift": 2.09
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.68 VE Whale gücü — 30 gün aralığındaki konumu (0 dip–1 tepe) ≤ 0.48",
+     "Eğitim n": 9948,
+     "Eğitim olasılık %": 25.54,
+     "Eğitim lift": 2.18,
+     "Test n": 9386,
+     "Test olasılık %": 22.16,
+     "Test lift": 1.79
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 3.06 … 4.22 VE Son 60 gün getiri % > 7.77 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.18 VE Smart Money Index: son saat − ilk saat (20 gün) — 10 gün artan gün oranı ≤ 0.25",
+     "Eğitim n": 1120,
+     "Eğitim olasılık %": 24.64,
+     "Eğitim lift": 2.1,
+     "Test n": 405,
+     "Test olasılık %": 17.04,
+     "Test lift": 1.38
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.22 … 5.68 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 1.09 VE Amihud likidite (20/120) > -0.40 VE EMA50'ye uzaklık (ATR) > -0.35",
+     "Eğitim n": 3545,
+     "Eğitim olasılık %": 24.65,
+     "Eğitim lift": 2.1,
+     "Test n": 4191,
+     "Test olasılık %": 22.19,
+     "Test lift": 1.79
+    }
+   ]
+  },
+  "A · upz · 5 yıl (1s verisi hariç)": {
+   "deney": "A",
+   "hedef": "upz",
+   "eğitim": "2021-11-02 → 2024-07-12",
+   "test": "2024-08-19 → 2026-09-14",
+   "eğitim satır": 233729,
+   "test satır": 187807,
+   "taban oran eğitim %": 2.49,
+   "taban oran test %": 3.66,
+   "AUC (test)": 0.62,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 7.98,
+     "lift": 2.18,
+     "ileri 20G ort %": 5.19
+    },
+    "en iyi %5": {
+     "olasılık %": 6.79,
+     "lift": 1.86,
+     "ileri 20G ort %": 4.84
+    },
+    "en iyi %10": {
+     "olasılık %": 6.28,
+     "lift": 1.72,
+     "ileri 20G ort %": 4.26
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2024": 2.26,
+    "2025": 1.96,
+    "2026": 1.07
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.57,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 5.96,
+      "lift": 1.63,
+      "ileri 20G ort %": 4.22
+     },
+     "en iyi %5": {
+      "olasılık %": 5.77,
+      "lift": 1.58,
+      "ileri 20G ort %": 3.3
+     },
+     "en iyi %10": {
+      "olasılık %": 5.55,
+      "lift": 1.52,
+      "ileri 20G ort %": 2.89
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.605,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 5.96,
+      "lift": 1.63,
+      "ileri 20G ort %": 3.33
+     },
+     "en iyi %5": {
+      "olasılık %": 5.45,
+      "lift": 1.49,
+      "ileri 20G ort %": 3.25
+     },
+     "en iyi %10": {
+      "olasılık %": 5.42,
+      "lift": 1.48,
+      "ileri 20G ort %": 3.13
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "TradingView dışı balina izi": 0.0464,
+    "fiyat yapısı / Fib / mum": 0.0294,
+    "olaydan bu yana geçen gün (sıra)": 0.0289,
+    "pencere eğilimleri (10 / 30 gün)": 0.0163,
+    "motor sinyalleri (anlık)": 0.0035,
+    "APEX CORE çizgi/histogram": -0.0,
+    "APEX 670 OMNI": -0.0014,
+    "olay sayıları": -0.0017,
+    "örgü dizisi (son 30 günün seyri)": -0.0024
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "Kyle-λ fiyat etkisi (60 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0237
+    },
+    {
+     "özellik": "Son 🎣 Dip süpürmesi olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0117
+    },
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.009
+    },
+    {
+     "özellik": "EMA200'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0084
+    },
+    {
+     "özellik": "Gece getirisi toplamı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0078
+    },
+    {
+     "özellik": "Son 60 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0069
+    },
+    {
+     "özellik": "Akış dengesi (delta)",
+     "grup": "motor sinyalleri (anlık)",
+     "AUC kaybı": 0.0051
+    },
+    {
+     "özellik": "52 haftalık aralıkta konum (0–1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0044
+    },
+    {
+     "özellik": "Son 🚀 Afterburner ayı olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0039
+    },
+    {
+     "özellik": "Amihud likidite (20/120)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0039
+    },
+    {
+     "özellik": "EMA50'ye uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0031
+    },
+    {
+     "özellik": "Son 💥 Sıkışma patladı olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0025
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0025
+    },
+    {
+     "özellik": "Son 💎 Diamond SAT olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0025
+    },
+    {
+     "özellik": "Whale gücü — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0024
+    },
+    {
+     "özellik": "Fusion histogram (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0022
+    },
+    {
+     "özellik": "Yükselen/düşen gün hacim oranı (20 gün)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.002
+    },
+    {
+     "özellik": "Synergy hızı — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0019
+    },
+    {
+     "özellik": "Kyle-λ değişimi (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0018
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0017
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.539,
+    "en benzer %1": {
+     "olasılık %": 7.88,
+     "lift": 2.15
+    },
+    "en benzer %5": {
+     "olasılık %": 5.94,
+     "lift": 1.62
+    },
+    "en benzer %10": {
+     "olasılık %": 5.1,
+     "lift": 1.39
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) ≤ 0.97",
+     "Eğitim n": 592,
+     "Eğitim olasılık %": 32.6,
+     "Eğitim lift": 13.1,
+     "Test n": 192,
+     "Test olasılık %": 5.21,
+     "Test lift": 1.42
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10 VE SPY'ye göre 20 gün % (30 gün önce) ≤ -2.75 VE DAILY bandı — 30 gün eğimi > 0.87",
+     "Eğitim n": 1075,
+     "Eğitim olasılık %": 13.3,
+     "Eğitim lift": 5.35,
+     "Test n": 472,
+     "Test olasılık %": 3.39,
+     "Test lift": 0.93
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 2.30 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.69 VE Son 🐋 ACC olayından bu yana gün > 59.50",
+     "Eğitim n": 851,
+     "Eğitim olasılık %": 12.93,
+     "Eğitim lift": 5.2,
+     "Test n": 373,
+     "Test olasılık %": 8.58,
+     "Test lift": 2.35
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10 VE SPY'ye göre 20 gün % (30 gün önce) ≤ -2.75",
+     "Eğitim n": 2095,
+     "Eğitim olasılık %": 9.5,
+     "Eğitim lift": 3.82,
+     "Test n": 1017,
+     "Test olasılık %": 4.72,
+     "Test lift": 1.29
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 2.30 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.69",
+     "Eğitim n": 2480,
+     "Eğitim olasılık %": 7.18,
+     "Eğitim lift": 2.88,
+     "Test n": 970,
+     "Test olasılık %": 7.32,
+     "Test lift": 2.0
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10 VE SPY'ye göre 20 gün % (30 gün önce) > -2.75 VE OBV − fiyat ayrışması (20 gün) — 30 gün artan gün oranı > 0.52",
+     "Eğitim n": 1771,
+     "Eğitim olasılık %": 7.06,
+     "Eğitim lift": 2.84,
+     "Test n": 987,
+     "Test olasılık %": 7.09,
+     "Test lift": 1.94
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) ≤ 1.10 VE Synergy hızı (9 gün önce) ≤ 30.41 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (9 gün önce) ≤ -3.39",
+     "Eğitim n": 3283,
+     "Eğitim olasılık %": 6.82,
+     "Eğitim lift": 2.74,
+     "Test n": 2260,
+     "Test olasılık %": 4.38,
+     "Test lift": 1.2
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10",
+     "Eğitim n": 6826,
+     "Eğitim olasılık %": 6.02,
+     "Eğitim lift": 2.42,
+     "Test n": 3270,
+     "Test olasılık %": 7.68,
+     "Test lift": 2.1
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10 VE SPY'ye göre 20 gün % (30 gün önce) ≤ -2.75 VE DAILY bandı — 30 gün eğimi ≤ 0.87",
+     "Eğitim n": 1020,
+     "Eğitim olasılık %": 5.49,
+     "Eğitim lift": 2.21,
+     "Test n": 545,
+     "Test olasılık %": 5.87,
+     "Test lift": 1.61
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 1.10 VE SPY'ye göre 20 gün % (30 gün önce) > -2.75",
+     "Eğitim n": 4731,
+     "Eğitim olasılık %": 4.48,
+     "Eğitim lift": 1.8,
+     "Test n": 2253,
+     "Test olasılık %": 9.01,
+     "Test lift": 2.46
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 1.88 VE Kyle-λ fiyat etkisi (60 gün) > 2.30 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.69 VE Son 🐋 ACC olayından bu yana gün ≤ 59.50",
+     "Eğitim n": 1629,
+     "Eğitim olasılık %": 4.17,
+     "Eğitim lift": 1.68,
+     "Test n": 597,
+     "Test olasılık %": 6.53,
+     "Test lift": 1.79
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) ≤ 1.10 VE Synergy hızı (9 gün önce) ≤ 30.41",
+     "Eğitim n": 16388,
+     "Eğitim olasılık %": 3.9,
+     "Eğitim lift": 1.57,
+     "Test n": 11548,
+     "Test olasılık %": 4.15,
+     "Test lift": 1.13
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) ≤ 1.10",
+     "Eğitim n": 23128,
+     "Eğitim olasılık %": 3.25,
+     "Eğitim lift": 1.31,
+     "Test n": 15272,
+     "Test olasılık %": 4.2,
+     "Test lift": 1.15
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) ≤ 1.10 VE Synergy hızı (9 gün önce) ≤ 30.41 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (9 gün önce) > -3.39",
+     "Eğitim n": 13105,
+     "Eğitim olasılık %": 3.17,
+     "Eğitim lift": 1.27,
+     "Test n": 9288,
+     "Test olasılık %": 4.09,
+     "Test lift": 1.12
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 0.97 … 1.88 VE Kyle-λ fiyat etkisi (60 gün) ≤ 1.10 VE Synergy hızı (9 gün önce) > 30.41 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (6 gün önce) ≤ -5.09",
+     "Eğitim n": 1898,
+     "Eğitim olasılık %": 3.0,
+     "Eğitim lift": 1.21,
+     "Test n": 981,
+     "Test olasılık %": 4.08,
+     "Test lift": 1.11
+    }
+   ]
+  },
+  "B · upz · son 2 yıl (1s balina izleri dahil)": {
+   "deney": "B",
+   "hedef": "upz",
+   "eğitim": "2024-10-14 → 2025-11-12",
+   "test": "2025-12-18 → 2026-09-14",
+   "eğitim satır": 98346,
+   "test satır": 67114,
+   "taban oran eğitim %": 3.81,
+   "taban oran test %": 3.71,
+   "AUC (test)": 0.601,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 3.87,
+     "lift": 1.04,
+     "ileri 20G ort %": -1.0
+    },
+    "en iyi %5": {
+     "olasılık %": 5.1,
+     "lift": 1.37,
+     "ileri 20G ort %": 0.43
+    },
+    "en iyi %10": {
+     "olasılık %": 5.3,
+     "lift": 1.43,
+     "ileri 20G ort %": 1.05
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2025": 1.84,
+    "2026": 1.2
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.543,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 4.32,
+      "lift": 1.16,
+      "ileri 20G ort %": 4.78
+     },
+     "en iyi %5": {
+      "olasılık %": 4.17,
+      "lift": 1.12,
+      "ileri 20G ort %": 3.35
+     },
+     "en iyi %10": {
+      "olasılık %": 4.14,
+      "lift": 1.12,
+      "ileri 20G ort %": 2.54
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.601,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 3.27,
+      "lift": 0.88,
+      "ileri 20G ort %": -1.28
+     },
+     "en iyi %5": {
+      "olasılık %": 4.23,
+      "lift": 1.14,
+      "ileri 20G ort %": -0.07
+     },
+     "en iyi %10": {
+      "olasılık %": 4.77,
+      "lift": 1.28,
+      "ileri 20G ort %": 0.5
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "fiyat yapısı / Fib / mum": 0.0548,
+    "pencere eğilimleri (10 / 30 gün)": 0.0204,
+    "TradingView dışı balina izi": 0.0125,
+    "örgü dizisi (son 30 günün seyri)": 0.0118,
+    "APEX CORE çizgi/histogram": 0.0028,
+    "olaydan bu yana geçen gün (sıra)": 0.0026,
+    "motor sinyalleri (anlık)": 0.0005,
+    "olay sayıları": -0.0004,
+    "APEX 670 OMNI": -0.0012
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0126
+    },
+    {
+     "özellik": "Son 20 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0078
+    },
+    {
+     "özellik": "EMA200'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0077
+    },
+    {
+     "özellik": "Son saatin hacim payı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0077
+    },
+    {
+     "özellik": "Gece getirisi toplamı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0066
+    },
+    {
+     "özellik": "Kyle-λ fiyat etkisi (60 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0063
+    },
+    {
+     "özellik": "Bollinger genişliği yüzdeliği (120 gün)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0061
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0046
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0042
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0037
+    },
+    {
+     "özellik": "Son 60 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0031
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (24 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0027
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % — 10 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0026
+    },
+    {
+     "özellik": "Amihud likidite (20/120)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0025
+    },
+    {
+     "özellik": "Son PRO↘RETAIL olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0024
+    },
+    {
+     "özellik": "EMA21'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0023
+    },
+    {
+     "özellik": "RETAIL bandı — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0022
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0022
+    },
+    {
+     "özellik": "WHALE bandı",
+     "grup": "APEX CORE çizgi/histogram",
+     "AUC kaybı": 0.0021
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0021
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.581,
+    "en benzer %1": {
+     "olasılık %": 6.55,
+     "lift": 1.76
+    },
+    "en benzer %5": {
+     "olasılık %": 6.14,
+     "lift": 1.65
+    },
+    "en benzer %10": {
+     "olasılık %": 6.15,
+     "lift": 1.66
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) > 16.46 VE Smart Money Index: son saat − ilk saat (20 gün) — 30 gün artan gün oranı ≤ 0.32",
+     "Eğitim n": 423,
+     "Eğitim olasılık %": 29.79,
+     "Eğitim lift": 7.82,
+     "Test n": 62,
+     "Test olasılık %": 3.23,
+     "Test lift": 0.87
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.74 VE Amihud likidite (20/120) ≤ -0.23 VE Bollinger genişliği yüzdeliği (120 gün) — 30 gün eğimi ≤ -1.42",
+     "Eğitim n": 455,
+     "Eğitim olasılık %": 22.42,
+     "Eğitim lift": 5.89,
+     "Test n": 130,
+     "Test olasılık %": 8.46,
+     "Test lift": 2.28
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % > 15.32 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı ≤ 0.02 VE WHALE bandı (3 gün önce) > 85.75",
+     "Eğitim n": 605,
+     "Eğitim olasılık %": 18.35,
+     "Eğitim lift": 4.82,
+     "Test n": 0,
+     "Test olasılık %": null,
+     "Test lift": null
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % ≤ 15.32 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.76 VE Hacim 10 gün / 60 gün (27 gün önce) ≤ 0.79",
+     "Eğitim n": 420,
+     "Eğitim olasılık %": 18.1,
+     "Eğitim lift": 4.75,
+     "Test n": 588,
+     "Test olasılık %": 1.02,
+     "Test lift": 0.27
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.74 VE Amihud likidite (20/120) ≤ -0.23",
+     "Eğitim n": 1045,
+     "Eğitim olasılık %": 15.69,
+     "Eğitim lift": 4.12,
+     "Test n": 332,
+     "Test olasılık %": 6.02,
+     "Test lift": 1.62
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) > 16.46 VE Smart Money Index: son saat − ilk saat (20 gün) — 30 gün artan gün oranı > 0.32 VE ATR % (oynaklık) ≤ 9.01",
+     "Eğitim n": 447,
+     "Eğitim olasılık %": 15.66,
+     "Eğitim lift": 4.11,
+     "Test n": 63,
+     "Test olasılık %": 6.35,
+     "Test lift": 1.71
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) > 0.74 VE Son saatin hacim payı (20 gün) ≤ 0.19 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.82",
+     "Eğitim n": 996,
+     "Eğitim olasılık %": 12.95,
+     "Eğitim lift": 3.4,
+     "Test n": 367,
+     "Test olasılık %": 3.0,
+     "Test lift": 0.81
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.74",
+     "Eğitim n": 1888,
+     "Eğitim olasılık %": 12.18,
+     "Eğitim lift": 3.2,
+     "Test n": 761,
+     "Test olasılık %": 4.86,
+     "Test lift": 1.31
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % > 15.32 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı > 0.02 VE Son saatin hacim payı (20 gün) ≤ 0.15 VE OMNI momentum — 30 gün aralığındaki konumu (0 dip–1 tepe) > 0.53",
+     "Eğitim n": 1920,
+     "Eğitim olasılık %": 11.41,
+     "Eğitim lift": 2.99,
+     "Test n": 1151,
+     "Test olasılık %": 6.34,
+     "Test lift": 1.71
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.74 VE Amihud likidite (20/120) > -0.23 VE FINRA short hacim oranı (20 gün) ≤ 0.51",
+     "Eğitim n": 442,
+     "Eğitim olasılık %": 11.31,
+     "Eğitim lift": 2.97,
+     "Test n": 219,
+     "Test olasılık %": 3.65,
+     "Test lift": 0.98
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % > 15.32 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı ≤ 0.02",
+     "Eğitim n": 1453,
+     "Eğitim olasılık %": 10.94,
+     "Eğitim lift": 2.87,
+     "Test n": 0,
+     "Test olasılık %": null,
+     "Test lift": null
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) ≤ 16.46 VE Hacim 10 gün / 60 gün (3 gün önce) ≤ 0.74 VE Amihud likidite (20/120) ≤ -0.23 VE Bollinger genişliği yüzdeliği (120 gün) — 30 gün eğimi > -1.42",
+     "Eğitim n": 590,
+     "Eğitim olasılık %": 10.51,
+     "Eğitim lift": 2.76,
+     "Test n": 202,
+     "Test olasılık %": 4.46,
+     "Test lift": 1.2
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % > 15.32 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı > 0.02 VE Son saatin hacim payı (20 gün) > 0.15 VE OMNI momentum (30 gün önce) > 77.38",
+     "Eğitim n": 886,
+     "Eğitim olasılık %": 9.48,
+     "Eğitim lift": 2.49,
+     "Test n": 872,
+     "Test olasılık %": 2.75,
+     "Test lift": 0.74
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) ≤ -0.34 VE Kyle-λ fiyat etkisi (60 gün) > 16.46 VE Smart Money Index: son saat − ilk saat (20 gün) — 30 gün artan gün oranı > 0.32",
+     "Eğitim n": 980,
+     "Eğitim olasılık %": 9.49,
+     "Eğitim lift": 2.49,
+     "Test n": 96,
+     "Test olasılık %": 6.25,
+     "Test lift": 1.68
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "Kyle-λ değişimi (20 gün) > -0.34 VE Son 60 gün getiri % ≤ 15.32 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.76",
+     "Eğitim n": 1229,
+     "Eğitim olasılık %": 9.36,
+     "Eğitim lift": 2.46,
+     "Test n": 1443,
+     "Test olasılık %": 1.87,
+     "Test lift": 0.5
+    }
+   ]
+  },
+  "A · dn · 5 yıl (1s verisi hariç)": {
+   "deney": "A",
+   "hedef": "dn",
+   "eğitim": "2021-11-02 → 2024-07-12",
+   "test": "2024-08-19 → 2026-09-14",
+   "eğitim satır": 233729,
+   "test satır": 187807,
+   "taban oran eğitim %": 8.03,
+   "taban oran test %": 7.74,
+   "AUC (test)": 0.751,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 29.59,
+     "lift": 3.82,
+     "ileri 20G ort %": 6.82
+    },
+    "en iyi %5": {
+     "olasılık %": 24.94,
+     "lift": 3.22,
+     "ileri 20G ort %": 7.4
+    },
+    "en iyi %10": {
+     "olasılık %": 22.93,
+     "lift": 2.96,
+     "ileri 20G ort %": 6.28
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2024": 3.31,
+    "2025": 3.39,
+    "2026": 2.94
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.747,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 37.41,
+      "lift": 4.84,
+      "ileri 20G ort %": 5.47
+     },
+     "en iyi %5": {
+      "olasılık %": 28.05,
+      "lift": 3.63,
+      "ileri 20G ort %": 5.07
+     },
+     "en iyi %10": {
+      "olasılık %": 23.45,
+      "lift": 3.03,
+      "ileri 20G ort %": 6.06
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.75,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 30.28,
+      "lift": 3.91,
+      "ileri 20G ort %": 7.14
+     },
+     "en iyi %5": {
+      "olasılık %": 26.14,
+      "lift": 3.38,
+      "ileri 20G ort %": 6.8
+     },
+     "en iyi %10": {
+      "olasılık %": 23.02,
+      "lift": 2.98,
+      "ileri 20G ort %": 6.02
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "fiyat yapısı / Fib / mum": 0.2152,
+    "örgü dizisi (son 30 günün seyri)": 0.0089,
+    "TradingView dışı balina izi": 0.0027,
+    "pencere eğilimleri (10 / 30 gün)": 0.0025,
+    "motor sinyalleri (anlık)": 0.0006,
+    "APEX 670 OMNI": 0.0005,
+    "APEX CORE çizgi/histogram": 0.0002,
+    "olay sayıları": 0.0001,
+    "olaydan bu yana geçen gün (sıra)": -0.0001
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.1972
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0023
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0014
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (27 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0012
+    },
+    {
+     "özellik": "FINRA short hacim oranı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0009
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (6 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "52 hafta zirvesine uzaklık %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "FINRA short hacim oranı (5 gün) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Gece getirisi toplamı (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "Son 20 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0006
+    },
+    {
+     "özellik": "Akış dengesi (delta)",
+     "grup": "motor sinyalleri (anlık)",
+     "AUC kaybı": 0.0005
+    },
+    {
+     "özellik": "FINRA short hacim oranı (5 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0004
+    },
+    {
+     "özellik": "EMA200'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0004
+    },
+    {
+     "özellik": "Fusion histogram (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0004
+    },
+    {
+     "özellik": "Kyle-λ değişimi (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0004
+    },
+    {
+     "özellik": "Fusion histogram — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0003
+    },
+    {
+     "özellik": "DAILY bandı (18 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0003
+    },
+    {
+     "özellik": "Son 60 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0003
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.555,
+    "en benzer %1": {
+     "olasılık %": 13.25,
+     "lift": 1.71
+    },
+    "en benzer %5": {
+     "olasılık %": 11.19,
+     "lift": 1.45
+    },
+    "en benzer %10": {
+     "olasılık %": 10.09,
+     "lift": 1.3
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.86 VE Akış dengesi (delta) > -0.04 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.13",
+     "Eğitim n": 1908,
+     "Eğitim olasılık %": 42.51,
+     "Eğitim lift": 5.3,
+     "Test n": 3760,
+     "Test olasılık %": 37.87,
+     "Test lift": 4.9
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.86 VE Akış dengesi (delta) > -0.04",
+     "Eğitim n": 7522,
+     "Eğitim olasılık %": 33.18,
+     "Eğitim lift": 4.13,
+     "Test n": 7712,
+     "Test olasılık %": 29.78,
+     "Test lift": 3.85
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 8.27 VE Akış dengesi (delta) ≤ -0.04 VE SPY'ye göre 20 gün % (3 gün önce) ≤ -29.81",
+     "Eğitim n": 1768,
+     "Eğitim olasılık %": 31.79,
+     "Eğitim lift": 3.96,
+     "Test n": 1270,
+     "Test olasılık %": 18.98,
+     "Test lift": 2.45
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.86 VE Akış dengesi (delta) > -0.04 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.13",
+     "Eğitim n": 5614,
+     "Eğitim olasılık %": 30.01,
+     "Eğitim lift": 3.74,
+     "Test n": 3952,
+     "Test olasılık %": 22.09,
+     "Test lift": 2.86
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.98 VE Akış dengesi (delta) > -0.04",
+     "Eğitim n": 17728,
+     "Eğitim olasılık %": 28.31,
+     "Eğitim lift": 3.53,
+     "Test n": 17441,
+     "Test olasılık %": 23.96,
+     "Test lift": 3.1
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.98 … 7.86 VE Akış dengesi (delta) > -0.04 VE Kyle-λ değişimi (20 gün) ≤ 1.15",
+     "Eğitim n": 8896,
+     "Eğitim olasılık %": 26.0,
+     "Eğitim lift": 3.24,
+     "Test n": 8975,
+     "Test olasılık %": 19.6,
+     "Test lift": 2.53
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 8.27 VE Akış dengesi (delta) ≤ -0.04",
+     "Eğitim n": 8158,
+     "Eğitim olasılık %": 24.83,
+     "Eğitim lift": 3.09,
+     "Test n": 6299,
+     "Test olasılık %": 19.26,
+     "Test lift": 2.49
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 5.98 … 7.86 VE Akış dengesi (delta) > -0.04",
+     "Eğitim n": 10206,
+     "Eğitim olasılık %": 24.71,
+     "Eğitim lift": 3.08,
+     "Test n": 9729,
+     "Test olasılık %": 19.33,
+     "Test lift": 2.5
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 8.27 VE Akış dengesi (delta) ≤ -0.04 VE SPY'ye göre 20 gün % (3 gün önce) > -29.81",
+     "Eğitim n": 6390,
+     "Eğitim olasılık %": 22.91,
+     "Eğitim lift": 2.85,
+     "Test n": 5029,
+     "Test olasılık %": 19.33,
+     "Test lift": 2.5
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 3.31 … 4.32 VE Hacim 10 gün / 60 gün (0 gün önce) ≤ 1.03 VE FINRA short hacim oranı (5 gün) — 30 gün artan gün oranı ≤ 0.32",
+     "Eğitim n": 606,
+     "Eğitim olasılık %": 22.28,
+     "Eğitim lift": 2.78,
+     "Test n": 177,
+     "Test olasılık %": 6.78,
+     "Test lift": 0.88
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 5.98 VE Akış dengesi (delta) ≤ -0.04",
+     "Eğitim n": 17582,
+     "Eğitim olasılık %": 20.73,
+     "Eğitim lift": 2.58,
+     "Test n": 13735,
+     "Test olasılık %": 16.11,
+     "Test lift": 2.08
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.32 … 5.98 VE Konfluans DIRECTION ≤ -0.50 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 0.89 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (24 gün önce) ≤ -10.10",
+     "Eğitim n": 587,
+     "Eğitim olasılık %": 20.44,
+     "Eğitim lift": 2.55,
+     "Test n": 199,
+     "Test olasılık %": 8.04,
+     "Test lift": 1.04
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.22 … 5.98 VE Konfluans DIRECTION > -0.50 VE Hacim 10 gün / 60 gün (0 gün önce) ≤ 1.23",
+     "Eğitim n": 6478,
+     "Eğitim olasılık %": 19.31,
+     "Eğitim lift": 2.41,
+     "Test n": 5645,
+     "Test olasılık %": 12.86,
+     "Test lift": 1.66
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 5.98 … 8.27 VE Akış dengesi (delta) ≤ -0.04 VE EMA21'e uzaklık (ATR) > -2.44",
+     "Eğitim n": 8297,
+     "Eğitim olasılık %": 18.34,
+     "Eğitim lift": 2.29,
+     "Test n": 6569,
+     "Test olasılık %": 14.02,
+     "Test lift": 1.81
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 5.98 … 8.27 VE Akış dengesi (delta) ≤ -0.04",
+     "Eğitim n": 9424,
+     "Eğitim olasılık %": 17.17,
+     "Eğitim lift": 2.14,
+     "Test n": 7436,
+     "Test olasılık %": 13.45,
+     "Test lift": 1.74
+    }
+   ]
+  },
+  "B · dn · son 2 yıl (1s balina izleri dahil)": {
+   "deney": "B",
+   "hedef": "dn",
+   "eğitim": "2024-10-14 → 2025-11-12",
+   "test": "2025-12-18 → 2026-09-14",
+   "eğitim satır": 98346,
+   "test satır": 67114,
+   "taban oran eğitim %": 7.46,
+   "taban oran test %": 9.74,
+   "AUC (test)": 0.711,
+   "lift (test)": {
+    "en iyi %1": {
+     "olasılık %": 32.44,
+     "lift": 3.33,
+     "ileri 20G ort %": -2.73
+    },
+    "en iyi %5": {
+     "olasılık %": 27.86,
+     "lift": 2.86,
+     "ileri 20G ort %": -1.14
+    },
+    "en iyi %10": {
+     "olasılık %": 24.88,
+     "lift": 2.55,
+     "ileri 20G ort %": -0.18
+    }
+   },
+   "en iyi %5 lift — yıllara göre": {
+    "2025": 1.44,
+    "2026": 2.81
+   },
+   "SADECE oynaklık (kıyas)": {
+    "AUC (test)": 0.716,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 35.71,
+      "lift": 3.67,
+      "ileri 20G ort %": -3.2
+     },
+     "en iyi %5": {
+      "olasılık %": 28.72,
+      "lift": 2.95,
+      "ileri 20G ort %": -0.46
+     },
+     "en iyi %10": {
+      "olasılık %": 25.66,
+      "lift": 2.63,
+      "ileri 20G ort %": 0.36
+     }
+    }
+   },
+   "TradingView dışı balina izleri OLMADAN": {
+    "AUC (test)": 0.714,
+    "lift (test)": {
+     "en iyi %1": {
+      "olasılık %": 38.1,
+      "lift": 3.91,
+      "ileri 20G ort %": -3.85
+     },
+     "en iyi %5": {
+      "olasılık %": 28.22,
+      "lift": 2.9,
+      "ileri 20G ort %": -0.44
+     },
+     "en iyi %10": {
+      "olasılık %": 24.57,
+      "lift": 2.52,
+      "ileri 20G ort %": 0.65
+     }
+    }
+   },
+   "grup önemi (AUC kaybı)": {
+    "fiyat yapısı / Fib / mum": 0.1713,
+    "örgü dizisi (son 30 günün seyri)": 0.0122,
+    "TradingView dışı balina izi": 0.0083,
+    "pencere eğilimleri (10 / 30 gün)": 0.0017,
+    "APEX CORE çizgi/histogram": 0.0011,
+    "APEX 670 OMNI": 0.0009,
+    "olaydan bu yana geçen gün (sıra)": 0.0003,
+    "motor sinyalleri (anlık)": -0.0,
+    "olay sayıları": -0.0006
+   },
+   "en önemli 20 özellik": [
+    {
+     "özellik": "ATR % (oynaklık)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.1561
+    },
+    {
+     "özellik": "Kyle-λ fiyat etkisi (60 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0064
+    },
+    {
+     "özellik": "EMA200'e uzaklık (ATR)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0032
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0029
+    },
+    {
+     "özellik": "SPY'ye göre 60 gün %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.002
+    },
+    {
+     "özellik": "OBV − fiyat ayrışması (20 gün)",
+     "grup": "TradingView dışı balina izi",
+     "AUC kaybı": 0.0019
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün — 10 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0018
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1)",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0017
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (6 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0014
+    },
+    {
+     "özellik": "52 hafta zirvesine uzaklık %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0013
+    },
+    {
+     "özellik": "Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0012
+    },
+    {
+     "özellik": "Hacim 10 gün / 60 gün — 30 gün eğimi",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün artan gün oranı",
+     "grup": "pencere eğilimleri (10 / 30 gün)",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "Synergy hızı (3 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0011
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (30 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.001
+    },
+    {
+     "özellik": "Son 60 gün getiri %",
+     "grup": "fiyat yapısı / Fib / mum",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "WHALE bandı",
+     "grup": "APEX CORE çizgi/histogram",
+     "AUC kaybı": 0.0008
+    },
+    {
+     "özellik": "WHALE bandı (3 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "Son 🐋 ACC olayından bu yana gün",
+     "grup": "olaydan bu yana geçen gün (sıra)",
+     "AUC kaybı": 0.0007
+    },
+    {
+     "özellik": "SPY'ye göre 20 gün % (12 gün önce)",
+     "grup": "örgü dizisi (son 30 günün seyri)",
+     "AUC kaybı": 0.0007
+    }
+   ],
+   "şablon eşleştirme (test)": {
+    "AUC": 0.557,
+    "en benzer %1": {
+     "olasılık %": 31.1,
+     "lift": 3.19
+    },
+    "en benzer %5": {
+     "olasılık %": 23.27,
+     "lift": 2.39
+    },
+    "en benzer %10": {
+     "olasılık %": 19.0,
+     "lift": 1.95
+    }
+   },
+   "örgü kuralları": [
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.20 VE Son saatin hacim payı (20 gün) ≤ 0.15 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı > 0.45",
+     "Eğitim n": 1158,
+     "Eğitim olasılık %": 52.16,
+     "Eğitim lift": 6.99,
+     "Test n": 621,
+     "Test olasılık %": 41.22,
+     "Test lift": 4.23
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.20 VE Son saatin hacim payı (20 gün) ≤ 0.15",
+     "Eğitim n": 1952,
+     "Eğitim olasılık %": 44.88,
+     "Eğitim lift": 6.01,
+     "Test n": 836,
+     "Test olasılık %": 37.92,
+     "Test lift": 3.89
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.20",
+     "Eğitim n": 2538,
+     "Eğitim olasılık %": 38.34,
+     "Eğitim lift": 5.14,
+     "Test n": 1404,
+     "Test olasılık %": 33.76,
+     "Test lift": 3.47
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.20 VE Son saatin hacim payı (20 gün) ≤ 0.15 VE Gün içi yoğunluk — hacim ağırlıklı kapanış konumu (20 gün) — 30 gün artan gün oranı ≤ 0.45",
+     "Eğitim n": 794,
+     "Eğitim olasılık %": 34.26,
+     "Eğitim lift": 4.59,
+     "Test n": 215,
+     "Test olasılık %": 28.37,
+     "Test lift": 2.91
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.20 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce) > -0.01 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (30 gün önce) > -9.72",
+     "Eğitim n": 2118,
+     "Eğitim olasılık %": 27.62,
+     "Eğitim lift": 3.7,
+     "Test n": 2113,
+     "Test olasılık %": 29.06,
+     "Test lift": 2.98
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.20 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce) > -0.01",
+     "Eğitim n": 2913,
+     "Eğitim olasılık %": 24.72,
+     "Eğitim lift": 3.31,
+     "Test n": 2818,
+     "Test olasılık %": 26.58,
+     "Test lift": 2.73
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.76 … 7.88 VE Gece getirisi toplamı (20 gün) > -9.85 VE ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi > -0.01 VE Smart Money Index: son saat − ilk saat (20 gün) — 30 gün artan gün oranı ≤ 0.55",
+     "Eğitim n": 5865,
+     "Eğitim olasılık %": 19.97,
+     "Eğitim lift": 2.67,
+     "Test n": 4684,
+     "Test olasılık %": 20.58,
+     "Test lift": 2.11
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.20",
+     "Eğitim n": 5075,
+     "Eğitim olasılık %": 18.94,
+     "Eğitim lift": 2.54,
+     "Test n": 4265,
+     "Test olasılık %": 24.69,
+     "Test lift": 2.54
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 4.76 … 7.88 VE Gece getirisi toplamı (20 gün) > -9.85 VE ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi > -0.01",
+     "Eğitim n": 7314,
+     "Eğitim olasılık %": 18.32,
+     "Eğitim lift": 2.45,
+     "Test n": 6265,
+     "Test olasılık %": 20.67,
+     "Test lift": 2.12
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.20 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce) > -0.01 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (30 gün önce) ≤ -9.72",
+     "Eğitim n": 795,
+     "Eğitim olasılık %": 16.98,
+     "Eğitim lift": 2.27,
+     "Test n": 705,
+     "Test olasılık %": 19.15,
+     "Test lift": 1.97
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) ≤ 1.20 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (3 gün önce) ≤ -0.01 VE Smart Money Index: son saat − ilk saat (20 gün) ≤ 5.65",
+     "Eğitim n": 1135,
+     "Eğitim olasılık %": 16.74,
+     "Eğitim lift": 2.24,
+     "Test n": 959,
+     "Test olasılık %": 19.08,
+     "Test lift": 1.96
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) > 7.88 VE ATR14 / ATR50 (oynaklık sıkışması < 1) > 1.20 VE Son saatin hacim payı (20 gün) > 0.15",
+     "Eğitim n": 586,
+     "Eğitim olasılık %": 16.55,
+     "Eğitim lift": 2.22,
+     "Test n": 568,
+     "Test olasılık %": 27.64,
+     "Test lift": 2.84
+    },
+    {
+     "Derinlik": 4,
+     "Örgü kuralı": "ATR % (oynaklık) 4.76 … 7.88 VE Gece getirisi toplamı (20 gün) ≤ -9.85 VE Kyle-λ fiyat etkisi (60 gün) > 4.95",
+     "Eğitim n": 535,
+     "Eğitim olasılık %": 15.89,
+     "Eğitim lift": 2.13,
+     "Test n": 370,
+     "Test olasılık %": 17.03,
+     "Test lift": 1.75
+    },
+    {
+     "Derinlik": 3,
+     "Örgü kuralı": "ATR % (oynaklık) 4.76 … 7.88 VE Gece getirisi toplamı (20 gün) > -9.85",
+     "Eğitim n": 13004,
+     "Eğitim olasılık %": 15.34,
+     "Eğitim lift": 2.06,
+     "Test n": 12985,
+     "Test olasılık %": 17.22,
+     "Test lift": 1.77
+    },
+    {
+     "Derinlik": 5,
+     "Örgü kuralı": "ATR % (oynaklık) 4.76 … 7.88 VE Gece getirisi toplamı (20 gün) > -9.85 VE ATR14 / ATR50 (oynaklık sıkışması < 1) — 30 gün eğimi ≤ -0.01 VE Gece − gün içi getiri farkı (20 gün) — kurumsal birikim (15 gün önce) > -9.68",
+     "Eğitim n": 4218,
+     "Eğitim olasılık %": 13.54,
+     "Eğitim lift": 1.81,
+     "Test n": 4884,
+     "Test olasılık %": 16.24,
+     "Test lift": 1.67
+    }
+   ]
+  }
+ },
+ "sure_dk": 78.8
+}
