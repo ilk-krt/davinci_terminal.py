@@ -86,6 +86,7 @@ class Params:
                                        #    (50 hisse × 2 ayrı yıl: her iki yılda da ≈ +0.28R;
                                        #     0.382'den sığ geri çekilmeler iki yılda da ≈ 0R)
     adx_min: float = 15.0          # günlük ADX bunun altındaysa girme (yönsüz piyasa)
+    orgu_veto: bool = True         # 🐈 son 5 günde "ölü kedi" örgüsü varsa girme
     structure: bool = False        # 🏛️ yapı katmanı: S/R, gap/FVG, Wyckoff, likidite, Elliott,
                                    #    Mum Gücü, haftalık trend → veto + stop + hedef + konsey
     struct_entry: bool = False     # 🏛️ yapısal destekten (S/R, boğa gap, talep, süpürme) giriş
@@ -252,6 +253,15 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
     first = int(np.searchsorted(idx.values, np.datetime64(st_ts)))
+    kedi_days: set = set()                       # 🐈 ölü kedi günleri (günlük, nedensel)
+    if p.orgu_veto:
+        try:
+            from apex import orgu as org
+            OK_ = org.series(d, None)
+            kedi_days = set(pd.DatetimeIndex(OK_.index[OK_["olu_kedi"] > 0]).normalize())
+        except Exception:                        # noqa: BLE001
+            kedi_days = set()
+    dix = pd.DatetimeIndex(d.index).normalize()
     A_all = None                                 # yapı her zaman hesaplanır (işlem bağlamı için);
     try:                                         # kurallarda yalnızca structure=True ise kullanılır
         A_all = sctx.align(idx, sctx.timeline(d, since=idx[0]))
@@ -658,6 +668,12 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                             and p.fib_gate[0] <= lg.r <= p.fib_gate[1])
                 diag["🔑 Fib kapısı (dün)"] = diag.get("🔑 Fib kapısı (dün)", 0) + int(g_ok)
                 if not g_ok:
+                    why = ""
+            if why and ok_trend and kedi_days:
+                pos_ = int(dix.searchsorted(day))
+                prev5 = list(dix[max(0, pos_ - 5):pos_])
+                if any(x in kedi_days for x in prev5):
+                    diag["🐈 ölü kedi vetosu"] = diag.get("🐈 ölü kedi vetosu", 0) + 1
                     why = ""
             if why and ok_trend and p.adx_min:
                 a_ok = bool(np.isfinite(cr["adx"]) and cr["adx"] > p.adx_min)

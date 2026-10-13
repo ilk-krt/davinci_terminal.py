@@ -301,3 +301,18 @@ def hype(n_fund: int = 40, biotech_extra: list[str] | None = None):
     bio = sorted(set(hyp.BIOTECH) | set(biotech_extra or []))
     fund = hyp.fundamentals(sorted(set(top) | set(bio)), dta.yf_info)
     return {"social": soc, "errs": errs, "fund": fund, "top": top, "bio": bio}
+
+
+def orgu():
+    """🧬 Örgü tarayıcı: bütün tema hisselerinde şablon benzerliği, sessiz sıkışma, ölü kedi."""
+    from apex import orgu as org
+    theme_of: dict[str, str] = {}
+    for tema in uni.THEME_TRACKER:
+        for s in theme_holdings(tema):
+            theme_of.setdefault(s, tema)
+    syms = sorted(theme_of)
+    prices, _ = dta.fetch(syms + ["SPY"], "1d")
+    spy = prices.get("SPY")
+    spy_c = spy["Close"] if spy is not None and not spy.empty else None
+    return org.scan({k: v for k, v in prices.items() if k != "SPY"}, spy_c, theme_of)
+
