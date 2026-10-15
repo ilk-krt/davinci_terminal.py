@@ -69,6 +69,25 @@ def read(v: dict[str, Any]) -> str:
     if parts:
         out.append("**Trend ve mum.** " + " ".join(parts))
 
+    # 2b) EMA şeridi (10/21/50/100/200)
+    a = v.get("ema_stack") or {}
+    if a.get("ok"):
+        from apex import ema_stack as ems
+        s = [f"{a['etiket']} — {a['sure']} bardır sürüyor; {a['aciklama']}.",
+             f"Sıra: {a['sira']}. Eğim: {a['egim']}. Yelpaze {a['yelpaze']:.1f} ATR, "
+             f"{a['yelpaze_txt']}. Fiyat EMA21'den {a['uzama']:+.1f} ATR uzakta"
+             + (" — aşırı uzama, kovalamak riskli." if a["uzama"] > 3 else
+                " — aşırı satım, tepki gelebilir." if a["uzama"] < -3 else ".")]
+        if a["kesisim"]:
+            s.append("Kesişimler: " + "; ".join(a["kesisim"]) + ".")
+        lv = ems.levels_txt(a)
+        if lv:
+            s.append(lv[0].upper() + lv[1:] + ".")
+        ht = ems.history_txt(a, tf)
+        if ht:
+            s.append(ht)
+        out.append("**EMA dizilimi.** " + " ".join(s))
+
     # 3) momentum
     parts = []
     for nm, lab in (("RSI (14)", "RSI"), ("Konfluans", "Konfluans"),

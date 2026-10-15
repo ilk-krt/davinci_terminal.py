@@ -294,7 +294,9 @@ def excel_report(title: str, info_rows: list[tuple[str, str]], themes: pd.DataFr
     widths = {"Tema": 22, "Karar": 22, "Hisse": 8, "Fiyat": 10,
               "Giriş bölgesi": 18, "Stop": 18, "Kâr al 1": 10, "Kâr al 2": 10,
               "R:R": 6, "Sebep": 110, "Para": 22, "Erken Skor": 11,
-              "1H %": 8, "1A %": 8, "Başlık": 26, "Açıklama": 110}
+              "1H %": 8, "1A %": 8, "Başlık": 26, "Açıklama": 110,
+              "Gerekçe": 110, "Zamanlama": 26, "Sepet": 18, "EMA fazı": 30, "Vade": 7,
+              "Fair value": 11, "Öncelik": 9}
 
     allrows = []
     for tema, df in per_theme.items():

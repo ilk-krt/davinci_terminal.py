@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from apex import ema_stack as ems
 from apex import reading as rdg
 from apex import tfview
 
@@ -99,9 +100,11 @@ def evaluate(prices: dict[str, pd.DataFrame]) -> dict[str, dict[str, Any]]:
             ch = float(df["Close"].pct_change(5).iloc[-1] * 100) if df is not None else np.nan
             res[name] = {"sym": m["sym"], "grp": m["grp"], "px": px, "chg5": ch,
                          "scores": {tf: v.get("score", np.nan) for tf, v in vs.items()},
-                         "text": {tf: rdg.read(v) for tf, v in vs.items()}}
+                         "text": {tf: rdg.read(v) for tf, v in vs.items()},
+                         "ema": {tf: ems.table_row(name, tf, v.get("ema_stack") or {"ok": False})
+                                 for tf, v in vs.items()}}
         except Exception as exc:                   # noqa: BLE001
             _log.info("market %s: %s", name, exc)
             res[name] = {"sym": m["sym"], "grp": m["grp"], "px": np.nan, "chg5": np.nan,
-                         "scores": {}, "text": {}}
+                         "scores": {}, "text": {}, "ema": {}}
     return res

@@ -62,6 +62,8 @@ def build(daily: pd.DataFrame, sym: str, tf: str, bench: pd.Series | None = None
                          "atr": float(atr_s.iloc[-1]), "frac": frac, "has_vol": has_vol}
     c = d["Close"]
     v["ema"] = {n: ema(c, n) for n in (21, 50, 200)}
+    from apex import ema_stack as ems
+    v["ema_stack"] = _safe("ema_stack", ems.analyze, d, tf, default={"ok": False})
     v["sr"] = _safe("sr", pst.sr_matrix, d, atr_s, default={"res": [], "sup": []})
     v["gaps"] = _safe("gaps", pst.gap_matrix, d, atr_s, tf, default={"boxes": [], "born": []})
     v["vsa_zones"] = _safe("vsa", pst.vsa_zones, d, default={"zones": [], "events": []}) \

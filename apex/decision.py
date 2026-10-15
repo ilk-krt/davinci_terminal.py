@@ -152,39 +152,36 @@ def volume_module(df: pd.DataFrame, frac: float = 1.0) -> dict[str, Any]:
     return _m("Hacim", 0, f"normal ({rv:.1f}× ort.)", "Fiyat")
 
 
-def trend_module(c: pd.Series) -> dict[str, Any]:
-    e21, e50, e200 = (float(ema(c, n).iloc[-1]) for n in (21, 50, 200))
-    p = float(c.iloc[-1])
-    if len(c) < 200:
-        e200 = np.nan
-    if p > e21 > e50 and (not np.isfinite(e200) or e50 > e200):
-        return _m("Trend", 1, "boğa dizilimi (fiyat > EMA21 > EMA50 > EMA200)",
-                  "Trend")
-    if p < e21 < e50 and (not np.isfinite(e200) or e50 < e200):
-        return _m("Trend", -1, "ayı dizilimi (fiyat < EMA21 < EMA50 < EMA200)",
-                  "Trend")
-    if np.isfinite(e200) and p > e200:
-        return _m("Trend", 0.3, "karışık — ana trend (EMA200) yukarı, kısa "
-                                "vade düzeltmede", "Trend")
-    return _m("Trend", -0.3, "karışık — ana trendin altında, kısa vade "
-                             "toparlanma denemesi", "Trend")
+def trend_module(df: pd.DataFrame, tf: str = "Günlük") -> dict[str, Any]:
+    """EMA şeridinin (10/21/50/100/200) FAZI — apex/ema_stack.py."""
+    from apex import ema_stack as ems
+    a = ems.analyze(df, tf)
+    if not a.get("ok"):
+        return _m("Trend", 0, a.get("neden", "—"), "Trend")
+    return _m("Trend", a["skor"], ems.note(a, short=True), "Trend")
 
 
-def ema_module(c: pd.Series) -> dict[str, Any]:
-    p = float(c.iloc[-1])
-    parts, above = [], 0
-    for n in (21, 50, 100, 200):
-        if len(c) < n + 5:
-            continue
-        e = ema(c, n)
-        d_now = (p / float(e.iloc[-1]) - 1) * 100
-        d_prev = (float(c.iloc[-4]) / float(e.iloc[-4]) - 1) * 100
-        yon = "yaklaşıyor" if abs(d_now) < abs(d_prev) else "uzaklaşıyor"
-        above += d_now > 0
-        parts.append(f"E{n} {d_now:+.1f}% ({yon})")
-    n_ = len(parts)
-    s = (above / n_ * 2 - 1) if n_ else 0
-    return _m("EMA 21/50/100/200", s, " · ".join(parts), "Trend")
+def ema_module(df: pd.DataFrame, tf: str = "Günlük") -> dict[str, Any]:
+    """EMA şeridinin ayrıntısı: sıra, eğim genişliği, yelpaze, uzama, kesişim, dinamik seviyeler.
+    Durum = eğim genişliği (yükselen − düşen EMA sayısı) / EMA sayısı; yelpaze açılıyorsa
+    trend yönünde güçlendirilir."""
+    from apex import ema_stack as ems
+    a = ems.analyze(df, tf)
+    if not a.get("ok"):
+        return _m("EMA şeridi", 0, a.get("neden", "—"), "Trend")
+    eg = a["egim"]
+    up, dn = eg.count("↗"), eg.count("↘")
+    n = max(1, len(a["emas"]))
+    s = (up - dn) / n
+    if a["yelpaze_d"] > 0.25 and np.sign(a["dizilim"]) == np.sign(s):
+        s *= 1.2
+    elif a["yelpaze_d"] < -0.25:
+        s *= 0.6
+    if a["uzama"] > 3:
+        s -= 0.3
+    txt = ems.note(a)
+    lv = ems.levels_txt(a)
+    return _m("EMA şeridi", s, txt + (f" · {lv}" if lv else ""), "Trend")
 
 
 def rsi_module(c: pd.Series) -> dict[str, Any]:
@@ -290,8 +287,8 @@ def evaluate_tf(df: pd.DataFrame, bench: pd.Series | None, t: str,
     if df is None or len(df) < 30:
         return pd.DataFrame(), {}
     c = df["Close"]
-    mods = [candle_module(df), volume_module(df, frac), trend_module(c),
-            ema_module(c), rsi_module(c)]
+    mods = [candle_module(df), volume_module(df, frac), trend_module(df, tf),
+            ema_module(df, tf), rsi_module(c)]
     d: dict[str, Any] = {}
     if len(df) >= 60:
         row = eng.analyze(df, t, bench_close=bench)

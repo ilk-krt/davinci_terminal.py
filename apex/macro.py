@@ -195,6 +195,18 @@ def build_macro_state(prices: dict[str, pd.DataFrame],
             det, tone, sc = "Ayı piyasasında toparlanma — dikkatli", "neutral", 40
         else:
             det, tone, sc = "Fiyat 50 ve 200 EMA altında — long sinyalleri güvenilmez", "bad", 15
+        try:                                      # 📐 EMA şeridi fazı (10/21/50/100/200)
+            from apex import ema_stack as ems
+            df_spy = prices.get("SPY")
+            a = ems.analyze(df_spy, "Günlük") if df_spy is not None and \
+                {"High", "Low"} <= set(df_spy.columns) else {"ok": False}
+            if a.get("ok"):
+                sc = float(np.clip(50 + 45 * a["skor"], 0, 100))
+                det = (f"{a['etiket']} ({a['sure']} gün) — {a['aciklama']}; yelpaze "
+                       f"{a['yelpaze_txt']}, EMA21'e {a['uzama']:+.1f} ATR")
+                tone = "good" if a["skor"] >= 0.5 else "bad" if a["skor"] <= -0.3 else "neutral"
+        except Exception:                         # noqa: BLE001
+            pass
         add("SPY_TREND", "SPY Trend Rejimi", (px / m50 - 1) * 100, _pct_change(spy),
             det, tone)
         st.scores["trend"] = float(sc)

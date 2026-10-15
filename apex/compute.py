@@ -316,3 +316,42 @@ def orgu():
     spy_c = spy["Close"] if spy is not None and not spy.empty else None
     return org.scan({k: v for k, v in prices.items() if k != "SPY"}, spy_c, theme_of)
 
+
+
+def picks(tickers=None, budget_s: float | None = None, orgu: pd.DataFrame | None = None,
+          fund: pd.DataFrame | None = None) -> pd.DataFrame:
+    """🛒 Alım seçkisi — hisse başına (temadan bağımsız) ölçümler.
+    Akşam hesabında bütün tema kadrosu; arayüzde eksik kalanlar canlı."""
+    from apex import picks as pk
+    tickers = sorted(set(tickers or plan_universe()))
+    if not tickers:
+        return pd.DataFrame()
+    prices, _ = dta.fetch(tickers, "1d")
+    if fund is None:
+        fund = dta.fetch_targets(list(prices), budget_s=budget_s)
+    S = pk.compute(prices, fund, orgu)
+    S.attrs["asof"] = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
+    return S
+
+
+def genislik(budget_s: float | None = 600) -> dict:
+    """🫧 Piyasanın iç yapısı için ham veri: S&P 500 ve Nasdaq 100 üyeleri, 2 yıllık kapanışlar,
+    temel veri (ileri/geçmiş F/K, piyasa değeri, kalite). Hesap arayüzde (başlangıç seçilebilir)."""
+    from apex import breadth as brd
+    Ms, syms = {}, set()
+    for name in brd.INDEXES:
+        M, src = brd.members(name)
+        Ms[name] = (M, src)
+        syms |= set(M["Sembol"])
+    prices, failed = dta.fetch(sorted(syms | set(brd.INDEXES.values())), "1d_2y")
+    fund = dta.fetch_targets(sorted(syms), budget_s=budget_s)
+    out = {}
+    for name, (M, src) in Ms.items():
+        C = brd.wide_close(prices, M["Sembol"])
+        ix = prices.get(brd.INDEXES[name])
+        out[name] = {"members": M, "kaynak": src, "closes": C,
+                     "idx": ix["Close"] if ix is not None else None,
+                     "fund": fund[fund["Hisse"].isin(set(M["Sembol"]))].reset_index(drop=True),
+                     "eksik": len(set(M["Sembol"]) - set(C.columns)),
+                     "asof": dt.datetime.now().strftime("%d.%m.%Y %H:%M")}
+    return out

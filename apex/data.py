@@ -17,6 +17,7 @@ _log = logging.getLogger(__name__)
 INTERVAL_PLAN: dict[str, tuple[int, str]] = {
     "1d": (420, "1d"),
     "1d_long": (5800, "1d"),   # Karar Hunisi: çeyreklik oran grafikleri
+    "1d_2y": (760, "1d"),      # Piyasa genişliği: 2 yıllık zirveden düşüş
     "1wk": (1500, "1wk"),
     "4h": (170, "1h"),      # 1h çekip 4h'e yeniden örnekliyoruz
     "1h": (60, "1h"),
@@ -160,7 +161,7 @@ def _one_fundamental(t: str, today: dt.date) -> dict:
            "_ttm_sps": np.nan, "_fwd_sps": np.nan, "Büyüme %": np.nan,
            "Satış Tahmin Kaynağı": "", "Piyasa Değ. ($B)": np.nan,
            "İleri F/K": np.nan, "EV/Satış": np.nan, "İleri HBK": np.nan,
-           "52H Konum %": np.nan}
+           "52H Konum %": np.nan, "Hedef Yüksek": None, "Hedef Düşük": None}
 
     def num(x):
         try:
@@ -204,6 +205,9 @@ def _one_fundamental(t: str, today: dt.date) -> dict:
         rec["Hedef"] = float(target) if isinstance(target, (int, float)) else None
         if rec["Fiyat"] and rec["Hedef"]:
             rec["Potansiyel %"] = (rec["Hedef"] / rec["Fiyat"] - 1) * 100
+        for k_, f_ in (("Hedef Yüksek", "targetHighPrice"), ("Hedef Düşük", "targetLowPrice")):
+            v_ = info.get(f_)
+            rec[k_] = float(v_) if isinstance(v_, (int, float)) else None
         n = info.get("numberOfAnalystOpinions")
         key = info.get("recommendationKey", "")
         rec["Analist"] = (f"{key} ({n})" if n else str(key or ""))
@@ -277,3 +281,65 @@ def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
         rows = list(ex.map(lambda s: _one_fundamental(s, today), syms))
     df = pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"])
     return df.reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------
+# Hafif temel veri: yalnız `info` (bilanço takvimi / satış tahmini YOK) —
+# Alım seçkisi için analist hedefi, ileri F/K, piyasa değeri, kârlılık.
+# Bilanço adımında zaten çekilen semboller 6 saatlik önbellekten gelir.
+# --------------------------------------------------------------------------
+TARGET_COLS = ["Hisse", "Fiyat", "Hedef", "Hedef Yüksek", "Hedef Düşük", "Analist Sayısı",
+               "Tavsiye", "İleri F/K", "Piyasa Değ. ($B)", "Büyüme %", "Kâr Marjı %",
+               "Brüt Marj %", "ROE %", "FCF ($B)", "Borç/Özkaynak", "Cari Oran", "Geçmiş F/K",
+               "Sektör", "Endüstri"]
+
+
+def _one_target(t: str) -> dict:
+    import numpy as np
+    info = yf_info(t)
+
+    def num(x):
+        try:
+            v = float(x)
+            return v if np.isfinite(v) else np.nan
+        except (TypeError, ValueError):
+            return np.nan
+    mc = num(info.get("marketCap"))
+    return {"Hisse": t,
+            "Fiyat": num(info.get("currentPrice") or info.get("regularMarketPrice")
+                         or info.get("previousClose")),
+            "Hedef": num(info.get("targetMeanPrice") or info.get("targetMedianPrice")),
+            "Hedef Yüksek": num(info.get("targetHighPrice")),
+            "Hedef Düşük": num(info.get("targetLowPrice")),
+            "Analist Sayısı": num(info.get("numberOfAnalystOpinions")),
+            "Tavsiye": str(info.get("recommendationKey") or ""),
+            "İleri F/K": num(info.get("forwardPE")),
+            "Geçmiş F/K": num(info.get("trailingPE")),
+            "Piyasa Değ. ($B)": mc / 1e9 if np.isfinite(mc) else np.nan,
+            "Büyüme %": num(info.get("revenueGrowth")) * 100,
+            "Kâr Marjı %": num(info.get("profitMargins")) * 100,
+            "Brüt Marj %": num(info.get("grossMargins")) * 100,
+            "ROE %": num(info.get("returnOnEquity")) * 100,
+            "FCF ($B)": num(info.get("freeCashflow")) / 1e9,
+            "Borç/Özkaynak": num(info.get("debtToEquity")),     # Yahoo: yüzde (150 = 1.5×)
+            "Cari Oran": num(info.get("currentRatio")),
+            "Sektör": info.get("sector", "") or "", "Endüstri": info.get("industry", "") or ""}
+
+
+def fetch_targets(tickers: Iterable[str], budget_s: float | None = None) -> pd.DataFrame:
+    """budget_s: süre sınırı (sn) — aşılınca kalan semboller boş döner (akşam hesabı
+    zaman aşımına düşmesin; önbellekte olanlar yine gelir)."""
+    from concurrent.futures import ThreadPoolExecutor
+    syms = sorted({x.strip().upper() for x in tickers if x and x.strip()})
+    if not syms:
+        return pd.DataFrame(columns=TARGET_COLS)
+    dl = time.time() + budget_s if budget_s else None
+
+    def one(t: str) -> dict:
+        hit = _INFO_CACHE.get(t)
+        if dl and time.time() > dl and not hit:
+            return {"Hisse": t}
+        return _one_target(t)
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        rows = list(ex.map(one, syms))
+    return pd.DataFrame(rows, columns=TARGET_COLS)
