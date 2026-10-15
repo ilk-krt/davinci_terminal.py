@@ -41,6 +41,9 @@ from apex import hype as hyp
 from apex import robot as rbt
 from apex import robotchart as rbc
 from apex import orgu as org
+from apex import picks as pks
+from apex import breadth as brd
+from apex import ema_stack as ems
 
 # --- Modül kısayolları -------------------------------------------------------
 # Modüler sürümde `an` = analytics, `px` = prices modülüydü. Tek dosyada hepsi
@@ -541,6 +544,427 @@ def trade_plan_table(TB: pd.DataFrame, P: pd.DataFrame, index_ok: bool) -> pd.Da
         columns=["_o", "_s"]).reset_index(drop=True)
 
 # ==========================================================================
+# 🛒 ALIM SEÇKİSİ — temalara ayrılmış, sepetli, vadeli alım listesi (apex/picks.py)
+# ==========================================================================
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_secki(tickers: tuple[str, ...], nonce: str) -> pd.DataFrame:
+    """Hisse başına seçki ölçümleri — akşam hesabından; eksikler (≤ 80) canlı."""
+    want = set(tickers)
+    orgu_ = snap.load("orgu")
+    S = snap.load("secki") if _use_snap(nonce) else None
+    if S is not None and not S.empty and "Sembol" in S:
+        have = S[S["Sembol"].isin(want)]
+        missing = sorted(want - set(have["Sembol"]))
+        if missing and len(missing) <= 80:
+            try:
+                add = cmp.picks(missing, budget_s=60, orgu=orgu_)
+                have = pd.concat([have, add], ignore_index=True) if len(add) else have
+            except Exception as exc:              # noqa: BLE001
+                _log.info("seçki canlı: %s", exc)
+        have.attrs["asof"] = S.attrs.get("asof", "akşam hesabı")
+        return have.reset_index(drop=True)
+    return cmp.picks(sorted(want), budget_s=120, orgu=orgu_)
+
+
+SECKI_HELP = (
+    "**Nasıl okunur?**\n\n"
+    "- **Sepet:** 🏛️ Çekirdek = büyük (≥ 50 milyar $) ve kârlı · 📈 Büyüme & değer = orta/büyük, "
+    "kârlı ya da hızlı büyüyen · 🧪 Spekülatif = küçük (< 5 milyar $) ya da zararda, küçük "
+    "pozisyon · ⛔ İzle = 🐈 ölü kedi, kırık bıçak (zirveden ≥ %40 aşağı + ayı fazı) ya da "
+    "bozulmuş yapı.\n"
+    "- **Zamanlama:** günlük ANA YAPI FIB bacağı (robotla aynı hesap). Yükseliş bacağında fiyat "
+    "0.382–0.786 arasındaysa 🔑 **Fib kapısında** — iki ayrı dönemde (2024–25 ve 2025–26, "
+    "~600 işlem) +0.28R veren tek kural (robotta EMA200 üstü trend filtresiyle; bu yüzden "
+    "EMA200 altındaki hisse kapıda olsa da ✅ almaz). 0.382'den sığsa geri çekilme beklenir (limit emir "
+    "0.382–0.5), 0.786'dan derinse teyit beklenir; ana bacak düşüşse dip teyidi.\n"
+    "- **Giriş / stop / kâr al:** giriş = fiyatın içinde bulunduğu ya da bekleneceği Fib bandı; "
+    "stop = bir alt Fib seviyesinin ATR payı kadar altı (yüzde girişe göre); kâr al 1 = bacağın "
+    "tepesi (düşüşte 0.382/0.618 geri dönüşü), kâr al 2 = Fib 1.272 uzantısı.\n"
+    "- **Fair value:** analistlerin 12 ay ortalama hedefi (Yahoo). Bilgi amaçlıdır — bu "
+    "uygulamada geçmişte doğrulanmadı. Potansiyel % = hedef / fiyat − 1.\n"
+    "- **Vade uyumu:** K = kısa (Fib kapısında + ADX > 15 ya da örgü kuralı) · O = orta (para "
+    "giren tema + boğa EMA fazı) · U = uzun (çekirdek/büyüme + analist potansiyeli ≥ %15 + "
+    "trend bozuk değil).\n"
+    "- **Öncelik (0–100):** zamanlama + tema parası + EMA fazı + analist potansiyeli + örgü; "
+    "vade seçimine göre ağırlıklar değişir (kısa: zamanlama, uzun: değer).\n"
+    "- **Kısa sinyal** (kısa vade için iyi): 🚀 momentum (20 ve 60 günlük getiri evrenin ilk "
+    "%20'sinde, fiyat yükselen EMA21 üstünde) · 🐋 balina girişi (son 5 günde Afterburner boğa, "
+    "dip süpürmesi ya da gerçek toplama; veya WHALE ≥ 60 ve 10 günde +8 — son 10 günde dağıtım "
+    "varsa sayılmaz) · 🧬 tarihsel örgü (R1/R2 ya da örgü puanı ≥ 85). Kısa vadede momentum + "
+    "(balina / örgü / 20 gün zirvesi) olan EMA200 üstü hisse **🟢 MOMENTUM** alır: fiyattan giriş, "
+    "stop EMA21 − 0.5 ATR (en az 1.5 ATR), hedef 2R / 3R.\n"
+    "- **Orta-uzun sinyal**: 📈 endeks ya da tema bir süredir düşmüş ve pozitife dönüyor · 💰 fiyat "
+    "fair value'nun ≥ %35 altında (≥ 3 analist) · 🏛️ temeller sağlam (kârlı, büyüyen, serbest "
+    "nakit pozitif, borç/özkaynak < 1.5, ROE > %10 — bilinenlerin ≥ %80'i). Üçü birden → "
+    "**💎 DEĞER DÖNÜŞÜ — kademeli al** (orta ve uzun vade; hissenin kendisi tam ayı ya da "
+    "trend kırılımı fazındaysa verilmez); 💰 + 🏛️ tek başına uzun vade uyumu "
+    "verir.\n"
+    "- **Piyasa iç yapısı** (Endeksler → 🫧): 🧮 **ucuzlayan lider** = ileri F/K geçmiş F/K'nın "
+    "≤ 0.8'i ve fiyat 60 günde artıda (kazanç fiyattan hızlı büyüyor; endeks F/K'sına yakınsa "
+    "ekstra puan) · 🌊 **genişleme adayı** = zirvenin ≥ %20 altında, temeli sağlam, trendi bozuk "
+    "değil ve piyasa dar liderlikte (boğa-ayı). Piyasa genişlemeye başladıysa (EMA50 üstü üye "
+    "oranı 10 günde ≥ 10 puan arttı) ve hisse boğa fazındaysa **🌊 GENİŞLEME ADAYI — kademeli "
+    "al** (orta/uzun).\n\n"
+    "Kanıtlı: Fib kapısı, taze lider tema, ölü kedi uyarısı. Bağlam (test edilmedi): analist "
+    "hedefi, F/K, EMA fazı, momentum/değer kuralları (Afterburner boğa ve dip süpürmesi "
+    "5 yılda tabanı geçti; dağıtım −1.49 puan). Yatırım tavsiyesi değildir; her işlemde risk ≤ sermayenin %1–2'si.")
+
+SECKI_COLCFG = {
+    "Öncelik": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=100,
+                                               width="small"),
+    "R:R": st.column_config.NumberColumn(format="%.1f"),
+    "Potansiyel %": st.column_config.NumberColumn("Potansiyel", format="%+.0f%%"),
+    "İleri F/K": st.column_config.NumberColumn(format="%.0f"),
+    "Piyasa Değ. ($B)": st.column_config.NumberColumn("Piy. değ. ($B)", format="%.1f"),
+    "Zirveden %": st.column_config.NumberColumn("Zirveden", format="%+.0f%%"),
+    "FV iskontosu %": st.column_config.NumberColumn(
+        "FV altı", format="%.0f%%", help="Fiyat fair value'nun yüzde kaç altında (≥ %35 = 💰)"),
+    "Momentum": st.column_config.NumberColumn(format="%d", help="20G + 60G getiri yüzdeliği"),
+    "Kısa sinyal": st.column_config.TextColumn(help="🚀 momentum · 🐋 balina girişi · 🧬 örgü"),
+    "Orta-uzun sinyal": st.column_config.TextColumn(
+        help="📈 endeks/tema dönüşü · 💰 FV'nin ≥ %35 altı · 🏛️ sağlam temel · 🧮 ucuzlayan "
+             "lider · 🌊 genişleme adayı"),
+    "Temel": st.column_config.TextColumn(help="Sağlanan temel kontrol / bilinen (✓ = sağlam)"),
+    "F/K sıkışması": st.column_config.NumberColumn(
+        format="%.2f", help="İleri F/K ÷ geçmiş F/K — 0.8'in altı: kazanç fiyattan hızlı büyüyor"),
+    "Gerekçe": st.column_config.TextColumn(width="large"),
+}
+
+
+def secki_board(themes: list[str], vade: str, index_ok: bool, min_liq: float,
+                T3: pd.DataFrame) -> pd.DataFrame:
+    tmap = {t: theme_holdings(t) for t in themes}
+    tmap = {t: v for t, v in tmap.items() if v}
+    syms = tuple(sorted({x for v in tmap.values() for x in v}))
+    if not syms:
+        return pd.DataFrame()
+    S = load_secki(syms, st.session_state.nonce_scan)
+    tq = dict(zip(T3["Tema"], T3["_q"])) if T3 is not None and not T3.empty else {}
+    trn = ({r["Tema"]: pks.theme_turn(r) for r in T3.to_dict("records")}
+           if T3 is not None and not T3.empty else {})
+    idx_name = st.session_state.get("ta_index", "Nasdaq")
+    try:
+        MK_, _ = load_markets(st.session_state.nonce_funnel)
+        itn = pks.index_turn((MK_.get(idx_name) or {}).get("ema"), idx_name)
+    except Exception:                             # noqa: BLE001
+        itn = ""
+    try:
+        E_ = load_earnings(syms, st.session_state.nonce_earn) if _use_snap(
+            st.session_state.nonce_earn) else None
+    except Exception:                             # noqa: BLE001
+        E_ = None
+    mk_ = mkt_context(idx_name)
+    B = pks.board(S, tmap, tq, vade, index_ok, min_liq, E_, trn, itn, mk_)
+    B.attrs["idx_turn"] = itn
+    B.attrs["mkt"] = mk_
+    B.attrs["asof"] = S.attrs.get("asof", "")
+    return B
+
+
+PARA_TXT = {"lider": "✅ para giriyor (lider)", "iyilesen": "🌱 para girmeye başladı",
+            "zayif": "⚠️ çıkmaya başladı", "geride": "⛔ çıkıyor / zayıf"}
+
+
+SECKI_CRIT = {
+    "🚀 Momentum": lambda B: B["_mom"].fillna(False).astype(bool),
+    "🐋 Balina girişi": lambda B: B["_whale"].fillna(False).astype(bool),
+    "🧬 Tarihsel örgü": lambda B: B["_orgu"].fillna(False).astype(bool),
+    "📈 Endeks / tema dönüşü": lambda B: B["_donus"].fillna("").astype(str) != "",
+    "💰 Fair value'nun ≥ %35 altında": lambda B: B["_ucuz"].fillna(False).astype(bool),
+    "🏛️ Temeli sağlam": lambda B: B["_saglam"].fillna(False).astype(bool),
+    "🔑 Fib kapısında": lambda B: B["_tm"] == "kapida",
+    "🧮 Ucuzlayan lider": lambda B: B["_ucuzlayan"].fillna(False).astype(bool),
+    "🌊 Genişleme adayı": lambda B: B["_genis"].fillna(False).astype(bool),
+}
+SECKI_PRESETS = ["Yok", "⚡ Kısa vade fırsatı (🚀 / 🐋 / 🧬)",
+                 "💎 Orta-uzun değer fırsatı (📈 + 💰 + 🏛️)",
+                 "🫧 Piyasa iç yapısı (🧮 ucuzlayan lider ya da 🌊 genişleme adayı)"]
+
+
+def show_secki(vade: str, index_ok: bool, idx_name: str, T3: pd.DataFrame,
+               liq: float) -> None:
+    """Hisse Avcısı: temalara ayrılmış alım seçkisi."""
+    all_t = [t for t in uni.THEME_TRACKER if theme_holdings(t)]
+    tq = dict(zip(T3["Tema"], T3["_q"])) if T3 is not None and not T3.empty else {}
+    money = [t for t in all_t if tq.get(t) in ("lider", "iyilesen")]
+    if st.session_state.pop("sk_preset_go", None) == "genis":   # Endeksler'den geldi
+        st.session_state["sk_preset"] = SECKI_PRESETS[3]
+        st.session_state["sk_mode"] = "Hepsi"
+        st.session_state["sk_only"] = False
+    for k_, v_ in (("sk_mode", "Para girenler"), ("sk_only", True), ("sk_preset", SECKI_PRESETS[0])):
+        st.session_state.setdefault(k_, v_)
+    c1, c2, c3 = st.columns([3, 2, 1])
+    pick_mode = c1.radio("Temalar", ["Para girenler", "Seçeceğim", "Hepsi"], horizontal=True,
+                         key="sk_mode",
+                         help="Para girenler = bu vadede lider ya da iyileşen temalar.")
+    if pick_mode == "Seçeceğim":
+        themes = st.multiselect("Temalar", all_t, default=money[:4] or all_t[:3], key="sk_th",
+                                format_func=lambda t: ("✅ " if t in money else "") + t)
+    elif pick_mode == "Hepsi":
+        themes = all_t
+    else:
+        themes = money or all_t[:5]
+        if not money:
+            st.caption("Bu vadede para giren tema yok — ilk temalar gösteriliyor.")
+    seps = c2.multiselect("Sepet", list(pks.SEPET.values()),
+                          default=[v for k, v in pks.SEPET.items() if k != "izle"], key="sk_sep")
+    per = c3.number_input("Tema başına", 3, 30, 6, 1, key="sk_per")
+    f1, f2 = st.columns([2, 3])
+    only = f1.toggle("Yalnızca alınabilir (✅ / 🟡 / 🟢 / 💎 / 🌊)", key="sk_only")
+    preset = f2.radio("Hazır filtre", SECKI_PRESETS,
+                      horizontal=True, key="sk_preset",
+                      help="Kısa: momentum, balina girişi ya da tarihsel örgüden en az biri. "
+                           "Orta-uzun: endeks/tema dönüşü + fair value'nun ≥ %35 altı + sağlam "
+                           "temel — üçü birden.")
+    crit = st.multiselect("Ek kriterler (hepsi sağlanmalı)", list(SECKI_CRIT), key="sk_crit")
+    if not themes:
+        st.info("Tema seçin.")
+        return
+    with st.spinner(f"{len(themes)} temada seçki hazırlanıyor (Fib bacağı, EMA fazı, analist "
+                    "hedefi, örgü)…"):
+        B = secki_board(themes, vade, index_ok, liq, T3)
+    if B.empty:
+        st.info("Seçki için veri yok (akşam hesabı çalışınca dolacak).")
+        return
+    _itn, _mk = B.attrs.get("idx_turn", ""), B.attrs.get("mkt", {})
+    B = B[B["Sepet"].isin(seps)]
+    B.attrs["idx_turn"], B.attrs["mkt"] = _itn, _mk
+    if only:
+        B = B[B["_o"] <= 1]
+    if preset.startswith("⚡"):
+        B = B[B["Kısa sinyal"] != "—"]
+    elif preset.startswith("💎"):
+        B = B[B["Orta-uzun sinyal"].str.count("📈|💰|🏛️") >= 3]
+    elif preset.startswith("🫧"):
+        B = B[B["_ucuzlayan"].fillna(False).astype(bool) | B["_genis"].fillna(False).astype(bool)]
+    for c_ in crit:
+        B = B[SECKI_CRIT[c_](B)]
+    if B.attrs.get("idx_turn"):
+        st.success("📈 " + B.attrs["idx_turn"] + " — orta/uzun vade için dönüş koşulu sağlanıyor.")
+    if (B.attrs.get("mkt") or {}).get("etiket"):
+        st.caption(f"🫧 Piyasa iç yapısı ({idx_name}): {B.attrs['mkt']['etiket']} · endeks ileri "
+                   f"F/K {B.attrs['mkt'].get('endeks_fk', np.nan):.1f} — 🌊 genişleme adayları bu "
+                   "rejime göre puanlanır (Endeksler sayfasında ayrıntı).")
+    if B.empty:
+        st.info("Filtrelere uyan hisse yok — 'Yalnızca alınabilir'i kapatın ya da sepet ekleyin.")
+        return
+    n_al, n_lim = int((B["_o"] == 0).sum()), int((B["_o"] == 1).sum())
+    n_mo = int(B["Karar"].str.startswith("🟢").sum())
+    n_dv = int(B["Karar"].str.startswith("💎").sum())
+    st.markdown(" ".join([badge(f"✅ Alım bölgesinde · {n_al}", "pos"),
+                          badge(f"🟡 Limit emir / teyit · {n_lim - n_mo - n_dv}", ""),
+                          badge(f"🟢 Momentum · {n_mo}", "pos"),
+                          badge(f"💎 Değer dönüşü · {n_dv}", "pos"),
+                          badge(f"Vade: {vade}", ""),
+                          badge(f"Endeks ({idx_name}): {'uygun' if index_ok else 'uygun değil'}",
+                                "" if index_ok else "neg")]), unsafe_allow_html=True)
+    st.caption(f"Veri: {B.attrs.get('asof', '') or 'canlı'} · fiyatlar günlük kapanış · "
+               "fair value = analist ortalama hedefi")
+    D = pks.display(B)
+    # genel en iyi (aynı hisse birden çok temadaysa bir kez)
+    top = (B.sort_values(["_o", "Öncelik"], ascending=[True, False])
+           .drop_duplicates("Hisse").head(10))
+    st.markdown("##### 🏆 Bütün seçilen temalarda en öncelikli 10")
+    st.dataframe(pks.display(top), width="stretch", hide_index=True,
+                 column_config=SECKI_COLCFG)
+    for tema in [t for t in themes if t in set(B["Tema"])]:
+        g = D[D["Tema"] == tema].head(int(per))
+        q = tq.get(tema, "")
+        with st.container(border=True):
+            st.markdown(f"**{tema}** · {PARA_TXT.get(q, '—')} · {len(g)} / "
+                        f"{int((D['Tema'] == tema).sum())} hisse")
+            for sp in pks.SEPET.values():
+                gg = g[g["Sepet"] == sp]
+                if gg.empty:
+                    continue
+                st.caption(sp + " — " + pks.SEPET_TXT[[k for k, v in pks.SEPET.items()
+                                                       if v == sp][0]])
+                st.dataframe(gg.drop(columns=["Tema", "Sepet"]), width="stretch",
+                             hide_index=True, column_config=SECKI_COLCFG)
+    xl = pln.excel_report(f"AETHER APEX · Alım seçkisi ({vade} vade)",
+                          [("Vade", vade), ("Endeks", idx_name),
+                           ("Temalar", ", ".join(themes)),
+                           ("Hazırlanma", dt.datetime.now().strftime("%d.%m.%Y %H:%M"))],
+                          pd.DataFrame(), {t: D[D["Tema"] == t].drop(columns=["Tema"])
+                                           for t in themes if t in set(D["Tema"])})
+    st.download_button("⬇️ Seçkiyi indir (Excel, tema başına sayfa)", xl,
+                       f"alim_seckisi_{vade}_{dt.date.today():%Y%m%d}.xlsx",
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       key="sk_xl")
+    with st.expander("ℹ️ Yöntem ve kanıt düzeyi"):
+        st.markdown(SECKI_HELP)
+
+
+# ==========================================================================
+# 🫧 PİYASANIN İÇ YAPISI — genişlik · yoğunlaşma · değerleme (apex/breadth.py)
+# ==========================================================================
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_genislik(nonce: str) -> dict:
+    if _use_snap(nonce):
+        g = snap.load("genislik", max_age_h=60)
+        if g:
+            return g
+    return cmp.genislik(budget_s=90)
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def genislik_analiz(name: str, start: str | None, nonce: str) -> dict:
+    G = load_genislik(nonce).get(name)
+    if not G or G.get("idx") is None or G["closes"].empty:
+        return {}
+    A = brd.analyze(G["closes"], G["members"], G["idx"], G["fund"],
+                    pd.Timestamp(start) if start else None)
+    A["kaynak"], A["asof"], A["eksik"] = G["kaynak"], G["asof"], G.get("eksik", 0)
+    return A
+
+
+IDX_BREADTH = {"S&P 500": "S&P 500", "Nasdaq": "Nasdaq 100"}
+
+
+def mkt_context(idx_name: str) -> dict:
+    """Seçki için piyasa iç yapısı bağlamı (rejim, endeks F/K) — veri yoksa boş."""
+    try:
+        A = genislik_analiz(IDX_BREADTH.get(idx_name, "S&P 500"), None,
+                            st.session_state.nonce_funnel)
+    except Exception as exc:                      # noqa: BLE001
+        _log.info("genişlik bağlamı: %s", exc)
+        return {}
+    if not A:
+        return {}
+    return {"rejim": A["rejim"], "etiket": A["rejim_etiket"],
+            "endeks_fk": A["deger_info"].get("endeks_fk", np.nan)}
+
+
+def show_genislik() -> None:
+    c1, c2, c3 = st.columns([1, 1, 1])
+    name = c1.radio("Endeks", list(brd.INDEXES), horizontal=True, key="gn_idx")
+    mode = c2.radio("Başlangıç", ["Dip (otomatik)", "Yılbaşı", "6 ay", "Tarih seç"],
+                    horizontal=True, key="gn_mode",
+                    help="Getiri katkısı bu tarihten bugüne hesaplanır. Dip = son ~15 ayın en "
+                         "düşük kapanışı.")
+    start = None
+    today = dt.date.today()
+    if mode == "Yılbaşı":
+        start = dt.date(today.year, 1, 1).isoformat()
+    elif mode == "6 ay":
+        start = (today - dt.timedelta(days=182)).isoformat()
+    elif mode == "Tarih seç":
+        start = c3.date_input("Başlangıç tarihi", today - dt.timedelta(days=200),
+                              key="gn_date").isoformat()
+    with st.spinner(f"{name} üyeleri: katkı, genişlik ve değerleme hesaplanıyor…"):
+        try:
+            A = genislik_analiz(name, start, st.session_state.nonce_funnel)
+        except Exception as exc:                  # noqa: BLE001
+            st.error(f"Genişlik hesaplanamadı: {exc}")
+            return
+    if not A:
+        st.info("Üye verisi yok — akşam hesabı çalışınca dolar.")
+        return
+    ki, bi, vi = A["katki_info"], A["genislik"], A["deger_info"]
+    tone = {"genis_boga": "pos", "genisleme": "pos", "boga_ayi": "", "genis_ayi": "neg"}.get(
+        A["rejim"], "")
+    k1, k2 = st.columns([1, 2])
+    k1.markdown(kpi("Piyasa iç yapısı", A["rejim_etiket"],
+                    f"endeks zirveden {A['endeks_dd']:+.1f}%", tone), unsafe_allow_html=True)
+    k2.markdown(f"**Ne demek?** {A['rejim_txt']}")
+    k2.caption(f"Başlangıç {ki.get('baslangic', '—')} · üye kaynağı: {A['kaynak']} · veri "
+               f"{A['asof']}" + (f" · fiyatı gelmeyen {A['eksik']} üye hariç" if A["eksik"] else ""))
+    m = st.columns(6)
+    m[0].metric("Endeks getirisi", f"{ki.get('endeks_gercek', np.nan):+.1f}%",
+                help="Başlangıçtan bugüne endeksin (ETF) gerçek getirisi.")
+    m[1].metric("İlk 10'un payı", f"%{ki.get('top10_pay', np.nan):.0f}",
+                f"{ki.get('top10_puan', np.nan):+.1f} puan", delta_color="off",
+                help="Kazancın yüzde kaçını en çok katkı yapan 10 hisse getirdi.")
+    m[2].metric("Endeksi geçen üye", f"%{ki.get('endeksi_gecen %', np.nan):.0f}",
+                help="Getirisi endeksten yüksek olan üyelerin oranı (genişlik).")
+    m[3].metric("Zirvenin ≥%20 altında", f"%{bi['≥%20 düşük']:.0f}",
+                f"≥%10: %{bi['≥%10 düşük']:.0f} · ≥%50: %{bi['≥%50 düşük']:.0f}",
+                delta_color="off", help="2 yıllık zirveye göre.")
+    m[4].metric("EMA200 üstü", f"%{bi['EMA200 üstü %']:.0f}",
+                f"EMA50 üstü %{bi['EMA50 üstü %']:.0f}", delta_color="off")
+    m[5].metric("İleri F/K (endeks)", f"{vi.get('endeks_fk', np.nan):.1f}",
+                f"Teknoloji {vi.get('tek_fk', np.nan):.1f}", delta_color="off",
+                help="Kazanç ağırlıklı: Σ piyasa değeri / Σ (piyasa değeri ÷ ileri F/K). "
+                     f"Kapsama %{vi.get('kapsama %', 0):.0f}.")
+    t1, t2, t3, t4 = st.tabs(["📊 Getiri katkısı", "🌡️ Genişlik", "🏭 Sektörler",
+                              "🧮 Değerleme"])
+    with t1:
+        K = A["katki"]
+        if K.empty:
+            st.info("Katkı hesaplanamadı.")
+        else:
+            top = K.head(15)
+            rest = K.iloc[15:]
+            xs = list(top["Sembol"]) + [f"Kalan {len(rest)} hisse"]
+            ys = list(top["Katkı (puan)"]) + [float(rest["Katkı (puan)"].sum())]
+            fig = go.Figure(go.Bar(x=xs, y=ys, marker_color=["#3987e5"] * len(top) + ["#7a8394"],
+                                   text=[f"{v:+.1f}" for v in ys], textposition="outside",
+                                   hovertemplate="%{x}: %{y:+.2f} puan<extra></extra>"))
+            fig.update_layout(height=340, yaxis_title="Endeks getirisine katkı (puan)",
+                              **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            st.caption(f"En çok katkı yapan 10 hisse kazancın %{ki.get('top10_pay', 0):.0f}'ini "
+                       f"getirdi ({ki.get('top10_puan', 0):+.1f} puan); kalan {len(K) - 10} hisse "
+                       f"{ki.get('endeks_getiri', 0) - ki.get('top10_puan', 0):+.1f} puan. Üyelerin "
+                       f"%{ki.get('pozitif %', 0):.0f}'i artıda.")
+            st.dataframe(K.head(25), width="stretch", hide_index=True,
+                         column_config={c: st.column_config.NumberColumn(format="%+.1f")
+                                        for c in ("Getiri %", "Katkı (puan)")}
+                         | {"Ağırlık %": st.column_config.NumberColumn(format="%.2f"),
+                            "Kazancın payı %": st.column_config.NumberColumn(format="%.1f")})
+    with t2:
+        ser = A["seri"]
+        if ser is not None and len(ser):
+            fig = go.Figure()
+            for col_, clr in (("EMA50 üstü %", "#26a69a"), ("EMA200 üstü %", "#3987e5"),
+                              ("≥%20 düşük %", "#ef5350")):
+                fig.add_trace(go.Scatter(x=ser.index, y=ser[col_], name=col_,
+                                         line=dict(color=clr, width=1.6)))
+            if "Endeks zirveden %" in ser:
+                fig.add_trace(go.Scatter(x=ser.index, y=ser["Endeks zirveden %"],
+                                         name="Endeks zirveden % (sağ)", yaxis="y2",
+                                         line=dict(color="#c98500", width=1.4, dash="dot")))
+            fig.update_layout(height=360, yaxis=dict(title="% üye", range=[0, 100]),
+                              yaxis2=dict(title="Endeks zirveden %", overlaying="y",
+                                          side="right", showgrid=False),
+                              legend=dict(orientation="h", y=1.1), **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            st.caption("Boğa-ayı piyasası: sarı çizgi (endeks) sıfıra yakınken mavi (EMA200 üstü "
+                       "üye) %50'nin altında ve kırmızı (zirvenin ≥%20 altı) yüksek. Genişleme "
+                       "sinyali: yeşil çizginin (EMA50 üstü) 10 günde ≥ 10 puan sıçraması.")
+    with t3:
+        st.dataframe(A["sektor"], width="stretch", hide_index=True,
+                     column_config={c: st.column_config.NumberColumn(format="%.0f%%")
+                                    for c in ("≥%10 düşük", "≥%20 düşük", "EMA200 üstü %")}
+                     | {"Medyan düşüş %": st.column_config.NumberColumn(format="%+.0f%%")})
+        st.caption("Sektör sektör üyelerin zirveden düşüşü (2 yıllık zirve) ve trend durumu. "
+                   "Düşüşü derin ama temeli sağlam sektörler genişleme gelince ilk adaylardır.")
+    with t4:
+        V = A["deger"]
+        if V.empty:
+            st.info("Temel veri yok (akşam hesabında F/K çekilir).")
+        else:
+            st.dataframe(V, width="stretch", hide_index=True,
+                         column_config={"İleri F/K": st.column_config.NumberColumn(format="%.1f"),
+                                        "Endekse göre": st.column_config.NumberColumn(
+                                            format="%.2f×", help="1'in altı: endeksten ucuz")})
+            st.markdown("##### 🧮 Ucuzlayan liderler — fiyat yükselirken F/K düşenler")
+            st.caption("İleri F/K ≤ 0.8 × geçmiş F/K (kazanç fiyattan hızlı büyüyor) ve başlangıçtan "
+                       "bu yana artıda. Makaledeki 'Nvidia +%21 yükselirken F/K −%46' durumu.")
+            st.dataframe(A["ucuzlayan"], width="stretch", hide_index=True,
+                         column_config={"Getiri %": st.column_config.NumberColumn(format="%+.0f%%"),
+                                        "F/K sıkışması": st.column_config.NumberColumn(
+                                            format="%.2f"),
+                                        "İleri F/K": st.column_config.NumberColumn(format="%.1f"),
+                                        "Geçmiş F/K": st.column_config.NumberColumn(format="%.1f"),
+                                        "Piyasa Değ. ($B)": st.column_config.NumberColumn(
+                                            format="%.0f")})
+    st.button("🦅 Genişleme adaylarını ve ucuzlayan liderleri Hisse Avcısı'nda göster",
+              on_click=_go, args=(PAGES[3],), kwargs={"sk_preset_go": "genis"},
+              key="gn_go")
+
+
+# ==========================================================================
 # DURUM
 # ==========================================================================
 def _init_state() -> None:
@@ -1037,7 +1461,8 @@ def load_flows(nonce: str):
 def load_markets(nonce: str):
     if _use_snap(nonce):
         s = snap.load("markets")
-        if s is not None:
+        # eski akşam hesabında EMA şeridi yok → canlı hesapla
+        if s is not None and any("ema" in v for v in (s[0] or {}).values()):
             return s
     return cmp.markets()
 
@@ -1559,6 +1984,52 @@ elif PAGE == PAGES[1]:
                     b2.button("🎯 Temalar", key=f"mk_t_{name}", width="stretch",
                               on_click=_go, args=(PAGES[2],), kwargs={"ta_index": name})
 
+    with st.expander("🫧 Piyasanın iç yapısı — kazancı kim taşıyor, üyelerin kaçı ayıda, "
+                     "değerleme (boğa-ayı analizi)", expanded=True):
+        show_genislik()
+
+    _er = [row for nm in names for row in (MK.get(nm, {}).get("ema") or {}).values()]
+    with st.expander("📐 EMA dizilim analizi — bütün varlıklar · günlük / haftalık / aylık "
+                     "(EMA 10·21·50·100·200)", expanded=True):
+        if not _er:
+            st.info("EMA şeridi akşam hesabının yeni sürümüyle gelir; 🔄 Yenile canlı hesaplar.")
+        else:
+            ER = pd.DataFrame(_er)
+            MXE = ER.pivot_table(index="Varlık", columns="Zaman", values="Faz",
+                                 aggfunc="first").reindex(index=[n for n in names
+                                                                 if n in set(ER["Varlık"])])
+            MXE = MXE[[c for c in tfv.TF_RULE if c in MXE.columns]].reset_index()
+            g_ = ER[ER["Zaman"] == "Günlük"].set_index("Varlık")
+            MXE["Günlük uzama (ATR)"] = MXE["Varlık"].map(g_["Uzama (ATR)"])
+            MXE["Günlük yelpaze"] = MXE["Varlık"].map(g_["Yelpaze"])
+            MXE["Son kesişim (G)"] = MXE["Varlık"].map(g_["Kesişim"])
+            st.dataframe(MXE, width="stretch", hide_index=True,
+                         column_config={"Günlük uzama (ATR)": st.column_config.NumberColumn(
+                             format="%+.1f", help="Fiyatın EMA21'e uzaklığı (ATR). > +3 aşırı "
+                                                  "uzama (kovalamayın), < −3 aşırı satım.")})
+            st.caption("Fazlar: 🚀 tam boğa (fiyat ve 5 EMA sıralı, hepsi yükseliyor) · 🟢 sağlıklı "
+                       "geri çekilme (uzunlar yükseliyor, fiyat EMA50 üstünde) · 🟠 derin düzeltme "
+                       "(50>200 ama fiyat EMA50 altında) · ⚠️ trend kırılıyor (fiyat EMA200 altında) · "
+                       "🟡 yorulma (kısa EMA'lar aşağı döndü) · 🌱 erken dönüş · 🔴 ayı tepkisi · "
+                       "🔻 tam ayı · ⚪ sıkışma (şerit < 1.5 ATR, yön kararı yakın).")
+            tf_e = st.radio("Ayrıntı", list(tfv.TF_RULE), horizontal=True, key="mk_ema_tf")
+            ED = ER[ER["Zaman"] == tf_e].drop(columns=["Zaman"])
+            st.dataframe(ED, width="stretch", hide_index=True,
+                         column_config={
+                             "Dizilim": st.column_config.NumberColumn(
+                                 format="%+.2f", help="+1 = fiyat ve bütün EMA'lar boğa sırasında, "
+                                                      "−1 = tamamen ters sıra"),
+                             "Geçmiş medyan %": st.column_config.NumberColumn(
+                                 format="%+.1f%%", help="Bu varlıkta AYNI fazdan sonra (G 20 gün, "
+                                                        "H 8 hafta, A 3 ay) medyan getiri"),
+                             "Geçmiş pozitif %": st.column_config.NumberColumn(format="%.0f%%"),
+                             "Taban medyan %": st.column_config.NumberColumn(
+                                 format="%+.1f%%", help="Bütün barların medyan ileri getirisi "
+                                                        "(kıyas)")})
+            st.caption("Geçmiş sütunları örneklem içi ve tek varlıktır (en az 15 bar varsa "
+                       "gösterilir) — fazın bu varlıkta tarihsel olarak ne getirdiğine dair bağlam, "
+                       "kesinlik değil.")
+
     sel = st.session_state.mk_sel if st.session_state.mk_sel in mkt.MARKETS else "S&P 500"
     st.markdown(f"#### 🔍 {sel} — günlük · haftalık · aylık")
     if sel in mkt.ROW_NOTE:
@@ -1676,6 +2147,46 @@ elif PAGE == PAGES[2]:
                              "1H %": st.column_config.NumberColumn(format="%+.1f%%"),
                              "1A %": st.column_config.NumberColumn(format="%+.1f%%"),
                              "3A %": st.column_config.NumberColumn(format="%+.1f%%")})
+        with st.expander(f"🛒 Alım seçkisi — {ta_index} temalarında alınabilir hisseler "
+                         f"({vade} vade)", expanded=True):
+            st.caption("Her tema için Fib ana bacağı, EMA fazı, analist hedefi ve örgüye göre "
+                       "en öncelikli adaylar. Ayrıntı (giriş · stop · kâr al · fair value) "
+                       "Hisse Avcısı'ndaki 🛒 Alım seçkisinde.")
+            with st.spinner("Tema seçkisi hazırlanıyor…"):
+                BT = secki_board(list(TT["Tema"]), vade, index_ok, 10.0, T3)
+            SM = pks.theme_summary(BT, 3)
+            if SM.empty:
+                st.info("Seçki verisi yok (akşam hesabı çalışınca dolar).")
+            else:
+                SM["Para"] = SM["Tema"].map(dict(zip(TT["Tema"], TT["Para"])))
+                SM["_o"] = SM["Tema"].map(dict(zip(TT["Tema"], TT["_o"])))
+                SM = SM.sort_values(["_o", "_s"], ascending=[True, False])
+                st.dataframe(SM[["Tema", "Para", "✅ Bölgede", "🟡 Limit / teyit", "⏳ Bekle", "⛔ İzle",
+                                 "En iyi adaylar"]], width="stretch", hide_index=True,
+                             column_config={"En iyi adaylar": st.column_config.TextColumn(
+                                 width="large", help="Hisse (karar, öncelik 0–100)")})
+                st.caption("Tema 'para çıkıyor' iken bölgedeki hisseler de 🟡'ye çekilir (uzun vade "
+                           "hariç). Endeks uygun değilse ✅ verilmez.")
+            TBR = brd.theme_breadth(BT, (BT.attrs.get("mkt") or {}).get("endeks_fk", np.nan))
+            if not TBR.empty:
+                st.markdown("##### 🫧 Temaların iç yapısı — kim taşıyor, kaçı ayıda, ne kadar pahalı")
+                TBR["_o"] = TBR["Tema"].map(dict(zip(TT["Tema"], TT["_o"])))
+                st.dataframe(TBR.sort_values("_o").drop(columns=["_o"]), width="stretch",
+                             hide_index=True, column_config={
+                                 "60G tema %": st.column_config.NumberColumn(format="%+.1f"),
+                                 "İlk 3'ün payı %": st.column_config.NumberColumn(
+                                     format="%.0f%%", help="60 günlük tema kazancının ilk 3 "
+                                                           "hisseden gelen payı"),
+                                 "≥%20 düşük %": st.column_config.NumberColumn(format="%.0f%%"),
+                                 "EMA50 üstü %": st.column_config.NumberColumn(format="%.0f%%"),
+                                 "EMA200 üstü %": st.column_config.NumberColumn(format="%.0f%%"),
+                                 "İleri F/K": st.column_config.NumberColumn(format="%.1f"),
+                                 "Endekse göre F/K": st.column_config.NumberColumn(
+                                     format="%.2f×", help="1'in altı: S&P 500'den ucuz")})
+                st.caption("Dar liderlik: kazancın ≥ %70'i ilk 3 hissede ve üyelerin ≥ %40'ı zirvenin "
+                           "%20+ altında — tema endeksi iyi görünse de çoğu hisse geride. Genişleme: "
+                           "EMA50 üstü oranı EMA200 üstü oranını ≥ 15 puan geçti. Son iki sütun "
+                           "temadaki 🌊 genişleme adayı ve 🧮 ucuzlayan lider sayısı.")
         opts3 = good3 + [t for t in TT["Tema"] if t not in good3]
         st.session_state.setdefault("ta_tema", opts3[0])
         if st.session_state.ta_tema not in opts3:
@@ -1710,6 +2221,12 @@ elif PAGE == PAGES[2]:
                   key="ta_go_stock", width="stretch")
         if tema not in good3:
             st.warning(f"{tema} temasından para çıkıyor — yeni alım için uygun değil.")
+        _bt = BT[BT["Tema"] == tema] if not BT.empty else BT
+        if not _bt.empty:
+            st.markdown(f"##### 🛒 {tema} — en öncelikli 5 hisse")
+            st.dataframe(pks.display(_bt.sort_values(["_o", "Öncelik"], ascending=[True, False])
+                                     .head(5)).drop(columns=["Tema"]),
+                         width="stretch", hide_index=True, column_config=SECKI_COLCFG)
         if etf:
             show_triptych(etf, f"{tema} ({etf})", f"ta_{_fname(etf)}")
         with st.expander(f"📰 {tema} haberleri"):
@@ -1720,8 +2237,19 @@ elif PAGE == PAGES[2]:
 # ======================================================================= 4
 elif PAGE == PAGES[3]:
     st.markdown("### 🦅 Hisse Avcısı")
+    vade = vade_picker("vade_ha")
+    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel, vade)
+    MK, _ = load_markets(st.session_state.nonce_funnel)
+    DEC_ = load_decision(st.session_state.nonce_funnel, ROT_)
+    MV = market_verdicts(MK, ROT_, V_, DEC_["vix"]["skor"])
+    idx_name = st.session_state.ta_index
+    index_ok = MV.get(idx_name, {}).get("etiket", "").startswith(("✅", "🟡"))
+    with st.expander("🛒 Alım seçkisi — temalara ayrılmış: sepet · giriş · stop · kâr al · "
+                     "fair value · vade", expanded=True):
+        show_secki(vade, index_ok, idx_name, T3, float(st.session_state.get("ha_liq", 10.0)))
     with st.expander("🧬 Örgü tarayıcı — bugün büyük hareket öncesi örgüye en çok benzeyen hisseler"):
         show_orgu_scanner()
+    st.markdown("#### 🔎 Tek tema — ayrıntılı plan")
     all_themes = [t for t in uni.THEME_TRACKER if theme_holdings(t)]
     if st.session_state.ha_tema not in all_themes and st.session_state.ha_sym:
         st.session_state.ha_tema = next((t for t in all_themes
@@ -1755,15 +2283,8 @@ elif PAGE == PAGES[3]:
         bump("nonce_scan")
         bump("nonce_chart")
         st.rerun()
-    vade = vade_picker("vade_ha")
-    T3, _, _, IDX3, _ = load_theme_rotation(st.session_state.nonce_funnel, vade)
     trow = T3[T3["Tema"] == tema] if not T3.empty else pd.DataFrame()
     tema_ok = not trow.empty and trow.iloc[0]["_q"] in ("lider", "iyilesen")
-    MK, _ = load_markets(st.session_state.nonce_funnel)
-    DEC_ = load_decision(st.session_state.nonce_funnel, ROT_)
-    MV = market_verdicts(MK, ROT_, V_, DEC_["vix"]["skor"])
-    idx_name = st.session_state.ta_index
-    index_ok = MV.get(idx_name, {}).get("etiket", "").startswith(("✅", "🟡"))
     st.caption(f"Endeks ({idx_name}): {MV.get(idx_name, {}).get('etiket', '—')} · "
                f"Tema ({vade} vade): {trow.iloc[0]['Bölge'] if not trow.empty else '—'}")
     with st.spinner(f"{tema} hisseleri için {vade} vade plan hazırlanıyor…"):
