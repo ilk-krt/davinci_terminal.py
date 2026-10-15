@@ -1,122 +1,122 @@
 {
  "short hacim (FINRA)": {
   "ok": true,
-  "ts": "2026-10-15T01:41:08+00:00",
+  "ts": "2026-10-15T15:40:33+00:00",
   "sure_sn": 0.0,
   "not": "30 gün, son 20261014"
  },
  "kripto (CoinGecko)": {
   "ok": true,
-  "ts": "2026-10-15T01:41:26+00:00",
+  "ts": "2026-10-15T15:40:58+00:00",
   "sure_sn": 0.0,
   "not": ""
  },
  "likidite (FRED)": {
   "ok": true,
-  "ts": "2026-10-15T01:49:05+00:00",
+  "ts": "2026-10-15T15:48:37+00:00",
   "sure_sn": 0.0,
   "not": "3075 gün, eksik seri: yok"
  },
  "macro_frames": {
   "ok": true,
-  "ts": "2026-10-15T01:49:07+00:00",
-  "sure_sn": 1.1,
+  "ts": "2026-10-15T15:48:39+00:00",
+  "sure_sn": 1.4,
   "not": "18 seri, 0 çekilemedi"
  },
  "rotation": {
   "ok": true,
-  "ts": "2026-10-15T01:49:08+00:00",
-  "sure_sn": 1.8,
+  "ts": "2026-10-15T15:48:41+00:00",
+  "sure_sn": 1.6,
   "not": "23 gösterge, çekilemeyen: 0"
  },
  "decision": {
   "ok": true,
-  "ts": "2026-10-15T01:49:12+00:00",
-  "sure_sn": 3.9,
+  "ts": "2026-10-15T15:48:43+00:00",
+  "sure_sn": 2.5,
   "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
  },
  "theme_rotation": {
   "ok": true,
-  "ts": "2026-10-15T01:49:33+00:00",
-  "sure_sn": 5.5,
+  "ts": "2026-10-15T15:48:57+00:00",
+  "sure_sn": 6.1,
   "not": "52 tema, 92 ETF"
  },
  "theme_perf": {
   "ok": true,
-  "ts": "2026-10-15T01:49:45+00:00",
-  "sure_sn": 2.9,
+  "ts": "2026-10-15T15:49:08+00:00",
+  "sure_sn": 3.5,
   "not": "52 tema"
  },
  "scan_1d": {
   "ok": true,
-  "ts": "2026-10-15T01:52:45+00:00",
-  "sure_sn": 179.4,
+  "ts": "2026-10-15T15:51:29+00:00",
+  "sure_sn": 140.6,
   "not": "883 sembol"
  },
  "scan_1wk": {
   "ok": true,
-  "ts": "2026-10-15T01:54:51+00:00",
-  "sure_sn": 126.2,
+  "ts": "2026-10-15T15:52:57+00:00",
+  "sure_sn": 88.1,
   "not": "883 sembol"
  },
  "earnings": {
   "ok": true,
-  "ts": "2026-10-15T01:58:55+00:00",
-  "sure_sn": 91.8,
-  "not": "432/455 hisse"
+  "ts": "2026-10-15T15:59:53+00:00",
+  "sure_sn": 234.8,
+  "not": "395/455 hisse"
  },
  "plans": {
   "ok": true,
-  "ts": "2026-10-15T01:55:38+00:00",
-  "sure_sn": 46.7,
-  "not": "661/770 hisse"
+  "ts": "2026-10-15T15:53:39+00:00",
+  "sure_sn": 42.1,
+  "not": "675/770 hisse"
  },
  "flows": {
   "ok": true,
-  "ts": "2026-10-15T01:49:13+00:00",
+  "ts": "2026-10-15T15:48:44+00:00",
   "sure_sn": 0.6,
   "not": "12 varlık × 3 dönem"
  },
  "markets": {
   "ok": true,
-  "ts": "2026-10-15T01:49:27+00:00",
-  "sure_sn": 14.2,
+  "ts": "2026-10-15T15:48:51+00:00",
+  "sure_sn": 7.0,
   "not": "12 varlık · çekilemeyen: 0"
  },
  "gold": {
   "ok": true,
-  "ts": "2026-10-15T01:49:28+00:00",
-  "sure_sn": 0.4,
+  "ts": "2026-10-15T15:48:51+00:00",
+  "sure_sn": 0.6,
   "not": "11 gösterge"
  },
  "hype": {
-  "ok": false,
-  "ts": "2026-10-15T01:57:17+00:00",
-  "sure_sn": 0.8,
-  "not": "ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all()."
+  "ok": true,
+  "ts": "2026-10-15T15:55:54+00:00",
+  "sure_sn": 54.8,
+  "not": "225 sosyal sembol · 90 temel veri"
  },
  "plans_hype": {
   "ok": true,
-  "ts": "2026-10-15T01:57:23+00:00",
-  "sure_sn": 5.3,
-  "not": "91 hype/biotech hissesi"
+  "ts": "2026-10-15T15:55:59+00:00",
+  "sure_sn": 5.1,
+  "not": "90 hype/biotech hissesi"
  },
  "theme_rotation_kisa": {
   "ok": true,
-  "ts": "2026-10-15T01:49:39+00:00",
-  "sure_sn": 5.8,
+  "ts": "2026-10-15T15:49:01+00:00",
+  "sure_sn": 3.9,
   "not": "kısa vade · 52 tema"
  },
  "theme_rotation_uzun": {
   "ok": true,
-  "ts": "2026-10-15T01:49:43+00:00",
-  "sure_sn": 3.7,
+  "ts": "2026-10-15T15:49:05+00:00",
+  "sure_sn": 3.6,
   "not": "uzun vade · 52 tema"
  },
  "orgu": {
   "ok": true,
-  "ts": "2026-10-15T01:57:17+00:00",
-  "sure_sn": 99.0,
-  "not": "738 hisse · şablon var · ölü kedi 35"
+  "ts": "2026-10-15T15:54:59+00:00",
+  "sure_sn": 79.6,
+  "not": "738 hisse · şablon var · ölü kedi 37"
  }
 }
