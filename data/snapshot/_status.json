@@ -1,122 +1,134 @@
 {
  "short hacim (FINRA)": {
   "ok": true,
-  "ts": "2026-10-15T15:40:33+00:00",
+  "ts": "2026-10-15T22:33:30+00:00",
   "sure_sn": 0.0,
-  "not": "30 gün, son 20261014"
+  "not": "30 gün, son 20261015"
  },
  "kripto (CoinGecko)": {
   "ok": true,
-  "ts": "2026-10-15T15:40:58+00:00",
+  "ts": "2026-10-15T22:33:53+00:00",
   "sure_sn": 0.0,
   "not": ""
  },
  "likidite (FRED)": {
   "ok": true,
-  "ts": "2026-10-15T15:48:37+00:00",
+  "ts": "2026-10-15T22:41:32+00:00",
   "sure_sn": 0.0,
-  "not": "3075 gün, eksik seri: yok"
+  "not": "3076 gün, eksik seri: yok"
  },
  "macro_frames": {
   "ok": true,
-  "ts": "2026-10-15T15:48:39+00:00",
-  "sure_sn": 1.4,
+  "ts": "2026-10-15T22:41:34+00:00",
+  "sure_sn": 1.6,
   "not": "18 seri, 0 çekilemedi"
  },
  "rotation": {
   "ok": true,
-  "ts": "2026-10-15T15:48:41+00:00",
-  "sure_sn": 1.6,
+  "ts": "2026-10-15T22:41:36+00:00",
+  "sure_sn": 1.8,
   "not": "23 gösterge, çekilemeyen: 0"
  },
  "decision": {
   "ok": true,
-  "ts": "2026-10-15T15:48:43+00:00",
-  "sure_sn": 2.5,
+  "ts": "2026-10-15T22:41:39+00:00",
+  "sure_sn": 3.1,
   "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
  },
  "theme_rotation": {
   "ok": true,
-  "ts": "2026-10-15T15:48:57+00:00",
-  "sure_sn": 6.1,
+  "ts": "2026-10-15T22:41:57+00:00",
+  "sure_sn": 6.6,
   "not": "52 tema, 92 ETF"
  },
  "theme_perf": {
   "ok": true,
-  "ts": "2026-10-15T15:49:08+00:00",
-  "sure_sn": 3.5,
+  "ts": "2026-10-15T22:42:09+00:00",
+  "sure_sn": 3.7,
   "not": "52 tema"
  },
  "scan_1d": {
   "ok": true,
-  "ts": "2026-10-15T15:51:29+00:00",
-  "sure_sn": 140.6,
+  "ts": "2026-10-15T22:44:51+00:00",
+  "sure_sn": 162.6,
   "not": "883 sembol"
  },
  "scan_1wk": {
   "ok": true,
-  "ts": "2026-10-15T15:52:57+00:00",
-  "sure_sn": 88.1,
+  "ts": "2026-10-15T22:46:27+00:00",
+  "sure_sn": 96.1,
   "not": "883 sembol"
  },
  "earnings": {
-  "ok": true,
-  "ts": "2026-10-15T15:59:53+00:00",
-  "sure_sn": 234.8,
-  "not": "395/455 hisse"
+  "ok": false,
+  "ts": "2026-10-15T23:05:39+00:00",
+  "sure_sn": 781.8,
+  "not": "RuntimeError: Yahoo sınırladı: 222/455 hisse"
  },
  "plans": {
   "ok": true,
-  "ts": "2026-10-15T15:53:39+00:00",
-  "sure_sn": 42.1,
-  "not": "675/770 hisse"
+  "ts": "2026-10-15T22:47:15+00:00",
+  "sure_sn": 47.9,
+  "not": "679/770 hisse"
  },
  "flows": {
   "ok": true,
-  "ts": "2026-10-15T15:48:44+00:00",
-  "sure_sn": 0.6,
+  "ts": "2026-10-15T22:41:40+00:00",
+  "sure_sn": 0.7,
   "not": "12 varlık × 3 dönem"
  },
  "markets": {
   "ok": true,
-  "ts": "2026-10-15T15:48:51+00:00",
-  "sure_sn": 7.0,
+  "ts": "2026-10-15T22:41:50+00:00",
+  "sure_sn": 9.7,
   "not": "12 varlık · çekilemeyen: 0"
  },
  "gold": {
   "ok": true,
-  "ts": "2026-10-15T15:48:51+00:00",
+  "ts": "2026-10-15T22:41:50+00:00",
   "sure_sn": 0.6,
   "not": "11 gösterge"
  },
  "hype": {
   "ok": true,
-  "ts": "2026-10-15T15:55:54+00:00",
-  "sure_sn": 54.8,
-  "not": "225 sosyal sembol · 90 temel veri"
+  "ts": "2026-10-15T22:52:31+00:00",
+  "sure_sn": 238.3,
+  "not": "233 sosyal sembol · 91 temel veri"
  },
  "plans_hype": {
   "ok": true,
-  "ts": "2026-10-15T15:55:59+00:00",
-  "sure_sn": 5.1,
-  "not": "90 hype/biotech hissesi"
+  "ts": "2026-10-15T22:52:37+00:00",
+  "sure_sn": 6.0,
+  "not": "91 hype/biotech hissesi"
  },
  "theme_rotation_kisa": {
   "ok": true,
-  "ts": "2026-10-15T15:49:01+00:00",
-  "sure_sn": 3.9,
+  "ts": "2026-10-15T22:42:01+00:00",
+  "sure_sn": 4.1,
   "not": "kısa vade · 52 tema"
  },
  "theme_rotation_uzun": {
   "ok": true,
-  "ts": "2026-10-15T15:49:05+00:00",
-  "sure_sn": 3.6,
+  "ts": "2026-10-15T22:42:05+00:00",
+  "sure_sn": 4.2,
   "not": "uzun vade · 52 tema"
  },
  "orgu": {
   "ok": true,
-  "ts": "2026-10-15T15:54:59+00:00",
-  "sure_sn": 79.6,
-  "not": "738 hisse · şablon var · ölü kedi 37"
+  "ts": "2026-10-15T22:48:33+00:00",
+  "sure_sn": 77.7,
+  "not": "738 hisse · şablon var · ölü kedi 38"
+ },
+ "genislik": {
+  "ok": false,
+  "ts": "2026-10-15T23:05:39+00:00",
+  "sure_sn": 0.0,
+  "not": "AttributeError: module 'apex.compute' has no attribute 'genislik'"
+ },
+ "secki": {
+  "ok": false,
+  "ts": "2026-10-15T23:05:39+00:00",
+  "sure_sn": 0.0,
+  "not": "AttributeError: module 'apex.compute' has no attribute 'picks'"
  }
 }
