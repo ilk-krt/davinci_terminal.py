@@ -164,6 +164,25 @@ def main(only: list[str]) -> int:
             return e, f"{ok}/{len(stocks)} hisse"
         step("earnings", f)
 
+    if want("genislik") or want("karar"):
+        def f():
+            G = cmp.genislik(float(os.environ.get("GENISLIK_BUDGET_S", "600")))
+            note = " · ".join(f"{k}: {v['closes'].shape[1]} hisse ({v['kaynak']}), F/K "
+                              f"{int(v['fund']['İleri F/K'].notna().sum())}"
+                              for k, v in G.items())
+            return G, note
+        step("genislik", f)
+
+    if want("secki") or want("plan") or want("tarama"):
+        def f():
+            o = snap.load("orgu", max_age_h=30)
+            S = cmp.picks(cmp.plan_universe(), budget_s=float(os.environ.get(
+                "SECKI_BUDGET_S", "900")), orgu=o)
+            n_f = int(S["Fair value"].notna().sum()) if len(S) else 0
+            n_k = int((S["_tm"] == "kapida").sum()) if len(S) else 0
+            return S, f"{len(S)} hisse · analist hedefi {n_f} · Fib kapısında {n_k}"
+        step("secki", f)
+
     st = snap.read_status()
     bad = [k for k, v in st.items() if not v.get("ok")]
     print("\nBaşarısız adımlar:", ", ".join(bad) if bad else "yok")
