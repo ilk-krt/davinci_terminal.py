@@ -134,25 +134,72 @@ def quality(fund: dict | None) -> tuple[int, int, bool, str, str]:
 
 
 # ------------------------------------------------------------------ tek hisse
-def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
-                  orgu: dict | None = None) -> dict[str, Any] | None:
-    """Temadan bağımsız ölçümler (akşam hesabında bir kez)."""
+def _adx_series(d: pd.DataFrame, n: int = 14) -> pd.Series:
+    h, l, c = d["High"], d["Low"], d["Close"]
+    up, dn = h.diff(), -l.diff()
+    pdm = np.where((up > dn) & (up > 0), up, 0.0)
+    mdm = np.where((dn > up) & (dn > 0), dn, 0.0)
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+
+    def rma(x):
+        return pd.Series(x, index=d.index).ewm(alpha=1 / n, adjust=False).mean()
+    a = rma(tr).replace(0, np.nan)
+    pdi, mdi = 100 * rma(pdm) / a, 100 * rma(mdm) / a
+    dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, np.nan)
+    return rma(dx.fillna(0))
+
+
+def precompute(d: pd.DataFrame) -> dict[str, Any] | None:
+    """Geçmişe dönük seçki için: nedensel serileri BİR KEZ hesapla (her tarihte yalnız o
+    güne kadarki değerler kullanılır). stock_metrics(pre=..., i=...) ile kullanılır."""
     if d is None or len(d) < 120:
         return None
     d = d[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(subset=["Close"])
+    d = d.assign(Volume=d["Volume"].fillna(0.0))
+    from apex import engine as eng
+    try:
+        core, omni = eng.apex_core(d), eng.apex_omni(d)
+    except Exception as exc:                     # noqa: BLE001
+        _log.info("precompute motor: %s", exc)
+        core = omni = None
+    return {"d": d, "atr": pfib.atr_rma(d, 14), "F": ems.frame(d), "adx": _adx_series(d),
+            "core": core, "omni": omni}
+
+
+def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
+                  orgu: dict | None = None, pre: dict | None = None,
+                  i: int | None = None) -> dict[str, Any] | None:
+    """Temadan bağımsız ölçümler (akşam hesabında bir kez). pre/i verilirse i. bardaki
+    durum (geçmişe dönük seçki) — yalnız o güne kadarki veri kullanılır."""
+    if pre is not None:
+        i = len(pre["d"]) - 1 if i is None else int(i)
+        if i < 119:
+            return None
+        d = pre["d"].iloc[:i + 1]
+        F = pre["F"].iloc[:i + 1]
+        atr_s = pre["atr"].iloc[:i + 1]
+        adx_ = float(pre["adx"].iloc[i])
+        core_ = pre["core"].iloc[:i + 1] if pre.get("core") is not None else None
+        omni_ = pre["omni"].iloc[:i + 1] if pre.get("omni") is not None else None
+    else:
+        if d is None or len(d) < 120:
+            return None
+        d = d[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(subset=["Close"])
+        F = ems.frame(d)
+        atr_s = pfib.atr_rma(d, 14)
+        adx_ = _adx(d)
+        core_ = omni_ = None
     fund, orgu = fund or {}, orgu or {}
     px = float(d["Close"].iloc[-1])
-    atr = float(pfib.atr_rma(d, 14).iloc[-1])
+    atr = float(atr_s.iloc[-1])
     hi52 = float(d["High"].tail(252).max())
     lo52 = float(d["Low"].tail(252).min())
     from_hi = (px / hi52 - 1) * 100 if hi52 > 0 else np.nan
     liq = float((d["Close"] * d["Volume"]).tail(20).mean() / 1e6)
-    F = ems.frame(d)
     faz = str(F["faz"].iloc[-1]) if "faz" in F else "karisik"
     e200 = float(F["e200"].iloc[-1]) if "e200" in F else np.nan
     ust200 = bool(np.isfinite(e200) and px > e200)
     ust50 = bool("e50" in F and px > float(F["e50"].iloc[-1]))
-    adx_ = _adx(d)
     mf = pfib.main_fib(d.tail(420))
     lv = mf.get("levels", {}) if mf.get("ok") else {}
     r = float(mf.get("r", np.nan)) if mf.get("ok") else np.nan
@@ -221,9 +268,12 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
     # ---- KISA VADE: balina girişi (APEX CORE v4 + V670 OMNI)
     wh = {"ev": [], "neg": [], "whale": np.nan, "dwhale": np.nan}
     try:
-        from apex import engine as eng
-        dd = d.assign(Volume=d["Volume"].fillna(0.0))
-        core, omni = eng.apex_core(dd), eng.apex_omni(dd)
+        if core_ is None or omni_ is None:
+            from apex import engine as eng
+            dd = d.assign(Volume=d["Volume"].fillna(0.0))
+            core, omni = eng.apex_core(dd), eng.apex_omni(dd)
+        else:
+            core, omni = core_, omni_
 
         def ago(x: pd.Series, n: int) -> int | None:
             v = x.fillna(False).astype(bool).to_numpy()[-n:]
@@ -619,3 +669,28 @@ def theme_summary(B: pd.DataFrame, top: int = 3) -> pd.DataFrame:
                      "En iyi adaylar": best,
                      "_s": float(act["Öncelik"].head(top).mean()) if len(act) else 0.0})
     return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------------ geçmiş öneri özeti
+def outcome_summary(df: pd.DataFrame, by: list[str] | str, base: pd.DataFrame | None = None) -> list[dict]:
+    if df.empty:
+        return []
+    out = []
+    for k, g in df.groupby(by, sort=False):
+        k = k if isinstance(k, tuple) else (k,)
+        filled = g[g["Girişe geldi"] == True]                        # noqa: E712
+        closed = filled[filled["Sonuç"].isin(["✅ hedef 1", "❌ stop", "⏳ süre doldu (+)",
+                                              "⏳ süre doldu (−)"])]
+        ex = g["SPY'ye göre %"].dropna()
+        rec = {**{b: v for b, v in zip([by] if isinstance(by, str) else by, k)},
+               "Öneri": len(g), "Girişe geldi %": len(filled) / len(g) * 100 if len(g) else np.nan,
+               "Hedef 1 isabeti %": float((closed["Sonuç"] == "✅ hedef 1").mean() * 100)
+               if len(closed) else np.nan,
+               "Stop %": float((closed["Sonuç"] == "❌ stop").mean() * 100) if len(closed) else np.nan,
+               "Artıda biten %": float((closed["Sonuç R"] > 0).mean() * 100) if len(closed) else np.nan,
+               "Ort. R": float(closed["Sonuç R"].mean()) if len(closed) else np.nan,
+               "SPY'ye göre ort %": float(ex.mean()) if len(ex) else np.nan,
+               "SPY'yi geçen %": float((ex > 0).mean() * 100) if len(ex) else np.nan,
+               "Kapanan": len(closed)}
+        out.append(rec)
+    return out
