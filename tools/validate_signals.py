@@ -11,6 +11,8 @@ ileriki 5 / 20 / 60 işlem gününde ne olduğuna bakılır).
   E) 🐋 Balina & OMNI: APEX CORE v4 (Golden Star, PRO↗RETAIL, Stealth, ACC/DIST, seesaw…) ve
                       APEX V670 (Diamond, Afterburner, erken uyarı, süpürme, boğa/ayı skoru)
                       olaylarından sonra 5/10/20 günde SPY'ye göre getiri — ~450 hisse, ~5 yıl
+  S) 📜 Geçmiş öneriler (bolum=secki): Tema Avcısı ve Alım seçkisi her hafta ne önerirdi,
+                      gerçekte ne oldu — ayrıntı tools/secki_gecmis.py
   D) 🦅 Hisse Avcısı: Sinyal, swing skoru, sınıf (🎯/🚀/⛔…), işlem planı kararı (✅ AL /
                       🟡 LİMİT / ⛔ UZAK DUR) ve plan seviyeleri: hedef mi önce geldi, stop mu?
 
@@ -561,6 +563,13 @@ def main() -> int:
     ap.add_argument("--hisse-limit", type=int, default=0, help="test için ilk N hisse")
     a = ap.parse_args()
     parts = [x.strip() for x in a.bolum.split(",") if x.strip()]
+    if "secki" in parts:                         # 📜 geçmiş öneriler: ayrı klasöre yazar
+        parts.remove("secki")
+        sys.path.insert(0, str(ROOT / "tools"))
+        import secki_gecmis                      # noqa: E402
+        secki_gecmis.main(a.ay, 5, 5, a.hisse_limit)
+        if not parts:
+            return 0
     meta = {"tarih": pd.Timestamp.now().isoformat(timespec="minutes"), "ay": a.ay,
             "bolumler": parts, "surum": "doğrulama v1", "hata": {}}
     R: dict[str, pd.DataFrame] = {}
