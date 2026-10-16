@@ -965,6 +965,224 @@ def show_genislik() -> None:
 
 
 # ==========================================================================
+# 📜 GEÇMİŞ ÖNERİLER — Tema / Hisse Avcısı geçmişte ne önerdi, ne oldu (tools/secki_gecmis.py)
+# ==========================================================================
+SG_DIR = Path(__file__).resolve().parent / "data" / "validation" / "secki"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_secki_gecmis(_mtime: float) -> dict:
+    out = {}
+    for k in ("oneriler", "tema", "taban"):
+        f = SG_DIR / f"{k}.csv"
+        if f.exists():
+            out[k] = pd.read_csv(f)
+    f = SG_DIR / "ozet.json"
+    out["meta"] = json.loads(f.read_text()) if f.exists() else {}
+    return out
+
+
+def _sg() -> dict:
+    f = SG_DIR / "ozet.json"
+    return load_secki_gecmis(f.stat().st_mtime if f.exists() else 0.0)
+
+
+SG_HOWTO = ("Henüz geçmiş öneri testi yok. GitHub → **Actions → Sinyal doğrulama → Run workflow** "
+            "→ *bolum* kutusuna **secki** yazın (ay: 12). Bitince sonuçlar burada görünür.")
+SG_CAVEAT = ("Her tarihte yalnız o güne kadarki fiyat verisiyle bugünkü kurallar çalıştırıldı "
+             "(walk-forward). Geçmişe taşınamayanlar kullanılmadı: analist hedefi / fair value, F/K, "
+             "temel sağlamlık, sepet, örgü şablon benzerliği, piyasa genişliği → 💰 🏛️ 🧮 💎 🌊 bu "
+             "testte yok. Tema kadroları bugünkü listedir (hayatta kalma yanlılığı). Limit emir: ilk "
+             "5/10/15 günde giriş bölgesine gelmezse 'giriş olmadı'. Aynı gün hem stop hem hedef → stop "
+             "sayıldı. Endeks uygunluğu yaklaşık (SPY EMA şeridi skoru ≥ 0).")
+SG_COLCFG = {
+    "Girişe geldi %": st.column_config.NumberColumn(format="%.0f%%"),
+    "Hedef 1 isabeti %": st.column_config.NumberColumn(
+        format="%.0f%%", help="Girişi olan ve sonuçlanan işlemlerde kâr al 1'e stoptan önce ulaşma"),
+    "Stop %": st.column_config.NumberColumn(format="%.0f%%"),
+    "Artıda biten %": st.column_config.NumberColumn(format="%.0f%%"),
+    "Ort. R": st.column_config.NumberColumn(format="%+.2f", help="Ortalama sonuç (risk birimi)"),
+    "SPY'ye göre ort %": st.column_config.NumberColumn(
+        format="%+.2f", help="Öneri tarihinden H gün sonra (dolsun dolmasın) SPY'ye göre getiri"),
+    "SPY'yi geçen %": st.column_config.NumberColumn(format="%.0f%%"),
+}
+
+
+def show_hisse_gecmis(vade: str) -> None:
+    G = _sg()
+    O = G.get("oneriler")
+    if O is None or O.empty:
+        st.info(SG_HOWTO)
+        return
+    meta = G.get("meta", {})
+    st.caption(f"Test: {meta.get('tarih', '—')} · son {meta.get('ay', '—')} ay, "
+               f"{meta.get('adim', 5)} işlem gününde bir · temada en öncelikli "
+               f"{meta.get('tema_basina', 5)} + genel ilk 10 · değerlendirme süresi: kısa 10, orta 30, "
+               f"uzun 60 işlem günü.")
+    v = st.radio("Vade", ["kısa", "orta", "uzun"], index=["kısa", "orta", "uzun"].index(vade),
+                 horizontal=True, key="sg_v")
+    Ov = O[O["Vade"] == v].copy()
+    Bs = G.get("taban", pd.DataFrame())
+    bs = Bs[Bs["Vade"] == v] if len(Bs) else Bs
+    s0 = pks.outcome_summary(Ov, "Vade")
+    if not s0:
+        st.info("Bu vadede öneri yok.")
+        return
+    s0 = s0[0]
+    k = st.columns(6)
+    k[0].metric("Öneri", f"{s0['Öneri']:,}")
+    k[1].metric("Girişe geldi", f"%{s0['Girişe geldi %']:.0f}")
+    k[2].metric("Hedef 1 isabeti", f"%{s0['Hedef 1 isabeti %']:.0f}",
+                f"stop %{s0['Stop %']:.0f}", delta_color="off")
+    k[3].metric("Ort. R", f"{s0['Ort. R']:+.2f}")
+    gec, ort = s0["SPY'yi geçen %"], s0["SPY'ye göre ort %"]
+    b_gec = bs["Taban SPY'yi geçen %"].mean() if len(bs) else np.nan
+    b_ort = bs["Taban SPY'ye göre %"].mean() if len(bs) else np.nan
+    k[4].metric("SPY'yi geçen", f"%{gec:.0f}",
+                f"taban %{b_gec:.0f}" if np.isfinite(b_gec) else None, delta_color="off",
+                help="Taban: aynı tarihlerde bütün tema hisselerinin SPY'yi geçme oranı.")
+    k[5].metric("SPY'ye göre ort.", f"{ort:+.2f}%",
+                f"taban {b_ort:+.2f}%" if np.isfinite(b_ort) else None, delta_color="off")
+    t1, t2, t3 = st.tabs(["📊 Karar ve sinyale göre", "📅 Aylara göre", "📜 Öneri listesi"])
+    with t1:
+        st.markdown("**Karar türüne göre**")
+        st.dataframe(pd.DataFrame(pks.outcome_summary(Ov, "Karar")).sort_values(
+            "Öneri", ascending=False), width="stretch", hide_index=True, column_config=SG_COLCFG)
+        rows = []
+        for lab, m in (("Genel ilk 10", Ov["Genel ilk 10"].astype(bool)),
+                       ("Diğerleri", ~Ov["Genel ilk 10"].astype(bool)),
+                       ("🚀 momentum", Ov["Kısa sinyal"].astype(str).str.contains("🚀")),
+                       ("🐋 balina", Ov["Kısa sinyal"].astype(str).str.contains("🐋")),
+                       ("🧬 örgü", Ov["Kısa sinyal"].astype(str).str.contains("🧬")),
+                       ("Kısa sinyalsiz", Ov["Kısa sinyal"].astype(str) == "—"),
+                       ("📈 dönüş", Ov["Orta-uzun sinyal"].astype(str).str.contains("📈")),
+                       ("Tema lider", Ov["Para"] == "lider"),
+                       ("Tema iyileşen", Ov["Para"] == "iyilesen"),
+                       ("Tema zayıf / geride", Ov["Para"].isin(["zayif", "geride"]))):
+            g = pks.outcome_summary(Ov[m].assign(_g=lab), "_g")
+            if g:
+                rows.append({"Grup": lab, **{a: b for a, b in g[0].items() if a != "_g"}})
+        st.markdown("**Sinyale ve tema durumuna göre**")
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, column_config=SG_COLCFG)
+        q1, q2 = st.columns(2)
+        Ov["_ob"] = pd.cut(Ov["Öncelik"], [0, 60, 70, 80, 90, 101], right=False,
+                           labels=["< 60", "60–70", "70–80", "80–90", "≥ 90"])
+        q1.markdown("**Öncelik puanına göre** — puan yükseldikçe sonuç iyileşiyor mu?")
+        q1.dataframe(pd.DataFrame(pks.outcome_summary(Ov.dropna(subset=["_ob"]).sort_values("_ob"),
+                                                      "_ob")).rename(columns={"_ob": "Öncelik"}),
+                     hide_index=True, width="stretch", column_config=SG_COLCFG)
+        q2.markdown("**Temaya göre** (en az 10 öneri)")
+        TT_ = pd.DataFrame(pks.outcome_summary(Ov, "Tema"))
+        q2.dataframe(TT_[TT_["Öneri"] >= 10].sort_values("SPY'ye göre ort %", ascending=False),
+                     hide_index=True, width="stretch", column_config=SG_COLCFG)
+    with t2:
+        Ov["Ay"] = pd.to_datetime(Ov["Tarih"]).dt.strftime("%Y-%m")
+        M_ = pd.DataFrame(pks.outcome_summary(Ov.sort_values("Ay"), "Ay"))
+        if len(M_):
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=M_["Ay"], y=M_["SPY'ye göre ort %"], name="SPY'ye göre ort %",
+                                 marker_color=["#26a69a" if x >= 0 else "#ef5350"
+                                               for x in M_["SPY'ye göre ort %"].fillna(0)]))
+            fig.add_trace(go.Scatter(x=M_["Ay"], y=M_["Hedef 1 isabeti %"], name="Hedef 1 isabeti %",
+                                     yaxis="y2", line=dict(color="#3987e5")))
+            if len(bs):
+                bm = bs.assign(Ay=pd.to_datetime(bs["Tarih"]).dt.strftime("%Y-%m")).groupby("Ay")[
+                    "Taban SPY'ye göre %"].mean()
+                fig.add_trace(go.Scatter(x=bm.index, y=bm.values, name="Taban (bütün hisseler)",
+                                         line=dict(color="#7a8394", dash="dot")))
+            fig.update_layout(height=340, yaxis_title="SPY'ye göre %",
+                              yaxis2=dict(title="Hedef isabeti %", overlaying="y", side="right",
+                                          range=[0, 100], showgrid=False),
+                              legend=dict(orientation="h", y=1.12), **CHART_LAYOUT)
+            st.plotly_chart(fig, width="stretch")
+            st.dataframe(M_, hide_index=True, width="stretch", column_config=SG_COLCFG)
+    with t3:
+        f1, f2, f3, f4 = st.columns([1, 2, 1, 1])
+        dts = sorted(Ov["Tarih"].unique(), reverse=True)
+        dsel = f1.selectbox("Tarih", ["Hepsi"] + dts, key="sg_d")
+        tsel = f2.multiselect("Tema", sorted(Ov["Tema"].unique()), key="sg_t")
+        hsel = f3.text_input("Hisse", key="sg_h").strip().upper()
+        only10 = f4.toggle("Yalnız genel ilk 10", False, key="sg_10")
+        L = Ov
+        if dsel != "Hepsi":
+            L = L[L["Tarih"] == dsel]
+        if tsel:
+            L = L[L["Tema"].isin(tsel)]
+        if hsel:
+            L = L[L["Hisse"] == hsel]
+        if only10:
+            L = L[L["Genel ilk 10"].astype(bool)]
+        L = L.sort_values(["Tarih", "Öncelik"], ascending=[False, False])
+        cols = ["Tarih", "Tema", "Hisse", "Karar", "Öncelik", "Kısa sinyal", "Fiyat", "Giriş Alt",
+                "Giriş Üst", "Stop", "Kâr al 1", "Sonuç", "Sonuç R", "Gün", "Sonraki H gün %",
+                "SPY'ye göre %", "EMA fazı", "Para"]
+        st.dataframe(L[[c for c in cols if c in L]].head(1500), hide_index=True, width="stretch",
+                     column_config={c: st.column_config.NumberColumn(format="%.2f")
+                                    for c in ("Fiyat", "Giriş Alt", "Giriş Üst", "Stop", "Kâr al 1")}
+                     | {"Sonuç R": st.column_config.NumberColumn(format="%+.2f"),
+                        "Sonraki H gün %": st.column_config.NumberColumn(format="%+.1f"),
+                        "SPY'ye göre %": st.column_config.NumberColumn(format="%+.1f")})
+        st.caption(f"{len(L):,} satır (ilk 1.500 gösteriliyor). Sonuç: ✅ hedef 1 stoptan önce · ❌ "
+                   "stop · ⏳ süre doldu (+/−) · giriş olmadı (limit dolmadı) · açık (henüz süre "
+                   "dolmadı).")
+        st.download_button("⬇️ Bu listeyi indir (CSV)", L.to_csv(index=False).encode("utf-8-sig"),
+                           f"gecmis_oneriler_{v}.csv", "text/csv", key="sg_dl")
+    st.caption("⚠️ " + SG_CAVEAT)
+
+
+def show_tema_gecmis(vade: str) -> None:
+    G = _sg()
+    T = G.get("tema")
+    if T is None or T.empty:
+        st.info(SG_HOWTO)
+        return
+    v = st.radio("Vade", ["kısa", "orta", "uzun"], index=["kısa", "orta", "uzun"].index(vade),
+                 horizontal=True, key="sgt_v")
+    Tv = T[T["Vade"] == v].copy()
+    h = int(Tv["H (gün)"].iloc[0]) if "H (gün)" in Tv and len(Tv) else 0
+    rows = []
+    for (o, q), g in Tv.groupby(["Öneri", "Para"]):
+        ex = g["SPY'ye göre %"].dropna()
+        rows.append({"Öneri": o, "Para": PARA_TXT.get(q, q), "Kayıt": len(g),
+                     f"{h}G SPY'ye göre ort %": ex.mean() if len(ex) else np.nan,
+                     "SPY'yi geçen %": (ex > 0).mean() * 100 if len(ex) else np.nan,
+                     "Öneri doğru çıktı %": g["Doğru"].dropna().astype(float).mean() * 100
+                     if g["Doğru"].notna().any() else np.nan})
+    S_ = pd.DataFrame(rows)
+    ok = Tv[Tv["Öneri"].str.startswith("✅")]["SPY'ye göre %"].dropna()
+    no = Tv[Tv["Öneri"].str.startswith("⛔")]["SPY'ye göre %"].dropna()
+    k = st.columns(4)
+    k[0].metric("✅ temalar sonra SPY'ye göre", f"{ok.mean():+.2f}%" if len(ok) else "—",
+                f"{h} işlem günü", delta_color="off")
+    k[1].metric("⛔ temalar sonra SPY'ye göre", f"{no.mean():+.2f}%" if len(no) else "—")
+    k[2].metric("Fark (✅ − ⛔)", f"{ok.mean() - no.mean():+.2f} puan" if len(ok) and len(no) else "—")
+    k[3].metric("Öneri doğru çıktı", f"%{Tv['Doğru'].dropna().astype(float).mean() * 100:.0f}"
+                if Tv["Doğru"].notna().any() else "—",
+                help="✅ önerilen tema SPY'yi geçtiyse ya da ⛔ olan geride kaldıysa doğru.")
+    st.dataframe(S_, hide_index=True, width="stretch",
+                 column_config={f"{h}G SPY'ye göre ort %": st.column_config.NumberColumn(format="%+.2f"),
+                                "SPY'yi geçen %": st.column_config.NumberColumn(format="%.0f%%"),
+                                "Öneri doğru çıktı %": st.column_config.NumberColumn(format="%.0f%%")})
+    ts = Tv.groupby("Tema").agg(**{"✅ önerildiği hafta": ("Öneri", lambda x: int(x.str.startswith("✅").sum())),
+                                   "✅ iken SPY'ye göre ort %": ("SPY'ye göre %", "mean")}).reset_index()
+    okm = Tv[Tv["Öneri"].str.startswith("✅")].groupby("Tema")["SPY'ye göre %"].mean()
+    ts["✅ iken SPY'ye göre ort %"] = ts["Tema"].map(okm)
+    st.markdown("**Temaya göre: ✅ önerildiğinde sonra ne oldu?**")
+    st.dataframe(ts.sort_values("✅ iken SPY'ye göre ort %", ascending=False), hide_index=True,
+                 width="stretch", column_config={"✅ iken SPY'ye göre ort %":
+                                                 st.column_config.NumberColumn(format="%+.2f")})
+    dts = sorted(Tv["Tarih"].unique(), reverse=True)
+    dsel = st.selectbox("Tarihteki öneriler", dts, key="sgt_d")
+    L = Tv[Tv["Tarih"] == dsel].sort_values(["Öneri", "Erken Skor"], ascending=[True, False])
+    st.dataframe(L[["Tema", "Öneri", "Para", "Erken Skor", "Taze Lider", "Dönüş",
+                    "Sonraki H gün tema %", "SPY'ye göre %", "Doğru"]], hide_index=True,
+                 width="stretch",
+                 column_config={"Sonraki H gün tema %": st.column_config.NumberColumn(format="%+.1f"),
+                                "SPY'ye göre %": st.column_config.NumberColumn(format="%+.1f")})
+    st.caption("⚠️ " + SG_CAVEAT)
+
+
+# ==========================================================================
 # DURUM
 # ==========================================================================
 def _init_state() -> None:
@@ -2187,6 +2405,8 @@ elif PAGE == PAGES[2]:
                            "%20+ altında — tema endeksi iyi görünse de çoğu hisse geride. Genişleme: "
                            "EMA50 üstü oranı EMA200 üstü oranını ≥ 15 puan geçti. Son iki sütun "
                            "temadaki 🌊 genişleme adayı ve 🧮 ucuzlayan lider sayısı.")
+        with st.expander("📜 Geçmiş tema önerileri — ✅ denen temalar gerçekte SPY'yi geçti mi?"):
+            show_tema_gecmis(vade)
         opts3 = good3 + [t for t in TT["Tema"] if t not in good3]
         st.session_state.setdefault("ta_tema", opts3[0])
         if st.session_state.ta_tema not in opts3:
@@ -2247,6 +2467,8 @@ elif PAGE == PAGES[3]:
     with st.expander("🛒 Alım seçkisi — temalara ayrılmış: sepet · giriş · stop · kâr al · "
                      "fair value · vade", expanded=True):
         show_secki(vade, index_ok, idx_name, T3, float(st.session_state.get("ha_liq", 10.0)))
+    with st.expander("📜 Geçmiş öneriler — seçki geçmişte ne önerdi, gerçekte ne oldu?"):
+        show_hisse_gecmis(vade)
     with st.expander("🧬 Örgü tarayıcı — bugün büyük hareket öncesi örgüye en çok benzeyen hisseler"):
         show_orgu_scanner()
     st.markdown("#### 🔎 Tek tema — ayrıntılı plan")
