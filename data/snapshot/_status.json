@@ -1,134 +1,134 @@
 {
  "short hacim (FINRA)": {
   "ok": true,
-  "ts": "2026-10-15T23:43:59+00:00",
+  "ts": "2026-10-16T01:35:03+00:00",
   "sure_sn": 0.0,
   "not": "30 gün, son 20261015"
  },
  "kripto (CoinGecko)": {
   "ok": true,
-  "ts": "2026-10-15T23:44:24+00:00",
+  "ts": "2026-10-16T01:35:19+00:00",
   "sure_sn": 0.0,
   "not": ""
  },
  "likidite (FRED)": {
   "ok": true,
-  "ts": "2026-10-15T23:52:04+00:00",
+  "ts": "2026-10-16T01:42:58+00:00",
   "sure_sn": 0.0,
   "not": "3076 gün, eksik seri: yok"
  },
  "macro_frames": {
   "ok": true,
-  "ts": "2026-10-15T23:52:06+00:00",
-  "sure_sn": 1.4,
+  "ts": "2026-10-16T01:43:00+00:00",
+  "sure_sn": 1.2,
   "not": "18 seri, 0 çekilemedi"
  },
  "rotation": {
   "ok": true,
-  "ts": "2026-10-15T23:52:08+00:00",
-  "sure_sn": 1.9,
+  "ts": "2026-10-16T01:43:02+00:00",
+  "sure_sn": 1.5,
   "not": "23 gösterge, çekilemeyen: 0"
  },
  "decision": {
   "ok": true,
-  "ts": "2026-10-15T23:52:13+00:00",
-  "sure_sn": 4.4,
+  "ts": "2026-10-16T01:43:06+00:00",
+  "sure_sn": 4.0,
   "not": "S&P 500: 3 zaman dilimi · Nasdaq: 3 zaman dilimi · Kripto (BTC): 3 zaman dilimi"
  },
  "theme_rotation": {
   "ok": true,
-  "ts": "2026-10-15T23:52:39+00:00",
-  "sure_sn": 8.6,
+  "ts": "2026-10-16T01:43:28+00:00",
+  "sure_sn": 5.1,
   "not": "52 tema, 92 ETF"
  },
  "theme_perf": {
   "ok": true,
-  "ts": "2026-10-15T23:52:55+00:00",
-  "sure_sn": 5.1,
+  "ts": "2026-10-16T01:43:46+00:00",
+  "sure_sn": 5.5,
   "not": "52 tema"
  },
  "scan_1d": {
   "ok": true,
-  "ts": "2026-10-15T23:56:14+00:00",
-  "sure_sn": 198.5,
+  "ts": "2026-10-16T01:47:24+00:00",
+  "sure_sn": 217.4,
   "not": "883 sembol"
  },
  "scan_1wk": {
   "ok": true,
-  "ts": "2026-10-15T23:58:27+00:00",
-  "sure_sn": 132.6,
+  "ts": "2026-10-16T01:49:45+00:00",
+  "sure_sn": 140.8,
   "not": "883 sembol"
  },
  "earnings": {
   "ok": true,
-  "ts": "2026-10-16T00:04:19+00:00",
-  "sure_sn": 138.8,
-  "not": "432/455 hisse"
+  "ts": "2026-10-16T01:56:38+00:00",
+  "sure_sn": 220.1,
+  "not": "393/455 hisse"
  },
  "plans": {
   "ok": true,
-  "ts": "2026-10-15T23:59:29+00:00",
-  "sure_sn": 62.8,
+  "ts": "2026-10-16T01:50:41+00:00",
+  "sure_sn": 56.9,
   "not": "679/770 hisse"
  },
  "flows": {
   "ok": true,
-  "ts": "2026-10-15T23:52:13+00:00",
-  "sure_sn": 0.7,
+  "ts": "2026-10-16T01:43:06+00:00",
+  "sure_sn": 0.5,
   "not": "12 varlık × 3 dönem"
  },
  "markets": {
   "ok": true,
-  "ts": "2026-10-15T23:52:30+00:00",
+  "ts": "2026-10-16T01:43:23+00:00",
   "sure_sn": 16.6,
   "not": "12 varlık · çekilemeyen: 0"
  },
  "gold": {
   "ok": true,
-  "ts": "2026-10-15T23:52:31+00:00",
-  "sure_sn": 0.7,
+  "ts": "2026-10-16T01:43:23+00:00",
+  "sure_sn": 0.4,
   "not": "11 gösterge"
  },
  "hype": {
   "ok": true,
-  "ts": "2026-10-16T00:01:53+00:00",
-  "sure_sn": 28.3,
-  "not": "238 sosyal sembol · 91 temel veri"
+  "ts": "2026-10-16T01:52:53+00:00",
+  "sure_sn": 19.4,
+  "not": "235 sosyal sembol · 91 temel veri"
  },
  "plans_hype": {
   "ok": true,
-  "ts": "2026-10-16T00:02:00+00:00",
-  "sure_sn": 6.9,
+  "ts": "2026-10-16T01:52:58+00:00",
+  "sure_sn": 5.4,
   "not": "91 hype/biotech hissesi"
  },
  "theme_rotation_kisa": {
   "ok": true,
-  "ts": "2026-10-15T23:52:45+00:00",
-  "sure_sn": 5.6,
+  "ts": "2026-10-16T01:43:35+00:00",
+  "sure_sn": 6.4,
   "not": "kısa vade · 52 tema"
  },
  "theme_rotation_uzun": {
   "ok": true,
-  "ts": "2026-10-15T23:52:50+00:00",
-  "sure_sn": 5.7,
+  "ts": "2026-10-16T01:43:41+00:00",
+  "sure_sn": 6.3,
   "not": "uzun vade · 52 tema"
  },
  "orgu": {
   "ok": true,
-  "ts": "2026-10-16T00:01:25+00:00",
-  "sure_sn": 115.3,
-  "not": "738 hisse · şablon var · ölü kedi 37"
+  "ts": "2026-10-16T01:52:33+00:00",
+  "sure_sn": 112.0,
+  "not": "738 hisse · şablon var · ölü kedi 38"
  },
  "genislik": {
   "ok": true,
-  "ts": "2026-10-16T00:05:39+00:00",
-  "sure_sn": 80.4,
-  "not": "S&P 500: 502 hisse (SSGA SPY dosyası), F/K 503 · Nasdaq 100: 0 hisse (ETF'in bilinen bileşenleri (eksik liste)), F/K 0"
+  "ts": "2026-10-16T01:58:45+00:00",
+  "sure_sn": 127.1,
+  "not": "S&P 500: 502 hisse (SSGA SPY dosyası), F/K 499 · Nasdaq 100: 0 hisse (ETF'in bilinen bileşenleri (eksik liste)), F/K 0"
  },
  "secki": {
   "ok": true,
-  "ts": "2026-10-16T00:08:07+00:00",
-  "sure_sn": 147.5,
-  "not": "738 hisse · analist hedefi 735 · Fib kapısında 166"
+  "ts": "2026-10-16T02:03:06+00:00",
+  "sure_sn": 260.4,
+  "not": "668 hisse · analist hedefi 658 · Fib kapısında 144"
  }
 }
