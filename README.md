@@ -16,6 +16,11 @@ apex/                    Hesap kodu (Streamlit'siz, her yerden kullanılabilir)
   shortvol.py            FINRA short hacmi, short interest
   compute.py             Arayüz ile akşam motorunun ORTAK hesap fonksiyonları
   snapshot.py            Akşam sonuçlarını kaydet / oku
+  ichart.py              📈 Etkileşimli grafik (Plotly) + "Durum ne?" sade anlatım + TradingView kısayolu
+  explain.py             ⓘ Sade anlatımlar (teknik okuma paragrafları, kararlar) + 📖 Sözlük
+  vol.py                 📏 VIX/16 beklenen hareket · VIX3M − VIX vade yapısı · 20 yıllık olay testi
+  sma200.py              🔻 200 günlük ortalama kırılım / dokunuş / geri alış olay çalışması
+  breadth.py             🫧 Piyasa iç yapısı + 🌐 geniş piyasa (Russell 2000 dahil)
   …                      macro, data, universe, themes, holdings, screener, news, report …
 tools/
   build_snapshot.py      Akşam hesabı: makro, rotasyon, karar, tema, tarama, bilanço
