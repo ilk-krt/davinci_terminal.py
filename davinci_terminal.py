@@ -573,23 +573,24 @@ SECKI_HELP = (
     "pozisyon · ⛔ İzle = 🐈 ölü kedi, kırık bıçak (zirveden ≥ %40 aşağı + ayı fazı) ya da "
     "bozulmuş yapı.\n"
     "- **Zamanlama:** günlük ANA YAPI FIB bacağı (robotla aynı hesap). Yükseliş bacağında fiyat "
-    "0.382–0.786 arasındaysa 🔑 **Fib kapısında** — iki ayrı dönemde (2024–25 ve 2025–26, "
-    "~600 işlem) +0.28R veren tek kural (robotta EMA200 üstü trend filtresiyle; bu yüzden "
-    "EMA200 altındaki hisse kapıda olsa da ✅ almaz). 0.382'den sığsa geri çekilme beklenir (limit emir "
-    "0.382–0.5), 0.786'dan derinse teyit beklenir; ana bacak düşüşse dip teyidi.\n"
+    "0.382–0.786 arasındaysa 🔑 **Fib bölgesinde**. Robotta (1 saatlik dönüş mumuyla) +0.28R verdi; "
+    "ama bölgede olmak TEK BAŞINA son 12 ayda SPY'nin gerisinde kaldı → ✅ için günlük dönüş teyidi "
+    "(yeşil mum, dünkü tepenin üstünde kapanış, hacim ≥ 1.2× ort.) gerekir. 0.382'den sığsa geri "
+    "çekilme beklenir (limit emir 0.382–0.5); ana bacak düşüşse tepki alımı yapılmaz (⏳).\n"
     "- **Giriş / stop / kâr al:** giriş = fiyatın içinde bulunduğu ya da bekleneceği Fib bandı; "
     "stop = bir alt Fib seviyesinin ATR payı kadar altı (yüzde girişe göre); kâr al 1 = bacağın "
     "tepesi (düşüşte 0.382/0.618 geri dönüşü), kâr al 2 = Fib 1.272 uzantısı.\n"
     "- **Fair value:** analistlerin 12 ay ortalama hedefi (Yahoo). Bilgi amaçlıdır — bu "
     "uygulamada geçmişte doğrulanmadı. Potansiyel % = hedef / fiyat − 1.\n"
-    "- **Vade uyumu:** K = kısa (Fib kapısında + ADX > 15 ya da örgü kuralı) · O = orta (para "
-    "giren tema + boğa EMA fazı) · U = uzun (çekirdek/büyüme + analist potansiyeli ≥ %15 + "
-    "trend bozuk değil).\n"
-    "- **Öncelik (0–100):** zamanlama + tema parası + EMA fazı + analist potansiyeli + örgü; "
-    "vade seçimine göre ağırlıklar değişir (kısa: zamanlama, uzun: değer).\n"
+    "- **Vade uyumu:** K = kısa (Afterburner, örgü ya da teyitli Fib bölgesi) · O = orta (momentum "
+    "+ balina güçlü trendde, momentum ≥ 90 ya da değer dönüşü) · U = uzun (O + çekirdek/büyüme ve "
+    "analist potansiyeli ≥ %15 ya da ucuz + sağlam temel).\n"
+    "- **Öncelik (0–100):** ağırlıklar geçmiş öneriler testinden: momentum ≥ 90 ve momentum + "
+    "balina en büyük artı; Fib bölgesi teyitsiz, düşüş bacağı tepkisi, EMA sıkışması, R:R > 3, "
+    "whale tükenme / tepe dönüşü / dağıtım eksi; tema ve endeks küçük ağırlık.\n"
     "- **Kısa sinyal** (kısa vade için iyi): 🚀 momentum (20 ve 60 günlük getiri evrenin ilk "
     "%20'sinde, fiyat yükselen EMA21 üstünde) · 🐋 balina girişi (son 5 günde Afterburner boğa, "
-    "dip süpürmesi ya da gerçek toplama; veya WHALE ≥ 60 ve 10 günde +8 — son 10 günde dağıtım "
+    "dip süpürmesi ya da 🕵️ Stealth IN — 5 yılda tabanı geçen üç olay; son 10 günde dağıtım "
     "varsa sayılmaz) · 🧬 tarihsel örgü (R1/R2 ya da örgü puanı ≥ 85). Kısa vadede momentum + "
     "(balina / örgü / 20 gün zirvesi) olan EMA200 üstü hisse **🟢 MOMENTUM** alır: fiyattan giriş, "
     "stop EMA21 − 0.5 ATR (en az 1.5 ATR), hedef 2R / 3R.\n"
@@ -605,7 +606,12 @@ SECKI_HELP = (
     "değil ve piyasa dar liderlikte (boğa-ayı). Piyasa genişlemeye başladıysa (EMA50 üstü üye "
     "oranı 10 günde ≥ 10 puan arttı) ve hisse boğa fazındaysa **🌊 GENİŞLEME ADAYI — kademeli "
     "al** (orta/uzun).\n\n"
-    "Kanıtlı: Fib kapısı, taze lider tema, ölü kedi uyarısı. Bağlam (test edilmedi): analist "
+    "**v2 (geçmiş öneriler testine göre):** ✅ yalnız şunlarda verilir — ✅ GÜÇ + BALİNA (momentum + "
+    "Afterburner/dip süpürmesi/Stealth IN, EMA200 üstü güçlü trend; orta/uzun), ✅ AFTERBURNER, ✅ FİB "
+    "BÖLGESİ + DÖNÜŞ TEYİDİ (yeşil, dünkü tepe üstü, hacimli gün). Fib bölgesi tek başına son 12 ayda "
+    "SPY'nin gerisinde kaldı → artık 🟡. Düşüş bacağındaki tepkiler ⏳. Tema ve endeks durumu öncelikte "
+    "küçük ağırlık. "
+    "Kanıtlı: Afterburner, dip süpürmesi, Stealth IN, momentum+balina, ölü kedi uyarısı. Bağlam (test edilmedi): analist "
     "hedefi, F/K, EMA fazı, momentum/değer kuralları (Afterburner boğa ve dip süpürmesi "
     "5 yılda tabanı geçti; dağıtım −1.49 puan). Yatırım tavsiyesi değildir; her işlemde risk ≤ sermayenin %1–2'si.")
 
@@ -654,7 +660,9 @@ def secki_board(themes: list[str], vade: str, index_ok: bool, min_liq: float,
     except Exception:                             # noqa: BLE001
         E_ = None
     mk_ = mkt_context(idx_name)
-    B = pks.board(S, tmap, tq, vade, index_ok, min_liq, E_, trn, itn, mk_)
+    tz = (set(T3.loc[T3["Taze Lider"].astype(bool), "Tema"])
+          if T3 is not None and not T3.empty and "Taze Lider" in T3 else set())
+    B = pks.board(S, tmap, tq, vade, index_ok, min_liq, E_, trn, itn, mk_, tz)
     B.attrs["idx_turn"] = itn
     B.attrs["mkt"] = mk_
     B.attrs["asof"] = S.attrs.get("asof", "")
