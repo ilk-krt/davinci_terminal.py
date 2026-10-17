@@ -44,6 +44,7 @@ from apex import ema_stack as ems           # noqa: E402
 from apex import funnel as fnl              # noqa: E402
 from apex import orgu as org                # noqa: E402
 from apex import picks as pk                # noqa: E402
+from apex import backtest as bt             # noqa: E402
 from apex import universe as uni            # noqa: E402
 
 OUT = ROOT / "data" / "validation" / "secki"
@@ -239,6 +240,8 @@ def run(months: int = 12, step: int = 5, top: int = 5, limit: int = 0) -> dict[s
             for r in pick.to_dict("records"):
                 df = P.get(r["Hisse"])
                 oc = outcome(df, t, r, v)
+                bo = bt.evaluate_one(df, t, r["Karar"], r["Fiyat"], r["Giriş Üst"], r["Stop"],
+                                     r["Kâr al 1"], r["Kâr al 2"], None, FILL[v], H[v])
                 a = _fwd(df["Close"], t, H[v])
                 rows.append({
                     "Tarih": t.date(), "Vade": v, "Tema": r["Tema"], "Para": r["_q"],
@@ -250,6 +253,8 @@ def run(months: int = 12, step: int = 5, top: int = 5, limit: int = 0) -> dict[s
                     "Stop": r["Stop"], "Kâr al 1": r["Kâr al 1"], "Kâr al 2": r["Kâr al 2"],
                     "R:R": r["R:R"], "Momentum": r.get("Momentum", np.nan),
                     "Balina": r.get("Balina", ""), **oc,
+                    "BT Durum": bo["Durum"], "BT Seviye": bo["Seviye"], "BT Kâr %": bo["Kâr %"],
+                    "BT Kâra geçme (gün)": bo["Kâra geçme (gün)"], "BT Giriş": bo["Giriş"],
                     f"Sonraki H gün %": a,
                     "SPY'ye göre %": a - sp if np.isfinite(a) and np.isfinite(sp) else np.nan})
         print(f"  tarih {n_d}/{len(dates)} {t.date()} · öneri {len(rows)} · "

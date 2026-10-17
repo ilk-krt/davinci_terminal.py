@@ -181,7 +181,20 @@ def main(only: list[str]) -> int:
             n_f = int(S["Fair value"].notna().sum()) if len(S) else 0
             n_k = int((S["_tm"] == "kapida").sum()) if len(S) else 0
             return S, f"{len(S)} hisse · analist hedefi {n_f} · Fib kapısında {n_k}"
-        step("secki", f)
+        S_secki = step("secki", f)
+
+        def f():
+            S = S_secki if S_secki is not None else snap.load("secki", max_age_h=30)
+            rot = {}
+            for v, nm in (("kısa", "theme_rotation_kisa"), ("orta", "theme_rotation"),
+                          ("uzun", "theme_rotation_uzun")):
+                r = snap.load(nm, max_age_h=30)
+                rot[v] = r[0] if r is not None else None
+            new = cmp.alarm_defteri(S, rot)
+            E = cmp.defter_degerlendir()
+            n_k = int(E["Seviye"].isin(["TP1", "TP2", "TP3", "SL"]).sum()) if len(E) else 0
+            return E, f"bugün {len(new)} alarm · defterde {len(E)} · TP/SL gören {n_k}"
+        step("alarm_defteri", f)
 
     st = snap.read_status()
     bad = [k for k, v in st.items() if not v.get("ok")]
