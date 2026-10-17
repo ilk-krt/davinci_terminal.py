@@ -11,6 +11,8 @@ ileriki 5 / 20 / 60 işlem gününde ne olduğuna bakılır).
   E) 🐋 Balina & OMNI: APEX CORE v4 (Golden Star, PRO↗RETAIL, Stealth, ACC/DIST, seesaw…) ve
                       APEX V670 (Diamond, Afterburner, erken uyarı, süpürme, boğa/ayı skoru)
                       olaylarından sonra 5/10/20 günde SPY'ye göre getiri — ~450 hisse, ~5 yıl
+  M) 🔻 SMA200 (bolum=sma200): 200 günlük ortalama kırılım / dokunuş / geri alış olaylarından
+                      sonra 20/60/120 gün (~15 yıl, tema evreni) → data/validation/sma200/
   S) 📜 Geçmiş öneriler (bolum=secki): Tema Avcısı ve Alım seçkisi her hafta ne önerirdi,
                       gerçekte ne oldu — ayrıntı tools/secki_gecmis.py
   D) 🦅 Hisse Avcısı: Sinyal, swing skoru, sınıf (🎯/🚀/⛔…), işlem planı kararı (✅ AL /
@@ -555,6 +557,73 @@ def write(R: dict[str, pd.DataFrame], meta: dict) -> None:
         z.write(OUT / "ozet.json", "ozet.json")
 
 
+# ------------------------------------------------------------------ 🔻 SMA200 evren testi
+SMA_OUT = OUT / "sma200"
+
+
+def part_sma200(limit: int = 0) -> dict:
+    """Bütün tema evreninde (~15 yıl) SMA200 kırılım / dokunuş / geri alış olayları: sonraki
+    20/60/120 gün, SPY'ye göre; SMA200 eğimine göre ayrı. Taban = aynı hisselerin bütün günleri."""
+    from apex import sma200 as s2
+    print("🔻 SMA200 olay testi", flush=True)
+    syms = sorted({s for tema in uni.THEME_TRACKER for s in cmp.theme_holdings(tema)})
+    if limit:
+        syms = syms[:limit]
+    P: dict[str, pd.DataFrame] = {}
+    for k in range(0, len(syms) + 1, 40):
+        part = (syms + ["SPY"])[k:k + 40]
+        if not part:
+            continue
+        p, f = dta.fetch(part, "1d_long")
+        P.update({t: _naive(v) for t, v in p.items() if v is not None and len(v)})
+        print(f"  veri {min(k + 40, len(syms) + 1)}/{len(syms) + 1}", flush=True)
+        time.sleep(1.0)
+    spy = P["SPY"]["Close"]
+    ev, base = [], {h: [] for h in s2.HZ}
+    for s in syms:
+        d = P.get(s)
+        if d is None or len(d) < 400:
+            continue
+        try:
+            E = s2.events(d, spy)
+            if len(E):
+                ev.append(E.assign(Hisse=s))
+            c = d["Close"].astype(float)
+            sp = spy.reindex(c.index).ffill()
+            ok = c.rolling(200).mean().notna()
+            for h in s2.HZ:
+                x = ((c.shift(-h) / c - 1) - (sp.shift(-h) / sp - 1)) * 100
+                base[h].append(x[ok].dropna().iloc[::5])      # 5 günde bir (otokorelasyon)
+        except Exception as exc:                 # noqa: BLE001
+            print(f"  {s}: {exc}", flush=True)
+    E = pd.concat(ev, ignore_index=True) if ev else pd.DataFrame()
+    SMA_OUT.mkdir(parents=True, exist_ok=True)
+    res = {"tarih": pd.Timestamp.now().isoformat(timespec="minutes"), "hisse": len(syms),
+           "olay": int(len(E)), "surum": "sma200 v1"}
+    if len(E):
+        E["Eğim"] = np.where(E["_egim_up"], "↗ yükselen", "↘ düşen")
+        S1 = s2.summary(E, ("Olay",))
+        S2 = s2.summary(E, ("Olay", "Eğim"))
+        tb = {f"{h}G SPY'ye göre ort.": float(pd.concat(base[h]).mean()) for h in s2.HZ}
+        tb.update({f"{h}G SPY'yi geçen %": float((pd.concat(base[h]) > 0).mean() * 100)
+                   for h in s2.HZ})
+        for S in (S1, S2):
+            for h in s2.HZ:
+                S[f"{h}G tabana göre"] = S[f"{h}G SPY'ye göre ort."] - tb[f"{h}G SPY'ye göre ort."]
+        # büyük koşular: 120 gün içinde ≥ %100
+        big = E[E["120G en yüksek %"] >= 100]
+        res.update({"ozet": S1.to_dict("records"), "egim": S2.to_dict("records"), "taban": tb,
+                    "buyuk_kosu": {lab: float((g["120G en yüksek %"] >= 100).mean() * 100)
+                                   for lab, g in E.groupby("Olay")},
+                    "buyuk_kosu_n": int(len(big))})
+        E.drop(columns=["_kod", "_egim_up"]).to_csv(SMA_OUT / "olaylar.csv.gz", index=False,
+                                                     compression="gzip")
+    (SMA_OUT / "ozet.json").write_text(json.dumps(_js(res), ensure_ascii=False, indent=1),
+                                       encoding="utf-8")
+    print(json.dumps(_js(res.get("ozet", [])), ensure_ascii=False, indent=1)[:3000], flush=True)
+    return res
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ay", type=int, default=12)
@@ -563,6 +632,11 @@ def main() -> int:
     ap.add_argument("--hisse-limit", type=int, default=0, help="test için ilk N hisse")
     a = ap.parse_args()
     parts = [x.strip() for x in a.bolum.split(",") if x.strip()]
+    if "sma200" in parts:                        # 🔻 SMA200 olay testi: ayrı klasöre yazar
+        parts.remove("sma200")
+        part_sma200(a.hisse_limit)
+        if not parts:
+            return 0
     if "secki" in parts:                         # 📜 geçmiş öneriler: ayrı klasöre yazar
         parts.remove("secki")
         sys.path.insert(0, str(ROOT / "tools"))

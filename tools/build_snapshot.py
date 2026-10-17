@@ -169,9 +169,22 @@ def main(only: list[str]) -> int:
             G = cmp.genislik(float(os.environ.get("GENISLIK_BUDGET_S", "600")))
             note = " · ".join(f"{k}: {v['closes'].shape[1]} hisse ({v['kaynak']}), F/K "
                               f"{int(v['fund']['İleri F/K'].notna().sum())}"
-                              for k, v in G.items())
+                              for k, v in G.items() if not k.startswith("_"))
+            gg = G.get("_genis") or {}
+            if gg:
+                note += (f" · geniş piyasa {gg['closes'].shape[1]} hisse"
+                         f" (Russell 2000: {gg.get('kaynak') or 'alınamadı'})")
             return G, note
         step("genislik", f)
+
+    if want("vol") or want("makro") or want("karar"):
+        def f():
+            V = cmp.vol()
+            em, ts, te = V["em"], V["ts"], V["test"]
+            return V, (f"VIX {em.get('vix', float('nan')):.1f} · fark {ts.get('spread', float('nan')):+.2f}"
+                       f" ({ts.get('etiket', '—')}) · olay testi "
+                       f"{te.get('donem', te.get('neden', '—'))}")
+        step("vol", f)
 
     if want("secki") or want("plan") or want("tarama"):
         def f():
