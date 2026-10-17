@@ -1855,7 +1855,7 @@ def chart_pack(sym: str, label: str, nonce: str) -> dict:
         f = tvc.draw(v, label)
         out[tf] = {"png": tvc.to_bytes(f, "png"), "jpeg": tvc.to_bytes(f, "jpeg"),
                    "pdf": tvc.to_bytes(f, "pdf"), "text": rdg.read(v),
-                   "score": v.get("score", np.nan)}
+                   "score": v.get("score", np.nan), "legend": exq.legend(v, "statik")}
         pngs.append(out[tf]["png"])
         texts.append(f"{tf}\n\n" + out[tf]["text"])
         tvc.close(f)
@@ -1886,6 +1886,11 @@ def show_triptych(sym: str, label: str, key: str) -> None:
         with col:
             st.image(R[tf]["png"], width="stretch")
             img_downloads(R[tf], f"{_fname(label)}_{tf}", f"{key}_{tf}")
+            if R[tf].get("legend"):
+                with st.expander(f"ⓘ Grafikte ne görüyorum? ({tf.lower()} — her çizgi, kutu, "
+                                 "rakam ve işaret)"):
+                    for line in R[tf]["legend"]:
+                        st.markdown(f"- {line}")
     st.download_button("📄 Üç grafik + teknik okumalar (tek PDF)", R["_pdf"],
                        f"{_fname(label)}_teknik.pdf", "application/pdf",
                        key=f"{key}_allpdf")
@@ -2000,6 +2005,11 @@ def show_ichart(sym: str, label: str, plan: dict | None = None, key: str = "ic",
         st.markdown("##### 🧒 Durum ne? — sade anlatım")
         for line in ick.durum(v, label, plan, extra):
             st.markdown(f"- {line}")
+    if v.get("ok"):
+        with st.expander("ⓘ Grafikte ne görüyorum? — her çizgi, kutu, rakam ve işaretin anlamı"):
+            st.caption("Kapalı katmanlar grafikte görünmez; açıklama hepsini listeler.")
+            for line in exq.legend(v, "etkileşimli"):
+                st.markdown(f"- {line}")
     if reading and v.get("ok"):
         with st.expander(f"📖 Teknik okuma ({tf.lower()}) — her paragrafın yanında ⓘ sade anlatım"):
             reading_info(rdg.read(v), f"{key}_{tf}")
