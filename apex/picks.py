@@ -584,7 +584,8 @@ def decide(m: dict[str, Any], q: str, vade: str, index_ok: bool = True
     elif m.get("_ab") and ust200 and faz not in ("sikisma", "kirilma"):
         lab = "✅ AFTERBURNER (balina girişi)"
     elif tm == "kapida" and teyit and ust200:
-        lab = "✅ FİB BÖLGESİ + DÖNÜŞ TEYİDİ"           # yeni — geçmiş testte ölçülecek
+        # v2.1: 24 aylık testte ✅ hak etmedi (n≈100, test dışı +2.7 / öğrenilen dönem −1.8…−7.3)
+        lab = "🟡 FİB BÖLGESİ + TEYİT (deneysel)"
     elif tm in ("kapida", "kapida_zayif"):
         lab = "🟡 FİB BÖLGESİ — dönüş teyidi bekle"
     elif tm == "bekle_geri":
@@ -601,7 +602,8 @@ def decide(m: dict[str, Any], q: str, vade: str, index_ok: bool = True
         if near_e and vade == "kısa":
             lab, sc = lab.replace("✅", "🟡") + " — bilanço yakın", sc - 6
         elif not index_ok:
-            lab += " · endeks zayıf"                 # bilgi — engellemez (endeks skoru tersine çalıştı)
+            # v2.1: endeks zayıfken ✅'ler 24 ayda kötü (orta/uzun R −0.4, stop %75) → 🟡
+            lab, sc = lab.replace("✅", "🟡") + " — endeks zayıf", sc - 8
     if not lab.startswith(("✅", "⛔")):
         if (vade == "kısa" and mom and (whale or orgu_ or m.get("_hi20")) and ust200
                 and tm in ("bekle_geri", "belirsiz", "derin")):
