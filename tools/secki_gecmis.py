@@ -227,7 +227,8 @@ def run(months: int = 12, step: int = 5, top: int = 5, limit: int = 0) -> dict[s
                               "H (gün)": H[v], "Sonraki H gün tema %": a,
                               "SPY'ye göre %": exr,
                               "Doğru": (exr > 0) == ok_ if np.isfinite(exr) else np.nan})
-            B = pk.board(S, tmap, tq, v, index_ok, 10.0, None, trn, itn, {})
+            tz = set(T.loc[T["Taze Lider"].astype(bool), "Tema"]) if "Taze Lider" in T else set()
+            B = pk.board(S, tmap, tq, v, index_ok, 10.0, None, trn, itn, {}, tz)
             if B.empty:
                 continue
             act = B[B["_o"] <= 1].sort_values("Öncelik", ascending=False)
@@ -331,7 +332,7 @@ def write(R: dict[str, pd.DataFrame], meta: dict) -> None:
 def main(months: int = 12, step: int = 5, top: int = 5, limit: int = 0) -> None:
     t0 = time.time()
     meta = {"tarih": pd.Timestamp.now().isoformat(timespec="minutes"), "ay": months,
-            "adim": step, "tema_basina": top, "surum": "geçmiş öneriler v1",
+            "adim": step, "tema_basina": top, "surum": "geçmiş öneriler v2 (seçki v2 kuralları)",
             "vade_gun": H, "limit_dolma_gun": FILL}
     try:
         R = run(months, step, top, limit)
