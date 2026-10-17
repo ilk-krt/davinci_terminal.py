@@ -1191,6 +1191,150 @@ def show_tema_gecmis(vade: str) -> None:
 
 
 # ==========================================================================
+# 📊 BACKTEST SAYFASI — haftalık backtest tablosu (apex/backtest.py)
+# ==========================================================================
+@st.cache_data(ttl=600, show_spinner=False)
+def load_bt_source(src: str, _mtime: float) -> pd.DataFrame:
+    from apex import compute as _c
+    if src == "defter":
+        f = _c.SONUC
+        if f.exists():
+            return pd.read_csv(f)
+        return pd.DataFrame()
+    f = SG_DIR / "oneriler.csv"
+    if not f.exists():
+        return pd.DataFrame()
+    O = pd.read_csv(f, low_memory=False)
+    if "BT Seviye" not in O:
+        return pd.DataFrame()
+    O = O.drop(columns=[c for c in ("Durum", "Seviye", "Kâr %", "Kâra geçme (gün)", "Giriş")
+                        if c in O])
+    O = O.rename(columns={"BT Durum": "Durum", "BT Seviye": "Seviye", "BT Kâr %": "Kâr %",
+                          "BT Kâra geçme (gün)": "Kâra geçme (gün)", "BT Giriş": "Giriş"})
+    O["Seviye"] = O["Seviye"].fillna("")
+    return O
+
+
+@st.cache_data(ttl=TTL_SLOW, show_spinner=False)
+def load_idx_close(sym: str, nonce: str) -> pd.Series:
+    p, _ = dta.fetch([sym], "1d_2y")
+    d = p.get(sym)
+    return d["Close"] if d is not None else pd.Series(dtype=float)
+
+
+def show_backtest_page() -> None:
+    from apex import backtest as bt
+    from apex import compute as _c
+    st.markdown("### 📊 Haftalık backtest")
+    st.caption("Seçkinin verdiği alarmlar sonra gerçekte TP1 / TP2 / TP3'e mi, stopa mı ulaştı? "
+               "TP1 görülünce stop girişe, TP2 görülünce TP1'e çekilir (iz süren stop). Aynı gün "
+               "hem stop hem hedef → stop sayılır. Kâr %: ulaşılan en yüksek TP (ya da stop) fiyatına "
+               "göre; komisyon ve kayma dahil değil.")
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    src_lab = c1.radio("Kaynak", ["📒 Canlı alarm defteri", "🧪 Geçmiş simülasyon"], horizontal=True,
+                       key="bt_src", help="Canlı defter: akşam hesabı her gün seçkinin alarmlarını "
+                       "kaydeder ve her akşam yeniden değerlendirir (bugünden itibaren birikir). "
+                       "Geçmiş simülasyon: Sinyal doğrulama → secki testinin yeniden kurduğu "
+                       "geçmiş öneriler.")
+    src = "defter" if src_lab.startswith("📒") else "sim"
+    fpath = _c.SONUC if src == "defter" else SG_DIR / "oneriler.csv"
+    E = load_bt_source(src, fpath.stat().st_mtime if fpath.exists() else 0.0)
+    if E is None or E.empty:
+        st.info("Bu kaynakta henüz veri yok. " + (
+            "Alarm defteri akşam hesabıyla dolmaya başlar (ilk TP/SL sonuçları birkaç gün içinde)."
+            if src == "defter" else
+            "Sinyal doğrulama'yı **bolum: secki** ile yeniden çalıştırın (bu sürümle TP1/TP2/TP3 "
+            "değerlendirmesi eklendi)."))
+        return
+    vade = c2.selectbox("Vade", ["orta", "kısa", "uzun"], key="bt_v")
+    kind = c3.selectbox("Alarm türü", ["✅ + 🟢 + 💎 + 🌊 (şimdi al)", "Hepsi (🟡 limit dahil)",
+                                       "Yalnız ✅"], key="bt_k")
+    idx_name = c4.selectbox("Kıyas endeksi", ["S&P 500", "Nasdaq 100"], key="bt_i")
+    idx_sym = "SPY" if idx_name == "S&P 500" else "QQQ"
+    Ev = E[E["Vade"] == vade].copy()
+    if kind.startswith("Yalnız"):
+        Ev = Ev[Ev["Karar"].astype(str).str.startswith("✅")]
+    elif kind.startswith("✅"):
+        Ev = Ev[Ev["Karar"].astype(str).str.startswith(("✅", "🟢", "💎", "🌊"))]
+    if src == "sim" and "Genel ilk 10" in Ev:
+        only10 = st.toggle("Yalnız her haftanın genel ilk 10'u (gerçekçi portföy)", True, key="bt_10")
+        if only10:
+            Ev = Ev[Ev["Genel ilk 10"].astype(bool)]
+    Ev = Ev.drop_duplicates(["Tarih", "Hisse"])
+    if Ev.empty:
+        st.info("Bu seçimle alarm yok.")
+        return
+    IC = load_idx_close(idx_sym, st.session_state.nonce_chart)
+    WT = bt.weekly_table(Ev, IC)
+    weeks = list(WT["_w"])
+    labels = {w: h for w, h in zip(WT["_w"], WT["Hafta"])}
+    p1, p2 = st.columns([2, 1])
+    per = p2.radio("Dönem", ["Hafta", "Son 4 hafta", "Tümü"], horizontal=True, key="bt_per")
+    if per == "Hafta":
+        w = p1.selectbox("Hafta", weeks, format_func=lambda x: labels[x], key="bt_w")
+        d0, d1 = w, w + pd.Timedelta(days=4)
+    elif per == "Son 4 hafta":
+        d0, d1 = weeks[min(3, len(weeks) - 1)], weeks[0] + pd.Timedelta(days=4)
+    else:
+        d0, d1 = weeks[-1], weeks[0] + pd.Timedelta(days=4)
+    S_ = bt.summary(Ev, d0, d1, IC)
+    k1, k2 = st.columns([1, 1])
+    with k1:
+        st.markdown(bt.card_html(S_, "ABD hisseleri (tema evreni)", idx_name,
+                                 "AETHER APEX seçki"), unsafe_allow_html=True)
+    with k2:
+        R = S_["rows"]
+        if len(R):
+            dist = R["Seviye"].replace("", "devam").value_counts()
+            st.markdown("**Bu dönemin dağılımı**")
+            st.bar_chart(dist)
+            st.caption("'devam': henüz TP ya da SL görmedi · 'süre': vade süresi doldu, kapanışla "
+                       "kapatıldı. Yüzdeler yalnız TP/SL görenler içinde.")
+    st.markdown("##### Bu dönemin alarmları")
+    R = S_["rows"].copy()
+    cols = [c for c in ["Tarih", "Hisse", "Tema", "Karar", "Öncelik", "Giriş", "Stop", "Kâr al 1",
+                        "Kâr al 2", "Durum", "Seviye", "Kâr %", "Anlık %", "Kâra geçme (gün)",
+                        "Kısa sinyal"] if c in R]
+    RV = R.sort_values(["Tarih", "Öncelik"], ascending=[False, False])[cols].copy()
+    for c_ in RV.columns:
+        if RV[c_].dtype == object:
+            RV[c_] = RV[c_].fillna("").astype(str)
+    st.dataframe(RV,
+                 hide_index=True, width="stretch",
+                 column_config={"Kâr %": st.column_config.NumberColumn(format="%+.2f"),
+                                "Anlık %": st.column_config.NumberColumn(format="%+.2f"),
+                                "Giriş": st.column_config.NumberColumn(format="%.2f"),
+                                "Stop": st.column_config.NumberColumn(format="%.2f"),
+                                "Kâr al 1": st.column_config.NumberColumn(format="%.2f"),
+                                "Kâr al 2": st.column_config.NumberColumn(format="%.2f")})
+    st.markdown("##### Hafta hafta")
+    if len(WT) > 1:
+        fig = go.Figure()
+        W2 = WT.sort_values("_w")
+        fig.add_trace(go.Bar(x=W2["Hafta"], y=W2["Ort. kâr %"], name="Seçki ort. kâr %",
+                             marker_color=["#26a69a" if x >= 0 else "#ef5350"
+                                           for x in W2["Ort. kâr %"].fillna(0)]))
+        fig.add_trace(go.Scatter(x=W2["Hafta"], y=W2["Endeks %"], name=f"{idx_name} %",
+                                 line=dict(color="#c98500")))
+        fig.update_layout(height=320, legend=dict(orientation="h", y=1.12), **CHART_LAYOUT)
+        st.plotly_chart(fig, width="stretch")
+    st.dataframe(WT.drop(columns=["_w"]).astype({c_: float for c_ in ("Ort. kâr %", "Endeks %",
+                                                                     "Fark (puan)", "TP oranı %",
+                                                                     "Kâra geçme (gün)")}),
+                 hide_index=True, width="stretch",
+                 column_config={c: st.column_config.NumberColumn(format="%+.2f")
+                                for c in ("Ort. kâr %", "Endeks %", "Fark (puan)")}
+                 | {"TP oranı %": st.column_config.NumberColumn(format="%.0f%%"),
+                    "Kâra geçme (gün)": st.column_config.NumberColumn(format="%.1f")})
+    st.download_button("⬇️ Alarmlar ve sonuçlar (CSV)", Ev.to_csv(index=False).encode("utf-8-sig"),
+                       f"backtest_{src}_{vade}.csv", "text/csv", key="bt_dl")
+    st.caption("Not: 'Ortalama kâr' yalnız sonuçlanan (TP/SL/süre) işlemlerin ortalamasıdır; devam "
+               "edenler dahil değil. Endeks getirisi dönem başından önceki son kapanıştan dönem "
+               "sonuna kadardır. Geçmiş simülasyonda analist/temel veriler kullanılamadığı için "
+               "💎 / 🌊 kararları oluşmaz.")
+
+
+# ==========================================================================
 # DURUM
 # ==========================================================================
 def _init_state() -> None:
@@ -1585,7 +1729,7 @@ def stock_fundamentals(sym: str, basis: str) -> None:
 # ==========================================================================
 PAGES = ["🌊 Para Akışı", "🧭 Endeksler & Risk", "🎯 Tema Avcısı",
          "🦅 Hisse Avcısı", "🔥 Hype & Biotech", "🔔 Takip & Portföy",
-         "🤖 Robot (simülasyon)", "🗂️ Araçlar"]
+         "🤖 Robot (simülasyon)", "📊 Backtest", "🗂️ Araçlar"]
 for _k, _v in {"nav": PAGES[0], "nonce_chart": "0", "nonce_flow": "0",
                "mk_sel": "S&P 500", "ta_index": "Nasdaq", "ha_tema": None,
                "ha_sym": None, "rb_sym": "", "rb_plan": "kademeli"}.items():
@@ -3301,6 +3445,10 @@ elif PAGE == "🤖 Robot (simülasyon)":
             st.rerun()
         show_robot(results[pick], _fname(pick))
 
+
+# ---------------------------------------------------------------- Backtest
+if PAGE == "📊 Backtest":
+    show_backtest_page()
 
 # ---------------------------------------------------------------- Araçlar
 if PAGE != PAGES[-1]:
