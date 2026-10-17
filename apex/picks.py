@@ -22,7 +22,7 @@
 # KULLANICI KURALLARI (ilave katman, öncekilerin üstüne):
 #   KISA vade için iyi : 🚀 momentum (20G+60G getiri evrenin ilk %20'si, fiyat yükselen EMA21
 #                        üstünde) · 🐋 balina girişi (son 5 günde Afterburner boğa / dip süpürmesi /
-#                        gerçek toplama ya da WHALE ≥ 60 ve 10 günde +8; son 10 günde DAĞITIM
+#                        Stealth IN (v2: gerçek toplama ve WHALE seviyesi çıkarıldı); son 10 günde DAĞITIM
 #                        varsa sayılmaz) · 🧬 tarihsel örgü (R1/R2 ya da örgü puanı ≥ 85)
 #   ORTA/UZUN için iyi : 📈 endeks ya da tema bir süredir düşmüş ve pozitife dönüyor · 💰 fiyat
 #                        fair value'nun (analist ort. hedefi, ≥ 3 analist) ≥ %35 altında ·
@@ -279,15 +279,20 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
             v = x.fillna(False).astype(bool).to_numpy()[-n:]
             idx = np.flatnonzero(v)
             return int(n - 1 - idx[-1]) if len(idx) else None
+        # doğrulanmış (5 yıl, ~730 hisse, 20G tabana göre): Afterburner boğa +1.65 (t 3.5),
+        # dip süpürmesi +0.47 (t 2.9), Stealth IN +0.45 (t 2.6). Gerçek toplama +0.15 (zayıf,
+        # sayılmaz) · WHALE seviyesi IC ≈ 0 (sayılmaz)
         for col, src, lab, n in (("ab_bull", omni, "🚀 Afterburner boğa", 5),
                                  ("sweep_low", omni, "🎣 Dip süpürmesi", 5),
-                                 ("real_acc", core, "🐋 Gerçek toplama", 5)):
+                                 ("st_in", core, "🕵️ Stealth IN", 5)):
             if col in src:
                 g = ago(src[col], n)
                 if g is not None:
                     wh["ev"].append(f"{lab} ({'bugün' if g == 0 else f'{g}g önce'})")
+        # olumsuz: DIST −1.07 (t −2.0), Whale tükenme −0.54 (t −6.7), tepe dönüşü −0.78 (t −3.6)
         for col, src, lab, n in (("real_dist", core, "🐋 Gerçek dağıtım", 10),
-                                 ("exhausted", core, "⚠️ Whale tükenme", 5)):
+                                 ("exhausted", core, "⚠️ Whale tükenme", 5),
+                                 ("rd_top", core, "🔴 Tepe dönüşü", 10)):
             if col in src:
                 g = ago(src[col], n)
                 if g is not None:
@@ -297,10 +302,14 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         wh["dwhale"] = float(w_.iloc[-1] - w_.iloc[-11]) if len(w_) > 11 else np.nan
     except Exception as exc:                     # noqa: BLE001
         _log.info("picks balina %s: %s", sym, exc)
-    w_rise = bool(np.isfinite(wh["whale"]) and wh["whale"] >= 60 and wh["dwhale"] >= 8)
-    whale_ok = bool((wh["ev"] or w_rise) and not any("dağıtım" in x for x in wh["neg"]))
-    whale_txt = " · ".join(wh["ev"] + ([f"WHALE {wh['whale']:.0f} ↑{wh['dwhale']:+.0f}/10g"]
-                                       if w_rise else []))
+    whale_ok = bool(wh["ev"] and not any("dağıtım" in x for x in wh["neg"]))
+    whale_txt = " · ".join(wh["ev"])
+    ab_ev = any("Afterburner" in x for x in wh["ev"])
+    # günlük dönüş teyidi: yeşil mum, dünkü tepenin üstünde kapanış, hacim ≥ 1.2× ortalama
+    o_, c_l = float(d["Open"].iloc[-1]), px
+    v_avg = float(d["Volume"].tail(21).iloc[:-1].mean()) if len(d) > 21 else np.nan
+    teyit = bool(len(d) > 2 and c_l > o_ and c_l > float(d["High"].iloc[-2])
+                 and np.isfinite(v_avg) and float(d["Volume"].iloc[-1]) >= 1.2 * v_avg)
     # ---- ORTA / UZUN: fair value iskontosu ve temel sağlamlık
     hedef = _num(fund.get("Hedef"))
     n_an = _num(fund.get("Analist Sayısı"))
@@ -351,7 +360,10 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         "Getiri 20G %": ret20, "Getiri 60G %": ret60, "_mom_ok": mom_ok,
         "_hi20": bool(px >= 0.97 * hi20),
         "Balina": whale_txt, "Balina uyarısı": " · ".join(wh["neg"]), "_whale": whale_ok,
-        "_whale_ev": bool(wh["ev"]),
+        "_whale_ev": bool(wh["ev"]), "_ab": ab_ev, "_teyit": teyit,
+        "_tukenme": any("tükenme" in x for x in wh["neg"]),
+        "_tepe": any("Tepe dönüşü" in x for x in wh["neg"]),
+        "_dist": any("dağıtım" in x for x in wh["neg"]),
         "_orgu": bool(orgu.get("R1")) or bool(orgu.get("R2"))
                  or (_num(orgu.get("Örgü puanı")) >= 85),
         "M Giriş Alt": m_lo, "M Stop": m_stop, "M Kâr al 1": m_tp1, "M Kâr al 2": m_tp2,
@@ -476,90 +488,128 @@ def _why(m: dict[str, Any], q: str) -> str:
 
 def decide(m: dict[str, Any], q: str, vade: str, index_ok: bool = True
            ) -> tuple[str, float, str]:
-    """Karar etiketi, öncelik puanı (0–100), vade uyumu."""
-    tm, sep = m["_tm"], m["_sep"]
-    wt, wv, wq, wf = VADE_W.get(vade, VADE_W["orta"])
-    t_sc = {"kapida": 20, "kapida_zayif": 8, "bekle_geri": 6, "donus_teyit": 4, "derin": -4,
-            "dip": -6, "belirsiz": -8, "bozuk": -25}[tm]
-    if tm == "kapida" and not m.get("_ust200", True):
-        t_sc = 8                 # test edilen kural EMA200 üstü trend filtresiyle birlikteydi
-    q_sc = {"lider": 8, "iyilesen": 12, "zayif": -5, "geride": -10}.get(q, 0)
+    """Karar etiketi, öncelik puanı (0–100), vade uyumu.
+
+    v2 (17 Ekim 2026) — ağırlıklar 'Geçmiş öneriler' testinden (12 ay, ~28 bin öneri) ve
+    5 yıllık balina olay testinden geldi:
+      + momentum puanı ≥ 90 (orta +1.8 · uzun +2.8 SPY'ye göre, t ≈ 2.5)
+      + momentum + balina birlikte (orta +2.0 · uzun +3.1, t ≈ 3.2)
+      + Afterburner boğa (kısa +1.0 · orta +1.3 · uzun +2.0) · örgü (küçük örneklem)
+      + güçlü trendde 'geri çekilme bekle' (orta +0.5 · uzun +0.8)
+      − Fib kapısında TEK BAŞINA (kısa −0.7 · orta −1.0 · uzun −1.7, t −2.5…−3.8) → artık ✅ değil;
+        ✅ için günlük dönüş teyidi (yeşil, dünkü tepe üstü, hacimli) gerekir
+      − düşüş bacağında 'dönüş testi' (orta −4.2 · uzun −3.9, t −5.6) → ⏳
+      − EMA sıkışma fazı (kısa −1.2, t −4.6) · R:R > 3 (uzak hedef = zayıf hisse, −2.5…−3.6)
+      − whale tükenme / tepe dönüşü / gerçek dağıtım
+      · tema RRG durumu ve endeks skoru zayıf/tersine çalıştı → küçük ağırlık, ✅'yi engellemez
+    """
+    tm, sep, faz = m["_tm"], m["_sep"], m["_faz"]
+    ks = {"kısa": 1.0, "orta": 0.5, "uzun": 0.3}.get(vade, 0.5)      # kısa vade ağırlığı
+    ls_ = {"kısa": 0.3, "orta": 1.0, "uzun": 1.0}.get(vade, 1.0)     # orta/uzun ağırlığı
+    mom, whale, orgu_ = bool(m.get("_mom")), bool(m.get("_whale")), bool(m.get("_orgu"))
+    ms = _num(m.get("Momentum"))
+    ust200 = m.get("_ust200", True)
+    teyit = bool(m.get("_teyit"))
+    sc = 50.0
+    # zamanlama
+    sc += {"kapida": 3 if teyit else -4, "kapida_zayif": -4, "bekle_geri": 4, "donus_teyit": -12,
+           "derin": -6, "dip": -8, "belirsiz": -4, "bozuk": -25}[tm]
+    if tm == "bekle_geri" and faz in ("tam_boga", "boga_geri"):
+        sc += 3
+    # EMA fazı
+    sc += {"tam_boga": 3, "boga_derin": 3, "boga_geri": 0, "sikisma": -6 * ks - 1,
+           "kirilma": -6, "karisik": -6 * ls_, "erken_donus": -3, "yorulma": -4,
+           "ayi_tepki": -6, "tam_ayi": -8}.get(faz, 0)
+    # momentum (orta/uzun'da güçlü, kısada etkisiz)
+    if np.isfinite(ms):
+        sc += ls_ * (8 if ms >= 90 else 3 if ms >= 80 else -2 if 50 <= ms < 80 else 0)
+    if mom and whale:
+        sc += 12 * ls_ + 4 * ks
+    if m.get("_ab"):
+        sc += 8
+    elif whale:
+        sc += 4
+    if orgu_:
+        sc += 6
+    if m["_R"]:
+        sc += 2
+    # olumsuz balina izleri
+    sc -= 6 * bool(m.get("_tukenme")) + 6 * bool(m.get("_tepe")) + 10 * bool(m.get("_dist"))
+    # R:R uçları
+    rr = m["R:R"]
+    if np.isfinite(rr) and rr > 3:
+        sc -= 6
+    # tema: küçük ağırlık (RRG geçmişte zayıf); kısa/orta'da lider hafif artı
+    sc += {"lider": 3 * (1 - 0.7 * (vade == "uzun")), "iyilesen": 2 if vade == "uzun" else 0,
+           "zayif": -2 * ks, "geride": -2 * ks}.get(q, 0)
+    if m.get("_taze"):
+        sc += 4 * (vade != "uzun")
+    # değer / temel (güncel veri; geçmişte test edilemedi — orta ağırlık)
     pot = m["Potansiyel %"]
-    v_sc = float(np.clip(pot, -20, 40)) / 4 if np.isfinite(pot) else 0.0
-    sc = 50 + wt * t_sc + wq * q_sc + wf * 8 * m["_faz_sk"] + wv * v_sc
-    sc += 6 if m["_R"] else 0
-    sc += 4 if np.isfinite(m["Örgü puanı"]) and m["Örgü puanı"] >= 85 else 0
-    sc += 4 if np.isfinite(m["R:R"]) and m["R:R"] >= 2 else 0
+    if np.isfinite(pot):
+        sc += ls_ * float(np.clip(pot, -20, 40)) / 8
+    donus, ucuz, saglam = bool(m.get("_donus")), bool(m.get("_ucuz")), bool(m.get("_saglam"))
+    n_val = donus + ucuz + saglam
+    sc += ls_ * (12 if n_val == 3 else 6 if n_val == 2 and ucuz else 2 * n_val)
+    deger_donus = n_val == 3 and sep != "izle" and faz not in ("tam_ayi", "kirilma")
+    rj = m.get("_rejim", "")
+    sc += ls_ * (5 * bool(m.get("_ucuzlayan")) + 2 * bool(m.get("_ucuz_idx")))
+    if m.get("_genis"):
+        sc += ls_ * (8 if rj == "genisleme" else 3)
     if vade == "uzun" and sep == "cekirdek":
-        sc += 5
+        sc += 3
     if vade == "kısa" and sep == "spek":
         sc -= 3
     if sep == "izle":
         sc -= 40 + (20 if m["🐈"] else 0)
-    # ---- kullanıcı kuralları (ilave): kısa = momentum / balina / örgü ·
-    #      orta-uzun = dönüş (tema ya da endeks) + fair value'nun ≥ %35 altı + sağlam temel
-    ks = {"kısa": 1.0, "orta": 0.5, "uzun": 0.3}.get(vade, 0.5)
-    ls_ = {"kısa": 0.3, "orta": 1.0, "uzun": 1.0}.get(vade, 1.0)
-    mom, whale, orgu_ = bool(m.get("_mom")), bool(m.get("_whale")), bool(m.get("_orgu"))
-    sc += ks * (10 * mom + (10 if m.get("_whale_ev") else 4) * whale + 6 * orgu_)
-    if m.get("Balina uyarısı") and "dağıtım" in m["Balina uyarısı"]:
-        sc -= 10                                 # DIST: 5 yılda −1.49 puan (doğrulandı)
-    donus, ucuz, saglam = bool(m.get("_donus")), bool(m.get("_ucuz")), bool(m.get("_saglam"))
-    n_val = donus + ucuz + saglam
-    sc += ls_ * (18 if n_val == 3 else 8 if n_val == 2 and ucuz else 3 * n_val)
-    deger_donus = n_val == 3 and sep != "izle" and m["_faz"] not in ("tam_ayi", "kirilma")
-    # piyasa iç yapısı: ucuzlayan lider (F/K düşerken fiyat yükseliyor) · genişleme adayı
-    rj = m.get("_rejim", "")
-    sc += ls_ * (6 * bool(m.get("_ucuzlayan")) + 3 * bool(m.get("_ucuz_idx")))
-    if m.get("_genis"):
-        sc += ls_ * (12 if rj == "genisleme" else 5)
-    kisa_sig = (mom or whale or orgu_) and sep != "izle" and m["_faz"] not in ("tam_ayi",)
     bil = m.get("Bilanço (gün)", np.nan)
     near_e = np.isfinite(bil) and bil <= 7
 
-    k = ((tm == "kapida" and m.get("_ust200", True)) or (m["_R"] and m["_faz"] in BULL_FAZ)) \
+    # vade uyumu
+    guc = mom and ust200 and faz in ("tam_boga", "boga_derin", "boga_geri")
+    kisa_sig = (m.get("_ab") or orgu_ or (tm == "kapida" and teyit and ust200)) and sep != "izle"
+    k = bool(kisa_sig)
+    o = bool((guc and whale) or (np.isfinite(ms) and ms >= 90 and ust200) or deger_donus) \
         and sep != "izle"
-    o = q in ("lider", "iyilesen") and m["_faz"] in BULL_FAZ and sep != "izle"
-    u = (sep in ("cekirdek", "buyume") and np.isfinite(pot) and pot >= 15
-         and m["_faz"] not in ("tam_ayi", "kirilma"))
-    k = k or kisa_sig
-    o = o or deger_donus
-    u = u or deger_donus or (ucuz and saglam and sep != "izle")
+    u = bool(o or (sep in ("cekirdek", "buyume") and np.isfinite(pot) and pot >= 15
+                   and faz not in ("tam_ayi", "kirilma"))
+             or (ucuz and saglam and sep != "izle"))
     uyum = " ".join(x for x, ok in (("K", k), ("O", o), ("U", u)) if ok) or "—"
 
+    # karar
     if sep == "izle":
         lab = "⛔ İZLE"
-    elif tm == "kapida" and not m.get("_ust200", True):
-        lab = "🟡 BÖLGEDE — EMA200 altında"
-    elif tm == "kapida" and (not np.isfinite(m["R:R"]) or m["R:R"] >= 1.5):
-        lab = "✅ ALIM BÖLGESİNDE"
-        if not index_ok:
-            lab, sc = "🟡 BÖLGEDE — endeks uygun değil", sc - 8
-        elif near_e and vade == "kısa":
-            lab, sc = "🟡 BÖLGEDE — bilanço yakın", sc - 6
-        elif q in ("zayif", "geride") and vade != "uzun":
-            lab = "🟡 BÖLGEDE — tema zayıf"
+    elif vade in ("orta", "uzun") and guc and whale and not m.get("_tukenme"):
+        lab = "✅ GÜÇ + BALİNA"                       # en tutarlı bileşim (t ≈ 3.2)
+    elif m.get("_ab") and ust200 and faz not in ("sikisma", "kirilma"):
+        lab = "✅ AFTERBURNER (balina girişi)"
+    elif tm == "kapida" and teyit and ust200:
+        lab = "✅ FİB BÖLGESİ + DÖNÜŞ TEYİDİ"           # yeni — geçmiş testte ölçülecek
     elif tm in ("kapida", "kapida_zayif"):
-        lab = "🟡 BÖLGEDE — teyit zayıf"
+        lab = "🟡 FİB BÖLGESİ — dönüş teyidi bekle"
     elif tm == "bekle_geri":
         lab = "🟡 LİMİT EMİR (geri çekilme)"
     elif tm == "donus_teyit":
-        lab = "🟡 LİMİT EMİR (dönüş testi)"
+        lab = "⏳ DÜŞÜŞ BACAĞINDA TEPKİ — bekle"
     elif tm == "derin":
         lab = "⏳ TEYİT BEKLE (0.786 geri alınsın)"
     elif tm == "dip":
         lab = "🔄 DİP TEYİDİ BEKLE"
     else:
         lab = "⏳ BEKLE"
-    # ✅ dışındaki kararlar, kullanıcı kurallarıyla yükseltilir (kanıt: test edilmedi)
+    if lab.startswith("✅"):
+        if near_e and vade == "kısa":
+            lab, sc = lab.replace("✅", "🟡") + " — bilanço yakın", sc - 6
+        elif not index_ok:
+            lab += " · endeks zayıf"                 # bilgi — engellemez (endeks skoru tersine çalıştı)
     if not lab.startswith(("✅", "⛔")):
-        if (vade == "kısa" and mom and (whale or orgu_ or m.get("_hi20"))
-                and m.get("_ust200", True) and tm in ("bekle_geri", "belirsiz", "derin")):
+        if (vade == "kısa" and mom and (whale or orgu_ or m.get("_hi20")) and ust200
+                and tm in ("bekle_geri", "belirsiz", "derin")):
             lab = "🟢 MOMENTUM — kısa vade"
         elif vade in ("orta", "uzun") and deger_donus:
             lab = "💎 DEĞER DÖNÜŞÜ — kademeli al"
         elif vade in ("orta", "uzun") and m.get("_genis") and rj == "genisleme" \
-                and m["_faz"] in BULL_FAZ:
+                and faz in BULL_FAZ:
             lab = "🌊 GENİŞLEME ADAYI — kademeli al"
     return lab, float(np.clip(sc, 0, 100)), uyum
 
@@ -567,7 +617,8 @@ def decide(m: dict[str, Any], q: str, vade: str, index_ok: bool = True
 def board(S: pd.DataFrame, theme_map: dict[str, list[str]], theme_q: dict[str, str],
           vade: str = "orta", index_ok: bool = True, min_liq: float = 5.0,
           earnings: pd.DataFrame | None = None, turn: dict[str, str] | None = None,
-          idx_turn: str = "", mkt: dict | None = None) -> pd.DataFrame:
+          idx_turn: str = "", mkt: dict | None = None,
+          taze: set | None = None) -> pd.DataFrame:
     """mkt: piyasa iç yapısı bağlamı (breadth.analyze): {'rejim', 'endeks_fk', 'etiket'}."""
     mkt = mkt or {}
     """Tema × hisse satırları (bir hisse birden çok temada olabilir)."""
@@ -594,13 +645,23 @@ def board(S: pd.DataFrame, theme_map: dict[str, list[str]], theme_q: dict[str, s
             m["_ucuzlayan"] = bool(m.get("_ucuzlayan")) and m["_sep"] != "izle"
             m["_ucuz_idx"] = bool(m["_ucuzlayan"] and np.isfinite(ifk)
                                   and np.isfinite(m["İleri F/K"]) and m["İleri F/K"] <= 1.25 * ifk)
+            m["_taze"] = tema in (taze or set())
             lab, sc, uy = decide(m, q, vade, index_ok)
-            if lab.startswith("🟢"):                 # momentum planı
+            if lab.startswith("🟢") or (lab.startswith("✅") and m["_tm"] != "kapida"):
+                # şimdi-al kararı ama Fib bölgesinde değil → fiyattan giriş, sıkı stop (momentum planı)
                 m["Giriş Alt"], m["Giriş Üst"] = m["M Giriş Alt"], m["Fiyat"]
                 m["Stop"], m["Kâr al 1"], m["Kâr al 2"] = (m["M Stop"], m["M Kâr al 1"],
                                                            m["M Kâr al 2"])
                 m["Zamanlama"] = "🚀 Momentum (fiyattan, sıkı stop)"
                 m["R:R"] = 2.0
+            elif vade == "kısa" and np.isfinite(m["Stop"]) and np.isfinite(m["Kâr al 1"]):
+                # kısa vadede bacak tepesi 10 günde nadiren geliyor (isabet %5) → 1.5R hedef
+                ent = m["Fiyat"] if lab.startswith("✅") else m["Giriş Üst"]
+                if np.isfinite(ent) and ent > m["Stop"]:
+                    t1 = ent + 1.5 * (ent - m["Stop"])
+                    if t1 < m["Kâr al 1"]:
+                        m["Kâr al 2"], m["Kâr al 1"] = m["Kâr al 1"], t1
+                        m["R:R"] = 1.5
             ksig = " ".join(x for x, ok in (("🚀", m.get("_mom")), ("🐋", m.get("_whale")),
                                             ("🧬", m.get("_orgu"))) if ok) or "—"
             lsig = " ".join(x for x, ok in (("📈", bool(m["_donus"])), ("💰", m.get("_ucuz")),
