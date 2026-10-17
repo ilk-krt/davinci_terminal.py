@@ -367,3 +367,261 @@ def paragraph(md: str) -> str:
 def split(md: str) -> list[str]:
     """reading.read çıktısını paragraflara böler (senaryo listesi tek parça kalır)."""
     return [p for p in (md or "").split("\n\n") if p.strip()]
+
+
+# ------------------------------------------------------------------ 🔍 "Grafikte ne görüyorum?"
+# Grafikte o an GERÇEKTEN çizili olan her öğe: rengi/şekli · bugünkü değeri · ne anlama geldiği.
+# style="statik" → tvchart (G/H/A resimleri) · "etkileşimli" → ichart (Plotly)
+_UNIT = {"Günlük": ("gün", "günlük"), "Haftalık": ("hafta", "haftalık"), "Aylık": ("ay", "aylık")}
+_VIEW = {"Günlük": 140, "Haftalık": 130, "Aylık": 120}
+_CLS = {1: ("parlak yeşil", "güçlü yükseliş: geniş gövde + yüksek hacim — alıcılar istekli"),
+        2: ("koyu yeşil (camgöbeği)", "orta güçte yükseliş"),
+        3: ("açık yeşil", "hacimsiz yükseliş — alıcı az, güvenilmez"),
+        -1: ("parlak kırmızı", "sert düşüş: satıcılar baskın, hacim yüksek"),
+        -2: ("kırmızı", "orta güçte düşüş"),
+        -3: ("eflatun", "hacimsiz düşüş — satıcı az, düşüş yorgun olabilir"),
+        10: ("mavi", "hacimli duraksama — çok işlem oldu ama fiyat ilerlemedi; biri karşı tarafı emiyor"),
+        11: ("turuncu", "dağıtım izi — yüksek hacimde zayıf kapanış; büyükler satıyor olabilir")}
+
+
+def _f(x) -> str:
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}" if abs(x) >= 1 else f"{x:.4g}"
+
+
+def _rel(y: float, px: float) -> str:
+    if not px:
+        return ""
+    r = (y / px - 1) * 100
+    return f"fiyatın %{abs(r):.1f} {'üstünde' if r > 0 else 'altında'}"
+
+
+def _last_hits(a, nv: int, idx) -> tuple[int, str]:
+    import numpy as np
+    if a is None:
+        return 0, ""
+    a = np.asarray(a, bool)
+    if len(a) != len(idx):
+        return 0, ""
+    w = np.flatnonzero(a[-nv:])
+    if not len(w):
+        return 0, ""
+    j = len(idx) - nv + int(w[-1])
+    return len(w), f"{idx[j]:%d.%m.%Y}"
+
+
+def legend(v: dict, style: str = "statik") -> list[str]:
+    """Grafikteki her çizgi / kutu / işaret / rakam için sade açıklama (o anki değerleriyle)."""
+    import numpy as np
+    if not v or not v.get("ok"):
+        return []
+    tf = v.get("tf", "Günlük")
+    u, ua = _UNIT.get(tf, ("bar", "bar"))
+    d = v["d"]
+    n = len(d)
+    nv = min(n, _VIEW.get(tf, 130))
+    idx = d.index
+    px = float(d["Close"].iloc[-1])
+    out: list[str] = []
+
+    # --- mumlar
+    mg = v.get("mg")
+    cls = mg["cls"].to_numpy()[-nv:] if mg is not None and "cls" in mg and len(mg) == n else None
+    if cls is not None:
+        seen = [k for k in (1, 2, 3, -1, -2, -3, 10, 11) if (np.nan_to_num(cls).astype(int) == k).any()]
+        last = int(np.nan_to_num(cls[-1]))
+        bits = "; ".join(f"**{_CLS[k][0]}** = {_CLS[k][1]}" for k in seen)
+        out.append(f"🕯️ **Mumlar** (her biri bir {u}). Renk yalnız yön değil, hareketin GÜCÜNÜ de "
+                   f"gösterir: {bits}." + (f" Son mum: {_CLS[last][1]}." if last in _CLS else ""))
+    else:
+        out.append(f"🕯️ **Mumlar** (her biri bir {u}): yeşil = o {u} yükseldi, kırmızı = düştü. "
+                   "Gövde açılış-kapanış, ince çubuklar (fitil) en yüksek ve en düşük fiyat.")
+
+    # --- EMA'lar
+    from apex.indicators import ema
+    c = d["Close"]
+    if style == "etkileşimli":
+        emas = ((10, "beyaz (soluk)"), (21, "sarı"), (50, "mavi"), (100, "koyu mor"),
+                (200, "pembe-mor (kalın)"))
+    else:
+        emas = ((21, "sarı"), (50, "mavi"), (200, "pembe-mor (kalın)"))
+    mean = {10: "çok kısa vadeli hız çizgisi; fiyat bunun altına inince kısa vadeli soluklanma başlar",
+            21: f"kısa vadeli trend çizgisi (~{21} {u}). Yükselişte fiyat genelde bunun üstünde "
+                "yürür; geri çekilmelerde ilk durak burasıdır",
+            50: f"orta vadeli trend (~{50} {u}). Güçlü trendlerde geri çekilmeler çoğu zaman bu "
+                "çizgide biter; altında kalıcı kapanış trendin zayıfladığını gösterir",
+            100: "orta-uzun vade çizgisi; 50 ile 200 arasındaki ara destek/direnç",
+            200: f"uzun vadeli ANA trend (~{200} {u}). Fiyat üstündeyse boğa, altındaysa ayı bölgesi "
+                 "sayılır. Fiyat yukarıdan buraya inerse sık sık tepki/dönüş gelir (büyük fonlar bu "
+                 "çizgiyi izler); kapanışla kırılırsa uzun vadeli trend bozulmuş olur"}
+    for p_, col in emas:
+        s = ema(c, p_)
+        y = float(s.iloc[-1])
+        if not np.isfinite(y) or s.notna().sum() < p_ * 0.6:
+            continue
+        slope = "yükseliyor" if len(s) > 6 and s.iloc[-1] > s.iloc[-6] else "düşüyor"
+        m_ = mean[p_][0].upper() + mean[p_][1:]
+        out.append(f"〰️ **{col.capitalize()} çizgi = EMA{p_}** ({p_} {ua} üssel ortalama) — şu an "
+                   f"{_f(y)}, {_rel(y, px)} ve {slope}. {m_}. Fiyat şu an bu çizginin "
+                   f"**{'üstünde' if px > y else 'altında'}**.")
+
+    # --- Fibonacci
+    fb = v.get("fib") or {}
+    if fb.get("ok"):
+        lv = fb["levels"]
+        yon = "yükselişin" if fb["up"] else "düşüşün"
+        below = max(((k, y) for k, y in lv.items() if y <= px and k <= 1.618), key=lambda t: t[1],
+                    default=None)
+        above = min(((k, y) for k, y in lv.items() if y > px and k <= 1.618), key=lambda t: t[1],
+                    default=None)
+        pos = ""
+        if below and above:
+            pos = (f" Fiyat şu an **F{below[0]} ({_f(below[1])}) ile F{above[0]} ({_f(above[1])})** "
+                   "arasında; alttaki çizgi destek, üstteki direnç gibi çalışır.")
+        out.append(f"┄ **Gri noktalı çizgiler (F0.236, F0.382, F0.5, F0.618, F0.786, F1.272…) = "
+                   f"Fibonacci seviyeleri.** Son büyük %{fb['move_pct']:.0f}'lik {yon} ne kadarının "
+                   "geri alındığını ölçer. Fiyat sık sık bu oranlarda durup döner; 0.382–0.618 arası "
+                   "'indirim bölgesi' gibidir. F1.272 / F1.618 tepe aşılınca hedeflerdir." + pos)
+
+    # --- destek / direnç
+    sr = v.get("sr") or {}
+    res, sup = sr.get("res", []), sr.get("sup", [])
+    if res or sup:
+        t = ("📏 **Kırmızı yatay çizgiler = direnç (D1, D2…), yeşil yatay çizgiler = destek "
+             "(S1, S2…).** Fiyatın geçmişte birden çok kez döndüğü yerler. Direnç: yükselirken "
+             "satıcıların beklediği fiyat (aşılırsa yol açılır). Destek: düşerken alıcıların "
+             "beklediği fiyat (kırılırsa düşüş hızlanır). ")
+        t += ("Çizgi tipi gücünü söyler: noktalı = kısa vadeli, kesikli = orta, düz kalın = uzun "
+              "vadeli (en güçlü). " if style == "statik" else
+              "Noktalı = kısa vadeli, kesikli = orta, düz = uzun vadeli (en güçlü). ")
+        if res:
+            t += f"En yakın direnç **D1 {_f(res[0]['px'])}** ({_rel(res[0]['px'], px)}). "
+        if sup:
+            t += f"En yakın destek **S1 {_f(sup[0]['px'])}** ({_rel(sup[0]['px'], px)})."
+        out.append(t)
+
+    # --- boşluklar
+    boxes = (v.get("gaps") or {}).get("boxes", [])
+    if boxes:
+        b = sorted(boxes, key=lambda b: abs((b["top"] + b["bot"]) / 2 - px))[0]
+        out.append("🟨 **Sarı (soluk) kutular = fiyat boşlukları** (▲/▼ FVG = küçük boşluk, GAP = fiyat "
+                   "boşluğu, KURUMSAL = büyük hacimli boşluk). Fiyat buradan çok hızlı geçti, arada "
+                   "neredeyse işlem olmadı. Fiyat çoğu zaman bu boşlukları doldurmaya geri döner: "
+                   "alttaki kutu mıknatıs/destek, üstteki hedef/direnç olur. En yakını "
+                   f"{_f(b['bot'])}–{_f(b['top'])} ({'altta' if b['top'] < px else 'üstte' if b['bot'] > px else 'fiyat içinde'}).")
+
+    # --- Wyckoff bölgeleri
+    zones = (v.get("vsa_zones") or {}).get("zones", [])
+    if zones and style == "statik":
+        names = sorted({z["name"] for z in zones})
+        out.append("🟩🟥 **Yeşil / kırmızı soluk kutular (SPRING, UPTHRUST, SELL CLIMAX, BUY CLIMAX, "
+                   "EFFORT) = kurumsal alım-satım bölgeleri** (Wyckoff). Yeşil: büyük alıcıların izi "
+                   "(SPRING = dibin altına sahte kırılıp geri dönüş, SELL CLIMAX = panik satışın "
+                   "emildiği dip). Kırmızı: büyük satıcıların izi (UPTHRUST = tepenin üstüne sahte "
+                   "kırılım, BUY CLIMAX = coşkulu alımın satıldığı tepe). Grafikte: "
+                   + ", ".join(names) + ".")
+    ev = (v.get("vsa_zones") or {}).get("events", [])
+    if ev and style == "statik" and any(stg >= 55 and nm not in ("NO DEMAND", "NO SUPPLY")
+                                         for _, nm, _, stg in ev):
+        out.append("🔤 **Mumların altında/üstündeki kısaltmalar:** SPR = spring (dip tuzağı, olumlu), "
+                   "UT = upthrust (tepe tuzağı, olumsuz), SC = satış doruğu (panik dibi), BC = alım "
+                   "doruğu (coşku tepesi), E≠R = çok hacim ama az hareket (biri karşı tarafı emiyor). "
+                   "Yeşil yazı olumlu, kırmızı olumsuz.")
+
+    # --- likidite
+    lq = v.get("liq") or {}
+    if any(lq.get(k) for k in ("up", "dn")) and style == "statik":
+        p_ = lq.get("up") or lq.get("dn")
+        out.append(f"🔹 **Açık mavi noktalı çizgi (LQ×{p_['cnt']}) = likidite havuzu** "
+                   f"({_f(p_['px'])}): birçok tepenin/dibin üst üste geldiği, stop emirlerinin "
+                   "biriktiği seviye. Büyükler fiyatı oraya iterek emirleri tetikler; fiyat çoğu zaman "
+                   "buraya bir 'uğrar'.")
+
+    # --- GFR
+    g = v.get("gfr")
+    if g and g.get("top") and style == "statik":
+        out.append(f"🟪 **Sağdaki mor kutu 'GFR hedef'** ({_f(g['bot'])}–{_f(g['top'])}): "
+                   "doldurulması beklenen boşluk hedefi (boşluk doldurma kurulumu).")
+
+    # --- Elliott
+    e = v.get("ell")
+    if e and e.get("B") and e.get("kind"):
+        k = str(e.get("kind"))
+        t = ("🔢 **Mor çizgi ve " + ("daire içindeki" if style == "statik" else "üzerindeki")
+             + " rakamlar (0, 1, 2, 3, 4, 5 / A, B, C) = Elliott dalga sayımı.** Teoriye göre piyasa 5 dalgada ilerler, 3 dalgada düzeltir: **0** hareketin "
+             "başladığı dip, **1** ilk itiş, **2** geri çekilme (1'in başlangıcının altına inmez), "
+             "**3** genelde en uzun ve en güçlü dalga, **4** yatay/geri çekilme, **5** son itiş; "
+             "ardından **A-B-C** düzeltmesi gelir. ")
+        t += f"Bu grafikte: {e.get('phase', '—')}."
+        out.append(t)
+        z = e.get("zone")
+        if z and not z.get("dead") and min(z["zlo"], z["zhi"]) > 0:
+            out.append(f"🟪 **Sağdaki mor kutu 'Elliott …' = dalga hedef bölgesi** "
+                       f"({_f(z['zlo'])}–{_f(z['zhi'])}): sayıma göre fiyatın gitmesi beklenen yer. "
+                       + (f"**Turuncu kesikli çizgi** ({_f(z['stop'])}) = senaryonun stopu; fiyat "
+                          "bunu kapanışla geçerse dalga senaryosu zayıflar. " if z.get("stop") else "")
+                       + (f"**Kırmızı kesikli çizgi** ({_f(z['inv'])}) = geçersizlik; geçilirse sayım "
+                          "tamamen çöker." if z.get("inv") else "")
+                       + " Dalga sayımı yorumdur, kesinlik değildir.")
+
+    # --- işaretler
+    marks = []
+    vv = v.get("v710") or {}
+    vs = v.get("vsa") or {}
+    spec = [
+        (vv.get("q_conf"), "⭐ **sarı yıldız (Q-dry)**", "satıcılar kurudu: düşüşte hacim çok "
+                                                       "azaldı, ardından alım geldi — olası dip"),
+        (vv.get("odi_bull"), "⬢ **camgöbeği altıgen (ODI alış)**", "emir akışı alıcı lehine döndü"),
+        (vv.get("odi_bear"), "⬢ **pembe altıgen (ODI satış)**", "emir akışı satıcı lehine döndü"),
+        (vv.get("eff_up"), "▲ **yeşil üçgen (mumun altında) = efor kırılımı yukarı**",
+         "hacimli (gerçek çaba harcanan) yukarı kırılım — alıcılar güçlü"),
+        (vv.get("eff_dn"), "▼ **kırmızı üçgen (mumun üstünde) = efor kırılımı aşağı**",
+         "hacimli aşağı kırılım — satıcılar güçlü"),
+        (vs.get("rev_up"), "◆ **yeşil elmas (VSA dönüş ↑)**", "hacim-fiyat analizine göre aşağıdan "
+                                                            "yukarı dönüş mumu (son 40 mumda)"),
+        (vs.get("rev_dn"), "◆ **kırmızı elmas (VSA dönüş ↓)**", "yukarıdan aşağı dönüş mumu "
+                                                              "(son 40 mumda)"),
+    ]
+    if style == "statik":
+        spec += [(vs.get("flip_up"), "✚ **açık yeşil artı (baskınlık ↑)**",
+                  "satıcı baskınlığından alıcı baskınlığına geçiş"),
+                 (vs.get("flip_dn"), "✖ **açık kırmızı çarpı (baskınlık ↓)**",
+                  "alıcı baskınlığından satıcı baskınlığına geçiş")]
+    for a, nm, txt in spec:
+        cnt, last = _last_hits(a, 40 if "VSA" in nm else nv, idx)
+        if cnt:
+            marks.append(f"{nm}: {txt} — grafikte {cnt} kez, son {last}")
+    if style == "etkileşimli" and tf == "Günlük":
+        marks.append("🐋 **Balina işaretleri** (yalnız günlükte): yeşil büyük üçgen = 🚀 Afterburner "
+                     "(kanıtlı en güçlü alım olayı), mavi üçgen = 🎣 dip süpürmesi, açık mavi elmas "
+                     "= 🕵️ sessiz alım; kırmızı aşağı üçgen = 🐋 dağıtım / 🔴 tepe dönüşü, turuncu "
+                     "çarpı = ⚠️ whale tükenme (olumsuz)")
+    if marks:
+        out.append("🔺 **Mumların altındaki / üstündeki işaretler** (altta = olumlu, üstte = "
+                   "olumsuz):\n" + "\n".join(f"   - {m}" for m in marks))
+
+    # --- plan (etkileşimli)
+    if style == "etkileşimli":
+        out.append("🎯 **İşlem planı katmanı:** camgöbeği bant = giriş bölgesi, kırmızı düz çizgi = "
+                   "stop (zarar kes), yeşil kesikli çizgiler = kâr al 1 / 2 / 3.")
+
+    # --- son fiyat, hacim, skor
+    out.append(f"⬜ **Beyaz noktalı yatay çizgi ve sağdaki beyaz kutu** = son fiyat ({_f(px)}).")
+    if v.get("has_vol"):
+        out.append("📊 **Alt panel = hacim** (o barda el değiştiren hisse). Yeşil çubuk: alıcı "
+                   "baskın, kırmızı: satıcı baskın"
+                   + (" (çubuğun içindeki ters renkli kısım karşı tarafın payı)" if style == "statik"
+                      else "")
+                   + ". **Sarı çizgi = 20 barlık ortalama hacim**: çubuk bunun çok üstündeyse hareket "
+                     "'gerçek', altındaysa zayıf.")
+    else:
+        out.append("📊 Bu seride hacim yok (oran/endeks) — hacim paneli boş.")
+    sc = v.get("score", np.nan)
+    if style == "statik" and np.isfinite(sc):
+        out.append(f"🧮 **Sağ üstteki 'Skor {sc:+.0f}'** = bütün göstergelerin ortak oyu (−100…+100): "
+                   "+12 üstü alıcı lehine, −12 altı satıcı lehine, arası kararsız. Başlığın altındaki "
+                   "'mum:' yazısı son mumun gücünü söyler.")
+    return out
