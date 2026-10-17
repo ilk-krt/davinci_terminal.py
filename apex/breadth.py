@@ -88,15 +88,40 @@ def _wiki(name: str) -> pd.DataFrame:
     raise RuntimeError(f"{name}: Wikipedia tablosu bulunamadı")
 
 
+ISHARES_IWM = ("https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
+               "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund")
+BROAD = {"Russell 2000": "IWM"}          # yalnız geniş piyasa genişliği (temel veri çekilmez)
+
+
+def _ishares_iwm() -> pd.DataFrame:
+    import requests
+    r = requests.get(ISHARES_IWM, headers=UA, timeout=40)
+    r.raise_for_status()
+    lines = r.text.splitlines()
+    hdr = next(i for i, ln in enumerate(lines[:40]) if ln.startswith("Ticker"))
+    df = pd.read_csv(io.StringIO("\n".join(lines[hdr:])), on_bad_lines="skip")
+    if "Asset Class" in df:
+        df = df[df["Asset Class"].astype(str).str.strip() == "Equity"]
+    df = df[df["Ticker"].astype(str).str.match(r"^[A-Za-z][A-Za-z.\- ]{0,6}$")]
+    return pd.DataFrame({"Sembol": df["Ticker"].map(_yf_sym), "Şirket": df.get("Name", ""),
+                         "Sektör": df.get("Sector", "").map(lambda x: SECTOR_TR.get(str(x), str(x))),
+                         "Ağırlık": pd.to_numeric(df.get("Weight (%)"), errors="coerce")}
+                        ).drop_duplicates("Sembol").reset_index(drop=True)
+
+
 def members(name: str) -> tuple[pd.DataFrame, str]:
     """Endeks üyeleri → (tablo, kaynak). Sıra: SSGA (yalnız SPY, ağırlıklı) → Wikipedia →
     son başarılı liste (data/breadth_members.csv) → ETF'in bilinen bileşenleri."""
-    tries = ([("SSGA SPY dosyası", _ssga_spy)] if name == "S&P 500" else []) + \
-        [("Wikipedia", lambda: _wiki(name))]
+    if name == "Russell 2000":
+        tries = [("iShares IWM dosyası", _ishares_iwm)]
+    else:
+        tries = ([("SSGA SPY dosyası", _ssga_spy)] if name == "S&P 500" else []) + \
+            [("Wikipedia", lambda: _wiki(name))]
+    need = {"S&P 500": 400, "Russell 2000": 1200}.get(name, 90)
     for src, fn in tries:
         try:
             df = fn()
-            if len(df) >= (400 if name == "S&P 500" else 90):
+            if len(df) >= need:
                 _save_cache(name, df)
                 return df, src
         except Exception as exc:                 # noqa: BLE001
@@ -110,7 +135,7 @@ def members(name: str) -> tuple[pd.DataFrame, str]:
         except Exception as exc:                 # noqa: BLE001
             _log.info("üye önbelleği: %s", exc)
     from apex import universe as uni
-    syms = uni.holdings(INDEXES[name])
+    syms = uni.holdings({**INDEXES, **BROAD}[name])
     return pd.DataFrame({"Sembol": syms, "Şirket": "", "Sektör": "", "Ağırlık": np.nan}), \
         "ETF'in bilinen bileşenleri (eksik liste)"
 
@@ -347,3 +372,83 @@ def theme_breadth(B: pd.DataFrame, idx_pe: float = np.nan) -> pd.DataFrame:
                      "Ucuzlayan lider": int(g["_ucuzlayan"].astype(bool).sum())
                      if "_ucuzlayan" in g else 0})
     return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------------ 🌐 geniş piyasa (Russell 2000 dahil)
+def broad(C: pd.DataFrame, groups: dict[str, list[str]], idx: dict[str, pd.Series]
+          ) -> dict[str, Any]:
+    """'S&P 500 zirvede ama 5.000 hisse %20+ aşağıda' ölçüsü: her grupta ve bütün listede
+    52 haftalık zirvenin ≥ %20 / ≥ %40 altındaki hisse oranı, medyan düşüş, SMA200 üstü oranı ve
+    YÜZEY − MEDYAN farkı (endeks zirveden % − medyan hisse zirveden %)."""
+    if C is None or C.empty:
+        return {"ok": False}
+    C = C.ffill(limit=5)
+    hi = C.rolling(252, min_periods=120).max()
+    dd = (C / hi - 1) * 100
+    s200 = C.rolling(200, min_periods=150).mean()
+    last = dd.iloc[-1]
+    up200 = (C.iloc[-1] > s200.iloc[-1])
+    etf = {"S&P 500": "SPY", "Nasdaq 100": "QQQ", "Russell 2000": "IWM", "Hepsi": "SPY"}
+
+    def idx_dd(sym):
+        s = idx.get(sym)
+        if s is None or len(s) < 130:
+            return np.nan
+        s = s.dropna()
+        return float((s.iloc[-1] / s.tail(252).max() - 1) * 100)
+    rows = []
+    allsyms = sorted({x for v in groups.values() for x in v} & set(C.columns))
+    for g, syms in list(groups.items()) + [("Hepsi", allsyms)]:
+        cols = [x for x in syms if x in C.columns]
+        x = last[cols].dropna()
+        if len(x) < 10:
+            continue
+        idd = idx_dd(etf.get(g, "SPY"))
+        med = float(x.median())
+        rows.append({"Grup": "Hepsi (tekil hisse)" if g == "Hepsi" else g, "Hisse": len(x),
+                     "≥%20 düşük": int((x <= -20).sum()), "≥%20 düşük %": float((x <= -20).mean() * 100),
+                     "≥%40 düşük": int((x <= -40).sum()), "≥%40 düşük %": float((x <= -40).mean() * 100),
+                     "Medyan zirveden %": med,
+                     "SMA200 üstü %": float(up200[cols].mean() * 100),
+                     "Endeks zirveden %": idd,
+                     "Yüzey − medyan (puan)": idd - med if np.isfinite(idd) else np.nan})
+    T = pd.DataFrame(rows)
+    # seri (bütün liste, son ~1 yıl)
+    valid = dd[allsyms].notna()
+    ser = pd.DataFrame({
+        "≥%20 düşük %": (dd[allsyms] <= -20).sum(axis=1) / valid.sum(axis=1) * 100,
+        "≥%40 düşük %": (dd[allsyms] <= -40).sum(axis=1) / valid.sum(axis=1) * 100,
+        "Medyan zirveden %": dd[allsyms].median(axis=1)})
+    spy = idx.get("SPY")
+    if spy is not None and len(spy):
+        sp = spy.reindex(ser.index).ffill()
+        ser["S&P 500 zirveden %"] = (sp / sp.rolling(252, min_periods=120).max() - 1) * 100
+    ser = ser[valid.sum(axis=1) >= max(10, 0.5 * len(allsyms))].tail(260)
+    h = T[T["Grup"].str.startswith("Hepsi")]
+    txt, kod = "", "normal"
+    if len(h):
+        r = h.iloc[0]
+        gap = r["Yüzey − medyan (puan)"]
+        txt = (f"Listedeki {r['Hisse']:,} hissenin **{r['≥%20 düşük']:,}'i (%{r['≥%20 düşük %']:.0f}) "
+               f"52 haftalık zirvesinin ≥ %20 altında**, {r['≥%40 düşük']:,}'i (%{r['≥%40 düşük %']:.0f}) "
+               f"≥ %40 altında. Medyan hisse zirveden %{r['Medyan zirveden %']:.0f} aşağıda; S&P 500 ise "
+               f"%{r['Endeks zirveden %']:.1f}.")
+        if np.isfinite(gap) and gap >= 15 and r["Endeks zirveden %"] >= -5:
+            kod = "gizli_ayi"
+            txt += (f" **Yüzey ile medyan arası {gap:.0f} puan: endeks zirvede görünse de sıradan hisse "
+                    "ayı piyasasında (gizli ayı).** Endeksi birkaç dev taşıyor; genişlik dönerse geride "
+                    "kalan sağlam hisselerde yakalama olur, dönmezse liderler de yorulabilir.")
+        elif np.isfinite(gap) and gap >= 10:
+            kod = "dar"
+            txt += f" Yüzey − medyan {gap:.0f} puan: liderlik dar."
+        elif r["≥%20 düşük %"] >= 50 and r["Endeks zirveden %"] <= -10:
+            kod = "genis_ayi"
+            txt += " Endeks de hisselerin çoğu da düşüşte: geniş ayı."
+        else:
+            txt += " Endeks ile sıradan hisse aynı yönde: sağlıklı katılım."
+        if len(ser) > 21:
+            ch = float(ser["≥%20 düşük %"].iloc[-1] - ser["≥%20 düşük %"].iloc[-21])
+            txt += (f" Son 20 günde ≥ %20 düşük oranı {ch:+.0f} puan "
+                    + ("(iyileşiyor — genişleme)." if ch <= -5 else
+                       "(kötüleşiyor)." if ch >= 5 else "(yatay)."))
+    return {"ok": True, "tablo": T, "seri": ser, "txt": txt, "kod": kod}

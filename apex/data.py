@@ -18,6 +18,7 @@ INTERVAL_PLAN: dict[str, tuple[int, str]] = {
     "1d": (420, "1d"),
     "1d_long": (5800, "1d"),   # Karar Hunisi: çeyreklik oran grafikleri
     "1d_2y": (760, "1d"),      # Piyasa genişliği: 2 yıllık zirveden düşüş
+    "1d_max": (7700, "1d"),    # VIX vade yapısı olay testi (~21 yıl)
     "1wk": (1500, "1wk"),
     "4h": (170, "1h"),      # 1h çekip 4h'e yeniden örnekliyoruz
     "1h": (60, "1h"),
@@ -291,7 +292,7 @@ def fetch_earnings_calendar(tickers: Iterable[str]) -> pd.DataFrame:
 TARGET_COLS = ["Hisse", "Fiyat", "Hedef", "Hedef Yüksek", "Hedef Düşük", "Analist Sayısı",
                "Tavsiye", "İleri F/K", "Piyasa Değ. ($B)", "Büyüme %", "Kâr Marjı %",
                "Brüt Marj %", "ROE %", "FCF ($B)", "Borç/Özkaynak", "Cari Oran", "Geçmiş F/K",
-               "Sektör", "Endüstri"]
+               "Sektör", "Endüstri", "Borsa"]
 
 
 def _one_target(t: str) -> dict:
@@ -323,7 +324,8 @@ def _one_target(t: str) -> dict:
             "FCF ($B)": num(info.get("freeCashflow")) / 1e9,
             "Borç/Özkaynak": num(info.get("debtToEquity")),     # Yahoo: yüzde (150 = 1.5×)
             "Cari Oran": num(info.get("currentRatio")),
-            "Sektör": info.get("sector", "") or "", "Endüstri": info.get("industry", "") or ""}
+            "Sektör": info.get("sector", "") or "", "Endüstri": info.get("industry", "") or "",
+            "Borsa": str(info.get("exchange", "") or "")}       # TradingView öneki için
 
 
 def fetch_targets(tickers: Iterable[str], budget_s: float | None = None) -> pd.DataFrame:

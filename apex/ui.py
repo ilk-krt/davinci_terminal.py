@@ -202,6 +202,52 @@ code { color:var(--accent)!important; background:rgba(0,229,255,.08)!important; 
 .stSlider [data-baseweb="slider"] div { color:var(--ink)!important; }
 [data-testid="stTickBar"] *, [data-testid="stSliderThumbValue"] {
   color:var(--ink-2)!important; }
+/* ---- 🎨 Bölüm bantları (Tema / Hisse Avcısı): her ana bölüm kendi renginde ---- */
+.nx-band { display:flex; align-items:center; gap:.7rem; margin:1.6rem 0 .55rem;
+  padding:.62rem .95rem; border-radius:12px; border:1px solid var(--bc);
+  background:linear-gradient(90deg, var(--bg1) 0%, rgba(13,13,17,.0) 85%);
+  scroll-margin-top:4.5rem; }
+.nx-band .ic { font-size:1.25rem; line-height:1; }
+.nx-band .tt { font-size:1.02rem; font-weight:750; color:var(--ink); letter-spacing:-.01em; }
+.nx-band .sb { font-size:.78rem; color:var(--ink-2); margin-top:.12rem; }
+.nx-band .num { margin-left:auto; font-size:.66rem; font-weight:800; letter-spacing:.14em;
+  color:var(--bc2); text-transform:uppercase; }
+.nx-band.teal   { --bc:rgba(0,229,255,.35);  --bc2:#00e5ff; --bg1:rgba(0,229,255,.13); }
+.nx-band.green  { --bc:rgba(47,190,134,.40); --bc2:#2fbe86; --bg1:rgba(47,190,134,.14); }
+.nx-band.amber  { --bc:rgba(201,133,0,.45);  --bc2:#e0a028; --bg1:rgba(201,133,0,.15); }
+.nx-band.violet { --bc:rgba(144,133,233,.45);--bc2:#a99cff; --bg1:rgba(144,133,233,.15); }
+.nx-band.blue   { --bc:rgba(57,135,229,.45); --bc2:#5b9ff0; --bg1:rgba(57,135,229,.15); }
+.nx-band.rose   { --bc:rgba(213,81,129,.45); --bc2:#e8709c; --bg1:rgba(213,81,129,.14); }
+.nx-band.slate  { --bc:rgba(160,160,171,.35);--bc2:#c2c2cc; --bg1:rgba(160,160,171,.10); }
+.nx-band.orange { --bc:rgba(217,89,38,.45);  --bc2:#ee7a4a; --bg1:rgba(217,89,38,.14); }
+/* bölüm gövdesi: st.container(key="sec_<renk>_…") → sol kenar çizgisi + hafif zemin */
+[class*="st-key-sec_"] { border-radius:12px; padding:.55rem .85rem .75rem;
+  border-left:3px solid var(--sbc, #3a3a48); background:var(--sbg, rgba(255,255,255,.012)); }
+[class*="st-key-sec_teal"]   { --sbc:rgba(0,229,255,.55);  --sbg:rgba(0,229,255,.025); }
+[class*="st-key-sec_green"]  { --sbc:rgba(47,190,134,.6);  --sbg:rgba(47,190,134,.03); }
+[class*="st-key-sec_amber"]  { --sbc:rgba(201,133,0,.65);  --sbg:rgba(201,133,0,.03); }
+[class*="st-key-sec_violet"] { --sbc:rgba(144,133,233,.6); --sbg:rgba(144,133,233,.03); }
+[class*="st-key-sec_blue"]   { --sbc:rgba(57,135,229,.6);  --sbg:rgba(57,135,229,.03); }
+[class*="st-key-sec_rose"]   { --sbc:rgba(213,81,129,.6);  --sbg:rgba(213,81,129,.03); }
+[class*="st-key-sec_slate"]  { --sbc:rgba(160,160,171,.45);--sbg:rgba(160,160,171,.02); }
+[class*="st-key-sec_orange"] { --sbc:rgba(217,89,38,.6);   --sbg:rgba(217,89,38,.03); }
+/* içindekiler */
+.nx-toc { display:flex; flex-wrap:wrap; gap:.4rem; margin:.3rem 0 .9rem; }
+.nx-toc a { text-decoration:none!important; font-size:.8rem; font-weight:650;
+  padding:.28rem .65rem; border-radius:999px; border:1px solid var(--line);
+  background:var(--surface-2); color:var(--ink-2)!important; }
+.nx-toc a:hover { border-color:var(--accent); color:var(--accent)!important; }
+.nx-toc a .d { display:inline-block; width:8px; height:8px; border-radius:50%;
+  margin-right:.38rem; vertical-align:middle; }
+/* hisse kartı */
+[class*="st-key-hk_"] { border:1px solid rgba(0,229,255,.35); border-radius:14px;
+  background:linear-gradient(160deg, rgba(0,229,255,.06), rgba(13,13,17,0) 60%);
+  padding:.7rem .95rem .9rem; }
+/* ⓘ düğmesi küçük ve sessiz */
+[class*="st-key-ii_"] button { padding:.05rem .45rem!important; min-height:0!important;
+  font-size:.74rem!important; background:transparent!important;
+  border:1px dashed var(--edge)!important; color:var(--ink-2)!important; }
+.nx-plain { font-size:.88rem; line-height:1.5; color:var(--ink); }
 /* dosya yükleme alanı */
 [data-testid="stFileUploaderDropzone"] { background:var(--surface)!important;
   color:var(--ink)!important; }
@@ -215,6 +261,27 @@ def inject_theme() -> None:
 
 def section(title: str) -> None:
     st.markdown(f"<div class='nx-section'>{title}</div>", unsafe_allow_html=True)
+
+
+BAND_DOT = {"teal": "#00e5ff", "green": "#2fbe86", "amber": "#e0a028", "violet": "#a99cff",
+            "blue": "#5b9ff0", "rose": "#e8709c", "slate": "#c2c2cc", "orange": "#ee7a4a"}
+
+
+def band(icon: str, title: str, sub: str = "", color: str = "teal", anchor: str = "",
+         num: str = "") -> None:
+    """Renkli bölüm başlığı bandı (içindekilerden atlanabilir: id=anchor)."""
+    aid = f" id='{anchor}'" if anchor else ""
+    st.markdown(f"<div class='nx-band {color}'{aid}><span class='ic'>{icon}</span><div>"
+                f"<div class='tt'>{title}</div>" + (f"<div class='sb'>{sub}</div>" if sub else "")
+                + "</div>" + (f"<span class='num'>{num}</span>" if num else "") + "</div>",
+                unsafe_allow_html=True)
+
+
+def toc(items: list[tuple[str, str, str]]) -> None:
+    """İçindekiler: [(anchor, etiket, renk)] — tıklayınca o bölüme kayar."""
+    st.markdown("<div class='nx-toc'>" + "".join(
+        f"<a href='#{a}' target='_self'><span class='d' style='background:{BAND_DOT.get(c, '#888')}'>"
+        f"</span>{t}</a>" for a, t, c in items) + "</div>", unsafe_allow_html=True)
 
 
 def kpi(label: str, value: str, sub: str = "", tone: str = "") -> str:

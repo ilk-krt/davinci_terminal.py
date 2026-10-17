@@ -91,6 +91,8 @@ class Params:
                                    #    Mum Gücü, haftalık trend → veto + stop + hedef + konsey
     struct_entry: bool = False     # 🏛️ yapısal destekten (S/R, boğa gap, talep, süpürme) giriş
     room_r: float = 1.2            # en yakın dirence en az kaç R mesafe olmalı
+    vix_scale: bool = False        # 📏 VIX'e göre pozisyon küçült (çarpan = 18 / VIX, 0.4–1.0;
+                                   #    dünkü VIX kapanışı — test edilmedi, risk yönetimi)
 
 
 PROFILES: dict[str, dict] = {
@@ -233,7 +235,8 @@ def _leg_cache(d: pd.DataFrame):
 
 # ------------------------------------------------------------------ motor
 def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
-        start: pd.Timestamp | str | None = None) -> dict[str, Any]:
+        start: pd.Timestamp | str | None = None,
+        vix: pd.Series | None = None) -> dict[str, Any]:
     h1 = df1h[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(subset=["Close"]).copy()
     h1.index = _naive(h1.index)
     h1 = h1[~h1.index.duplicated(keep="last")]
@@ -253,6 +256,18 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
     a1, vm = atr1.to_numpy(), vma.to_numpy()
     idx = h1.index
     first = int(np.searchsorted(idx.values, np.datetime64(st_ts)))
+    vixd = None
+    if p.vix_scale and vix is not None and len(vix):
+        vixd = vix.astype(float).dropna().copy()
+        vixd.index = _naive(pd.DatetimeIndex(vixd.index)).normalize()
+        vixd = vixd[~vixd.index.duplicated(keep="last")].sort_index()
+
+    def vix_f(ts) -> float:
+        if vixd is None:
+            return 1.0
+        from apex.vol import risk_scale
+        vv = vixd.asof(pd.Timestamp(ts).normalize() - pd.Timedelta(days=1))
+        return risk_scale(float(vv) if vv is not None and np.isfinite(vv) else np.nan)[0]
     kedi_days: set = set()                       # 🐈 ölü kedi günleri (günlük, nedensel)
     if p.orgu_veto:
         try:
@@ -712,10 +727,11 @@ def run(df1h: pd.DataFrame, dfd: pd.DataFrame, p: Params,
                         risk = -1.0
                 if risk > 0:
                     diag["hepsi birden"] += 1
-                q = math.floor(cash / px) if px > 0 else 0
+                f_v = vix_f(idx[i])
+                q = math.floor(cash * (1.0 if p.risk_pct else f_v) / px) if px > 0 else 0
                 if p.risk_pct and risk > 0:
                     eq_now = cash + qty * px
-                    q = min(q, math.floor(eq_now * p.risk_pct / risk))
+                    q = min(q, math.floor(eq_now * p.risk_pct * f_v / risk))
                 if risk > 0 and q > 0:
                     fill(i, "AL", q, px, "akıllı kontrol")
                     entry, stop, r0, hh = px, sl0, risk, px

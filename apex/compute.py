@@ -344,8 +344,23 @@ def genislik(budget_s: float | None = 600) -> dict:
         M, src = brd.members(name)
         Ms[name] = (M, src)
         syms |= set(M["Sembol"])
-    prices, failed = dta.fetch(sorted(syms | set(brd.INDEXES.values())), "1d_2y")
+    prices, failed = dta.fetch(sorted(syms | set(brd.INDEXES.values()) | {"IWM"}), "1d_2y")
     fund = dta.fetch_targets(sorted(syms), budget_s=budget_s)
+    if fund is None or "Hisse" not in fund:
+        fund = pd.DataFrame(columns=dta.TARGET_COLS)
+    # 🌐 geniş piyasa: Russell 2000 üyeleri (yalnız kapanış; temel veri çekilmez)
+    groups = {n: sorted(set(M["Sembol"])) for n, (M, _) in Ms.items()}
+    broad_src = ""
+    try:
+        R2, broad_src = brd.members("Russell 2000")
+        r2 = sorted(set(R2["Sembol"]) - syms)
+        for k in range(0, len(r2), 250):
+            p_, f_ = dta.fetch(r2[k:k + 250], "1d_2y")
+            prices.update(p_)
+        groups["Russell 2000"] = sorted(set(R2["Sembol"]))
+    except Exception as exc:                     # noqa: BLE001
+        _log.info("geniş piyasa üyeleri: %s", exc)
+    allsyms = sorted({x for v in groups.values() for x in v})
     out = {}
     for name, (M, src) in Ms.items():
         C = brd.wide_close(prices, M["Sembol"])
@@ -355,7 +370,24 @@ def genislik(budget_s: float | None = 600) -> dict:
                      "fund": fund[fund["Hisse"].isin(set(M["Sembol"]))].reset_index(drop=True),
                      "eksik": len(set(M["Sembol"]) - set(C.columns)),
                      "asof": dt.datetime.now().strftime("%d.%m.%Y %H:%M")}
+    out["_genis"] = {"groups": groups, "closes": brd.wide_close(prices, allsyms),
+                     "idx": {k: prices[k]["Close"] for k in ("SPY", "QQQ", "IWM") if k in prices},
+                     "kaynak": broad_src, "asof": dt.datetime.now().strftime("%d.%m.%Y %H:%M")}
     return out
+
+
+# ------------------------------------------------------------------ 📏 VIX / beklenen hareket
+VOL_SYMS = ("^VIX", "^VIX3M", "^GSPC", "SPY")
+
+
+def vol() -> dict:
+    """VIX/16 beklenen hareket, VIX3M − VIX vade yapısı ve ~20 yıllık olay testi."""
+    from apex import vol as vl
+    prices, failed = dta.fetch(list(VOL_SYMS), "1d_max")
+    P = vl.pack(prices)
+    P["failed"] = failed
+    P["asof"] = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
+    return P
 
 
 # ------------------------------------------------------------------ 📊 alarm defteri

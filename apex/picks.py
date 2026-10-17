@@ -162,8 +162,9 @@ def precompute(d: pd.DataFrame) -> dict[str, Any] | None:
     except Exception as exc:                     # noqa: BLE001
         _log.info("precompute motor: %s", exc)
         core = omni = None
+    from apex import sma200 as s2
     return {"d": d, "atr": pfib.atr_rma(d, 14), "F": ems.frame(d), "adx": _adx_series(d),
-            "core": core, "omni": omni}
+            "core": core, "omni": omni, "s2": s2.frame(d)}
 
 
 def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
@@ -181,6 +182,7 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         adx_ = float(pre["adx"].iloc[i])
         core_ = pre["core"].iloc[:i + 1] if pre.get("core") is not None else None
         omni_ = pre["omni"].iloc[:i + 1] if pre.get("omni") is not None else None
+        F2 = pre["s2"].iloc[max(0, i - 4):i + 1] if pre.get("s2") is not None else None
     else:
         if d is None or len(d) < 120:
             return None
@@ -189,6 +191,7 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         atr_s = pfib.atr_rma(d, 14)
         adx_ = _adx(d)
         core_ = omni_ = None
+        F2 = None
     fund, orgu = fund or {}, orgu or {}
     px = float(d["Close"].iloc[-1])
     atr = float(atr_s.iloc[-1])
@@ -200,6 +203,15 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
     e200 = float(F["e200"].iloc[-1]) if "e200" in F else np.nan
     ust200 = bool(np.isfinite(e200) and px > e200)
     ust50 = bool("e50" in F and px > float(F["e50"].iloc[-1]))
+    # ---- 🔻 SMA200 (200 günlük basit ortalama) olayları — bağlam (evren testi: bolum=sma200)
+    try:
+        from apex import sma200 as s2
+        F2 = (F2 if F2 is not None else s2.frame(d.tail(330))).tail(5)
+        s200 = float(F2["s"].iloc[-1])
+        t200 = bool(F2["dokunus"].any() and F2["egim"].iloc[-1] > 0)
+        k200 = bool(F2["kirilim"].any())
+    except Exception:                                # noqa: BLE001
+        s200, t200, k200 = np.nan, False, False
     mf = pfib.main_fib(d.tail(420))
     lv = mf.get("levels", {}) if mf.get("ok") else {}
     r = float(mf.get("r", np.nan)) if mf.get("ok") else np.nan
@@ -342,6 +354,8 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         "EMA fazı": ems.PHASES.get(faz, ems.PHASES["karisik"])[0], "_faz": faz,
         "_faz_sk": ems.PHASES.get(faz, ems.PHASES["karisik"])[1], "ADX": adx_,
         "_ust200": ust200, "_ust50": ust50,
+        "SMA200 %": (px / s200 - 1) * 100 if np.isfinite(s200) and s200 > 0 else np.nan,
+        "_t200": t200, "_k200": k200,
         "Bacak": ("yükseliş" if up else "düşüş") if mf.get("ok") else "—",
         "Bacak %": _num(mf.get("move_pct")), "Fib r": r, "_tm": tm,
         "Zamanlama": TIMING[tm], "Giriş Alt": z_lo, "Giriş Üst": z_hi, "Teyit": teyit,
@@ -356,6 +370,7 @@ def stock_metrics(sym: str, d: pd.DataFrame, fund: dict | None = None,
         "_R": bool(orgu.get("R1")) or bool(orgu.get("R2")),
         "Örgü puanı": _num(orgu.get("Örgü puanı")),
         "Veri tarihi": str(d.index[-1])[:10],
+        "Borsa": str(fund.get("Borsa", "") or ""),
         # kısa vade sinyalleri
         "Getiri 20G %": ret20, "Getiri 60G %": ret60, "_mom_ok": mom_ok,
         "_hi20": bool(px >= 0.97 * hi20),
@@ -476,6 +491,10 @@ def _why(m: dict[str, Any], q: str) -> str:
         w.append(f"🌊 genişleme adayı: zirveden %{m['Zirveden %']:.0f}, temel sağlam — piyasa "
                  + ("genişlemeye başladı" if m.get("_rejim") == "genisleme"
                     else "dar liderlikte; genişlerse yakalama potansiyeli"))
+    if m.get("_t200"):
+        w.append("🔻 yükselen 200 günlük ortalamaya dokunup sekti (son 5 gün)")
+    elif m.get("_k200"):
+        w.append("⚠️ 200 günlük ortalamanın altına ilk kapanış (son 5 gün)")
     if m.get("Temel", "—") != "—":
         w.append(f"temel {m['Temel']}" + (f" (eksik: {m['Temel eksik']})" if m.get("Temel eksik")
                                            else ""))
@@ -668,7 +687,7 @@ def board(S: pd.DataFrame, theme_map: dict[str, list[str]], theme_q: dict[str, s
                                             ("🧬", m.get("_orgu"))) if ok) or "—"
             lsig = " ".join(x for x, ok in (("📈", bool(m["_donus"])), ("💰", m.get("_ucuz")),
                                             ("🏛️", m.get("_saglam")), ("🧮", m["_ucuzlayan"]),
-                                            ("🌊", m["_genis"])) if ok) or "—"
+                                            ("🌊", m["_genis"]), ("🔻", m.get("_t200"))) if ok) or "—"
             rows.append({"Tema": tema, "Hisse": s, "Karar": lab, "Öncelik": round(sc),
                          "Vade uyumu": uy, "Kısa sinyal": ksig, "Orta-uzun sinyal": lsig, **{k: v for k, v in m.items()},
                          "Gerekçe": _why(m, q), "_q": q})
