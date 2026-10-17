@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 import logging
 
 import numpy as np
@@ -355,3 +356,69 @@ def genislik(budget_s: float | None = 600) -> dict:
                      "eksik": len(set(M["Sembol"]) - set(C.columns)),
                      "asof": dt.datetime.now().strftime("%d.%m.%Y %H:%M")}
     return out
+
+
+# ------------------------------------------------------------------ 📊 alarm defteri
+ALARM_DIR = Path(__file__).resolve().parent.parent / "data" / "alarms"
+DEFTER = ALARM_DIR / "alarm_defteri.csv"
+SONUC = ALARM_DIR / "defter_sonuc.csv"
+ALARM_COLS = ["Tarih", "Vade", "Hisse", "Tema", "Karar", "Öncelik", "Sepet", "Kısa sinyal",
+              "Orta-uzun sinyal", "Fiyat", "Giriş Alt", "Giriş Üst", "Stop", "Kâr al 1",
+              "Kâr al 2", "Kâr al 3", "EMA fazı", "Zamanlama"]
+DEFTER_H = {"kısa": 10, "orta": 30, "uzun": 60}
+DEFTER_FILL = {"kısa": 5, "orta": 10, "uzun": 15}
+
+
+def alarm_defteri(S: pd.DataFrame, rot: dict, limit_de: bool = True) -> pd.DataFrame:
+    """Bugünkü seçkiden alarmları deftere yazar (aynı gün + vade + hisse bir kez).
+    rot: {vade: tema rotasyon tablosu}. ✅ / 🟢 / 💎 / 🌊 hep; 🟡 limit emirler isteğe bağlı."""
+    from apex import backtest as bt
+    from apex import picks as pk
+    if S is None or S.empty:
+        return pd.DataFrame(columns=ALARM_COLS)
+    tmap = {t: theme_holdings(t) for t in uni.THEME_TRACKER}
+    tmap = {t: v for t, v in tmap.items() if v}
+    today = str(pd.Timestamp(S["Veri tarihi"].max()).date()) if "Veri tarihi" in S else \
+        str(dt.date.today())
+    rows = []
+    for v in ("kısa", "orta", "uzun"):
+        T = rot.get(v)
+        tq = dict(zip(T["Tema"], T["_q"])) if T is not None and len(T) else {}
+        tz = set(T.loc[T["Taze Lider"].astype(bool), "Tema"]) if T is not None and len(T) \
+            and "Taze Lider" in T else set()
+        B = pk.board(S, tmap, tq, v, True, 10.0, None, None, "", {}, tz)
+        if B.empty:
+            continue
+        keep = B["Karar"].str.startswith(("✅", "🟢", "💎", "🌊") + (("🟡",) if limit_de else ()))
+        B = B[keep].sort_values("Öncelik", ascending=False).drop_duplicates("Hisse")
+        for r in B.to_dict("records"):
+            tp3 = bt.tp3_of(r["Fiyat"] if str(r["Karar"]).startswith(("✅", "🟢"))
+                            else r["Giriş Üst"], r["Stop"], r["Kâr al 1"], r["Kâr al 2"])
+            rows.append({**{c: r.get(c) for c in ALARM_COLS if c not in ("Tarih", "Vade",
+                                                                       "Kâr al 3")},
+                         "Tarih": today, "Vade": v, "Kâr al 3": tp3})
+    new = pd.DataFrame(rows, columns=ALARM_COLS)
+    ALARM_DIR.mkdir(parents=True, exist_ok=True)
+    old = pd.read_csv(DEFTER) if DEFTER.exists() else pd.DataFrame(columns=ALARM_COLS)
+    allr = pd.concat([old, new], ignore_index=True).drop_duplicates(
+        ["Tarih", "Vade", "Hisse"], keep="first")
+    allr.to_csv(DEFTER, index=False, float_format="%.4f")
+    return new
+
+
+def defter_degerlendir(gun: int = 200) -> pd.DataFrame:
+    """Defterdeki son `gun` günün alarmlarını güncel fiyatlarla değerlendirir."""
+    from apex import backtest as bt
+    if not DEFTER.exists():
+        return pd.DataFrame()
+    A = pd.read_csv(DEFTER)
+    A = A[pd.to_datetime(A["Tarih"]) >= pd.Timestamp.now() - pd.Timedelta(days=gun)]
+    if A.empty:
+        return pd.DataFrame()
+    prices, _ = dta.fetch(sorted(set(A["Hisse"])), "1d")
+    parts = []
+    for v, g in A.groupby("Vade"):
+        parts.append(bt.evaluate(g, prices, DEFTER_FILL.get(v, 10), DEFTER_H.get(v, 30)))
+    E = pd.concat(parts, ignore_index=True)
+    E.to_csv(SONUC, index=False, float_format="%.4f")
+    return E
